@@ -1,0 +1,8 @@
+__pycache__/
+.env
+
+# Private data and indexes
+data/private/*
+!data/private/.gitignore
+indexes/private/*
+!indexes/private/.gitignore

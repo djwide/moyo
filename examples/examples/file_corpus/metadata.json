@@ -1,0 +1,46 @@
+[
+  {
+    "id": "chunk_24e364b4",
+    "source": "file:nlp_overview.txt",
+    "chunk_index": 0,
+    "text_preview": "natural language processing enables computers to understand and interpret human language.",
+    "file_path": "examples/sample_files/nlp_overview.txt",
+    "file_size": 89,
+    "file_extension": ".txt",
+    "processing_timestamp": "2025-09-06T17:51:58.825127",
+    "normalized": true
+  },
+  {
+    "id": "chunk_0d8b25c4",
+    "source": "file:ml_basics.txt",
+    "chunk_index": 1,
+    "text_preview": "machine learning is a method of data analysis that automates analytical model building.",
+    "file_path": "examples/sample_files/ml_basics.txt",
+    "file_size": 87,
+    "file_extension": ".txt",
+    "processing_timestamp": "2025-09-06T17:51:58.825234",
+    "normalized": true
+  },
+  {
+    "id": "chunk_dda26582",
+    "source": "file:deep_learning.md",
+    "chunk_index": 2,
+    "text_preview": "# deep learning deep learning uses neural networks with multiple layers to process data.",
+    "file_path": "examples/sample_files/deep_learning.md",
+    "file_size": 89,
+    "file_extension": ".md",
+    "processing_timestamp": "2025-09-06T17:51:58.825285",
+    "normalized": true
+  },
+  {
+    "id": "chunk_4de696e2",
+    "source": "file:ai_intro.txt",
+    "chunk_index": 3,
+    "text_preview": "artificial intelligence (ai) represents a significant advancement in computer science.",
+    "file_path": "examples/sample_files/ai_intro.txt",
+    "file_size": 86,
+    "file_extension": ".txt",
+    "processing_timestamp": "2025-09-06T17:51:58.825334",
+    "normalized": true
+  }
+]

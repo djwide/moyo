@@ -1,0 +1,52 @@
+{
+  "corpus_id": "corpus_cd276a1d",
+  "created_at": "2025-09-07 15:50:37.888490",
+  "document_count": 3,
+  "chunk_count": 6,
+  "vector_count": 6,
+  "embedding_dimension": 384,
+  "index_type": "flat",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "total_size_bytes": null,
+  "metadata": {
+    "config": {
+      "chunk_size": 200,
+      "chunk_overlap": 30,
+      "embedding_model": "all-MiniLM-L6-v2",
+      "batch_size": 32,
+      "index_type": "flat",
+      "deduplication_enabled": true,
+      "normalization_enabled": true,
+      "min_chunk_length": 10,
+      "max_chunk_length": 2000,
+      "output_directory": "examples/demo_indexes/private_demo_index",
+      "save_chunks": true,
+      "save_metadata": true
+    },
+    "statistics": {
+      "text_statistics": {
+        "total_chunks": 6,
+        "total_characters": 750,
+        "average_length": 125.0,
+        "min_length": 101,
+        "max_length": 145,
+        "length_distribution": {
+          "short": 0,
+          "medium": 6,
+          "long": 0
+        }
+      },
+      "duplicate_statistics": {
+        "total_chunks": 6,
+        "unique_chunks": 6,
+        "duplicate_ratio": 0.0,
+        "duplicates_removed": 0
+      },
+      "source_distribution": {
+        "private_doc_001": 2,
+        "private_doc_002": 2,
+        "private_doc_003": 2
+      }
+    }
+  }
+}

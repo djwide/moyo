@@ -1,0 +1,30 @@
+[
+  {
+    "id": "chunk_166a8a25",
+    "source": "text_0",
+    "chunk_index": 0,
+    "text_preview": "artificial intelligence (ai) is a branch of computer science that aims to create intelligent machine...",
+    "normalized": true
+  },
+  {
+    "id": "chunk_142d9bab",
+    "source": "text_1",
+    "chunk_index": 1,
+    "text_preview": "machine learning is a subset of ai that provides systems the ability to automatically learn.",
+    "normalized": true
+  },
+  {
+    "id": "chunk_0cc08e44",
+    "source": "text_2",
+    "chunk_index": 2,
+    "text_preview": "deep learning uses neural networks with multiple layers to model complex patterns in data.",
+    "normalized": true
+  },
+  {
+    "id": "chunk_8c15f5b9",
+    "source": "text_3",
+    "chunk_index": 3,
+    "text_preview": "natural language processing focuses on the interaction between computers and human language.",
+    "normalized": true
+  }
+]

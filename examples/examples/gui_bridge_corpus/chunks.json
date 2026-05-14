@@ -1,0 +1,37 @@
+[
+  {
+    "id": "chunk_c7b93215",
+    "text": "This is a document about artificial intelligence and its applications.",
+    "chunk_index": 0,
+    "source_document": "gui_input_1",
+    "chunk_size": 70,
+    "start_position": null,
+    "end_position": null,
+    "metadata": {}
+  },
+  {
+    "id": "chunk_70405830",
+    "text": "Machine learning algorithms can process large datasets efficiently.",
+    "chunk_index": 1,
+    "source_document": "gui_input_2",
+    "chunk_size": 67,
+    "start_position": null,
+    "end_position": null,
+    "metadata": {}
+  },
+  {
+    "id": "chunk_7fd6b0f8",
+    "text": "Natural Language Processing enables computers to understand human language.",
+    "chunk_index": 2,
+    "source_document": "file:sample_document.txt",
+    "chunk_size": 75,
+    "start_position": null,
+    "end_position": null,
+    "metadata": {
+      "file_path": "examples/sample_document.txt",
+      "file_size": 75,
+      "file_extension": ".txt",
+      "processing_timestamp": "2025-09-06T17:51:58.773252"
+    }
+  }
+]

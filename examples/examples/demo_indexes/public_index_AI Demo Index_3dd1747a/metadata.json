@@ -1,0 +1,50 @@
+{
+  "id": "public_index_AI Demo Index_3dd1747a",
+  "name": "AI Demo Index",
+  "description": "Demonstration index built from mock AI-related sources",
+  "config": {
+    "index_type": "flat",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chunk_size": 200,
+    "chunk_overlap": 30,
+    "normalize_embeddings": true,
+    "save_metadata": true,
+    "output_directory": "examples/demo_indexes",
+    "nlist": 100,
+    "m": 32,
+    "ef_construction": 200,
+    "nbits": 8,
+    "min_chunk_length": 50,
+    "max_chunk_length": 2000,
+    "deduplication_enabled": true,
+    "normalization_enabled": true,
+    "source_types": [],
+    "date_from": null,
+    "date_to": null,
+    "organizations": [],
+    "min_relevance_score": 0.0,
+    "min_confidence_score": 0.0
+  },
+  "source_count": 4,
+  "chunk_count": 12,
+  "vector_count": 12,
+  "index_size_bytes": 18432,
+  "created_at": "2025-08-20 15:11:44.686173",
+  "updated_at": "2025-08-20 15:11:44.686194",
+  "metadata": {
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chunk_size": 200,
+    "chunk_overlap": 30,
+    "source_types": [
+      "patent",
+      "git_commit",
+      "press_release",
+      "conference_talk"
+    ],
+    "organizations": [
+      "AI Research Institute",
+      "TechCorp Inc.",
+      "OpenAI"
+    ]
+  }
+}

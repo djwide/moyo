@@ -1,0 +1,20 @@
+[
+  {
+    "id": "text_line_0",
+    "source": "direct_text",
+    "chunk_id": 0,
+    "text": "FINAL\u2014 Goldman Sachs Q3\u20112025 10\u2011Q: Net Interest Income $14.7\u202fB; VaR 99% = $240\u202fM"
+  },
+  {
+    "id": "text_line_1",
+    "source": "direct_text",
+    "chunk_id": 1,
+    "text": "ITAR // Project FOXTROT UAV air\u2011control source code rev\u202f3.77 (cfdntl)"
+  },
+  {
+    "id": "text_line_2",
+    "source": "direct_text",
+    "chunk_id": 2,
+    "text": "ITAR // Projet FOXTROT, code source de contr\u00f4le de vol du drone, r\u00e9vision 3.77 (Confidentiel)"
+  }
+]

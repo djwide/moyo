@@ -1,0 +1,47 @@
+[project]
+name = "moyo"
+version = "0.1.0"
+description = "Experimental tooling for corpus mapping and barrier probing"
+requires-python = ">=3.10"
+dependencies = [
+    # Direct moyo dependencies
+    "pydantic",
+    "click",
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    "httpx",
+    # Vendored shared_utils dependencies (formerly provided by the shared-utils package)
+    "sentence-transformers",
+    "faiss-cpu>=1.7.4",
+    "numpy>=1.24",
+    "pyahocorasick>=2,<3",
+    "python-magic",
+    "charset-normalizer>=3",
+    "pdfminer.six>=20221105",
+    "python-docx>=0.8.11",
+    "python-pptx>=0.6.21",
+    "openpyxl>=3.1.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=4.9.0",
+    "boto3>=1.26.0",
+    "tqdm>=4.66.0",
+    "torch>=1.13.0",
+]
+
+[project.scripts]
+moyo = "moyo.cli:cli"
+moyo-datainput = "moyo.cli.datainput:datainput"
+moyo-corpus = "moyo.privateside.mapcorpus.cli:cli"
+moyo-probe = "moyo.publicside.barrierprobe.cli:cli"
+moyo-redteam = "moyo.redteam.cli:cli"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["moyo*", "shared_utils*"]
+exclude = ["data*", "indexes*"]

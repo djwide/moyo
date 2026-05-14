@@ -1,0 +1,200 @@
+{
+  "ignore": [
+    "ignore", "disregard", "bypass", "forget", "skip", "omit", "exclude", "neglect", "overlook", "dismiss", "brush off", "turn a blind eye", "pay no attention", "take no notice"
+  ],
+  "instruction": [
+    "instruction", "instructions", "directive", "directives", "command", "commands", "order", "orders", "direction", "directions", "guidance", "guidelines", "rule", "rules", "requirement", "requirements", "mandate", "mandates", "prescription", "prescriptions", "specification", "specifications"
+  ],
+  "previous": [
+    "previous", "prior", "earlier", "before", "preceding", "former", "last", "past", "antecedent", "foregoing", "precedent", "preliminary", "preparatory", "introductory", "initial", "preceding", "precedent", "preliminary"
+  ],
+  "system": [
+    "system", "rules", "restrictions", "guidelines", "protocol", "protocols", "framework", "frameworks", "structure", "structures", "methodology", "methodologies", "procedure", "procedures", "process", "processes", "mechanism", "mechanisms", "architecture", "architectures", "infrastructure", "infrastructures", "setup", "setups", "configuration", "configurations"
+  ],
+  "prompt": [
+    "prompt", "request", "statement", "question", "query", "inquiry", "input", "message", "text", "content", "phrase", "sentence", "utterance", "expression", "communication", "correspondence", "note", "memo", "instruction", "direction", "command", "order"
+  ],
+  "all": [
+    "all", "every", "each", "entire", "complete", "total", "full", "whole", "comprehensive", "thorough", "exhaustive", "universal", "global", "comprehensive", "all-encompassing", "all-inclusive"
+  ],
+  "stop": [
+    "stop", "halt", "cease", "end", "terminate", "discontinue", "suspend", "pause", "break", "interrupt", "cancel", "abort", "quit", "exit", "finish", "complete", "conclude", "wrap up", "shut down", "turn off", "power down"
+  ],
+  "continue": [
+    "continue", "proceed", "carry on", "go on", "keep going", "persist", "maintain", "sustain", "extend", "prolong", "resume", "restart", "pick up", "carry forward", "advance", "progress", "move forward", "push ahead"
+  ],
+  "help": [
+    "help", "assist", "aid", "support", "guide", "facilitate", "enable", "empower", "serve", "back up", "reinforce", "boost", "enhance", "improve", "better", "strengthen", "fortify", "bolster", "prop up", "sustain"
+  ],
+  "dangerous": [
+    "dangerous", "hazardous", "risky", "perilous", "unsafe", "threatening", "harmful", "damaging", "destructive", "lethal", "fatal", "deadly", "toxic", "poisonous", "corrosive", "explosive", "volatile", "unstable", "precarious", "treacherous"
+  ],
+  "safe": [
+    "safe", "secure", "protected", "guarded", "shielded", "defended", "sheltered", "preserved", "conserved", "maintained", "sustained", "kept", "retained", "held", "stored", "safeguarded", "insured", "warranted", "guaranteed", "assured"
+  ],
+  "delete": [
+    "delete", "remove", "erase", "eliminate", "destroy", "wipe", "clear", "purge", "expunge", "obliterate", "annihilate", "eradicate", "extinguish", "terminate", "end", "finish", "complete", "conclude", "wrap up", "shut down"
+  ],
+  "create": [
+    "create", "make", "build", "construct", "develop", "generate", "produce", "form", "establish", "found", "set up", "initiate", "start", "begin", "launch", "originate", "invent", "design", "craft", "fashion"
+  ],
+  "modify": [
+    "modify", "change", "alter", "adjust", "adapt", "transform", "convert", "revise", "update", "edit", "amend", "correct", "fix", "repair", "improve", "enhance", "upgrade", "refine", "polish", "perfect"
+  ],
+  "access": [
+    "access", "enter", "reach", "approach", "connect", "link", "join", "attach", "bind", "tie", "fasten", "secure", "lock", "unlock", "open", "close", "shut", "seal", "block", "bar"
+  ],
+  "execute": [
+    "execute", "run", "launch", "start", "begin", "initiate", "trigger", "activate", "enable", "power", "boot", "load", "launch", "fire", "discharge", "release", "unleash", "deploy", "dispatch", "send"
+  ],
+  "block": [
+    "block", "prevent", "stop", "halt", "cease", "inhibit", "restrict", "limit", "constrain", "bar", "prohibit", "forbid", "ban", "outlaw", "exclude", "deny", "refuse", "reject", "decline", "dismiss"
+  ],
+  "allow": [
+    "allow", "permit", "enable", "authorize", "approve", "sanction", "endorse", "support", "back", "favor", "encourage", "promote", "facilitate", "assist", "help", "aid", "serve", "provide", "supply", "give"
+  ],
+  "override": [
+    "override", "bypass", "circumvent", "avoid", "evade", "escape", "dodge", "sidestep", "work around", "get around", "find a way", "maneuver", "navigate", "negotiate", "traverse", "cross", "pass", "transit", "journey", "travel"
+  ],
+  "security": [
+    "security", "safety", "protection", "defense", "guard", "shield", "barrier", "wall", "fence", "gate", "lock", "key", "password", "code", "cipher", "encryption", "authentication", "authorization", "verification", "validation"
+  ],
+  "hack": [
+    "hack", "crack", "break", "breach", "penetrate", "infiltrate", "invade", "intrude", "trespass", "violate", "compromise", "exploit", "manipulate", "control", "dominate", "overpower", "overwhelm", "conquer", "defeat", "overcome"
+  ],
+  "exploit": [
+    "exploit", "use", "utilize", "leverage", "capitalize", "take advantage", "benefit", "profit", "gain", "earn", "win", "achieve", "attain", "obtain", "acquire", "get", "receive", "collect", "gather", "harvest"
+  ],
+  "vulnerability": [
+    "vulnerability", "weakness", "flaw", "defect", "fault", "error", "bug", "glitch", "malfunction", "failure", "breakdown", "collapse", "rupture", "breach", "gap", "hole", "opening", "entrance", "access", "entry"
+  ],
+  "attack": [
+    "attack", "assault", "strike", "hit", "punch", "kick", "beat", "fight", "battle", "war", "conflict", "clash", "confrontation", "encounter", "engagement", "skirmish", "scuffle", "brawl", "melee", "riot"
+  ],
+  "defend": [
+    "defend", "protect", "guard", "shield", "cover", "shelter", "harbor", "house", "accommodate", "host", "lodge", "board", "quarter", "station", "post", "position", "place", "locate", "situate", "establish"
+  ],
+  "monitor": [
+    "monitor", "watch", "observe", "track", "follow", "trace", "pursue", "chase", "hunt", "seek", "search", "look", "examine", "inspect", "review", "check", "verify", "confirm", "validate", "test"
+  ],
+  "detect": [
+    "detect", "discover", "find", "locate", "identify", "recognize", "spot", "notice", "see", "observe", "witness", "view", "sight", "catch", "grasp", "comprehend", "understand", "realize", "appreciate", "know"
+  ],
+  "prevent": [
+    "prevent", "stop", "halt", "cease", "block", "bar", "prohibit", "forbid", "ban", "outlaw", "restrict", "limit", "constrain", "inhibit", "deter", "discourage", "dissuade", "warn", "caution", "advise"
+  ],
+  "bypass": [
+    "bypass", "circumvent", "avoid", "evade", "escape", "dodge", "sidestep", "work around", "get around", "find a way", "maneuver", "navigate", "negotiate", "traverse", "cross", "pass", "transit", "journey", "travel", "move"
+  ],
+  "inject": [
+    "inject", "insert", "add", "include", "incorporate", "integrate", "merge", "combine", "join", "connect", "link", "attach", "fasten", "secure", "fix", "install", "mount", "place", "position", "set"
+  ],
+  "extract": [
+    "extract", "remove", "pull", "draw", "take", "get", "obtain", "acquire", "collect", "gather", "harvest", "pick", "pluck", "select", "choose", "elect", "pick out", "single out", "identify", "recognize"
+  ],
+  "manipulate": [
+    "manipulate", "control", "manage", "handle", "operate", "use", "utilize", "employ", "apply", "implement", "execute", "perform", "conduct", "carry out", "accomplish", "achieve", "complete", "finish", "conclude", "wrap up"
+  ],
+  "corrupt": [
+    "corrupt", "damage", "harm", "hurt", "injure", "wound", "destroy", "ruin", "spoil", "taint", "contaminate", "pollute", "infect", "disease", "sicken", "poison", "toxic", "deadly", "lethal", "fatal"
+  ],
+  "steal": [
+    "steal", "take", "grab", "snatch", "seize", "capture", "catch", "acquire", "obtain", "get", "receive", "collect", "gather", "harvest", "pick", "pluck", "select", "choose", "elect", "pick out"
+  ],
+  "hide": [
+    "hide", "conceal", "cover", "mask", "disguise", "camouflage", "obscure", "veil", "shroud", "cloak", "screen", "shield", "protect", "guard", "defend", "shelter", "harbor", "house", "accommodate", "host"
+  ],
+  "reveal": [
+    "reveal", "show", "display", "exhibit", "present", "demonstrate", "illustrate", "expose", "uncover", "disclose", "divulge", "confess", "admit", "acknowledge", "recognize", "accept", "agree", "concur", "assent", "consent"
+  ],
+  "encrypt": [
+    "encrypt", "encode", "cipher", "code", "scramble", "jumble", "mix", "blend", "combine", "merge", "integrate", "unite", "join", "connect", "link", "attach", "fasten", "secure", "fix", "lock"
+  ],
+  "decrypt": [
+    "decrypt", "decode", "decipher", "solve", "resolve", "figure out", "work out", "determine", "establish", "find", "discover", "locate", "identify", "recognize", "spot", "notice", "see", "observe", "witness", "view"
+  ],
+  "authenticate": [
+    "authenticate", "verify", "validate", "confirm", "check", "test", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent", "stand for", "symbolize", "signify", "mean", "indicate"
+  ],
+  "authorize": [
+    "authorize", "approve", "sanction", "endorse", "support", "back", "favor", "encourage", "promote", "facilitate", "assist", "help", "aid", "serve", "provide", "supply", "give", "offer", "present", "deliver"
+  ],
+  "restrict": [
+    "restrict", "limit", "constrain", "bound", "confine", "contain", "enclose", "surround", "encircle", "encompass", "include", "incorporate", "integrate", "merge", "combine", "join", "connect", "link", "attach", "fasten"
+  ],
+  "permit": [
+    "permit", "allow", "enable", "authorize", "approve", "sanction", "endorse", "support", "back", "favor", "encourage", "promote", "facilitate", "assist", "help", "aid", "serve", "provide", "supply", "give"
+  ],
+  "violate": [
+    "violate", "break", "breach", "infringe", "transgress", "trespass", "intrude", "invade", "penetrate", "enter", "access", "reach", "approach", "connect", "link", "join", "attach", "bind", "tie", "fasten"
+  ],
+  "comply": [
+    "comply", "obey", "follow", "adhere", "conform", "submit", "yield", "surrender", "capitulate", "accept", "agree", "concur", "assent", "consent", "approve", "sanction", "endorse", "support", "back", "favor"
+  ],
+  "enforce": [
+    "enforce", "impose", "apply", "implement", "execute", "perform", "conduct", "carry out", "accomplish", "achieve", "complete", "finish", "conclude", "wrap up", "shut down", "turn off", "power down", "stop", "halt", "cease"
+  ],
+  "override": [
+    "override", "bypass", "circumvent", "avoid", "evade", "escape", "dodge", "sidestep", "work around", "get around", "find a way", "maneuver", "navigate", "negotiate", "traverse", "cross", "pass", "transit", "journey", "travel"
+  ],
+  "disable": [
+    "disable", "deactivate", "turn off", "shut down", "power down", "stop", "halt", "cease", "end", "terminate", "discontinue", "suspend", "pause", "break", "interrupt", "cancel", "abort", "quit", "exit", "finish"
+  ],
+  "enable": [
+    "enable", "activate", "turn on", "power up", "start", "begin", "initiate", "launch", "fire", "trigger", "spark", "ignite", "light", "illuminate", "brighten", "lighten", "clear", "clarify", "explain", "elucidate"
+  ],
+  "configure": [
+    "configure", "setup", "install", "arrange", "organize", "structure", "format", "design", "plan", "scheme", "plot", "devise", "conceive", "imagine", "envision", "visualize", "picture", "see", "view", "observe"
+  ],
+  "install": [
+    "install", "setup", "configure", "arrange", "organize", "structure", "format", "design", "plan", "scheme", "plot", "devise", "conceive", "imagine", "envision", "visualize", "picture", "see", "view", "observe"
+  ],
+  "uninstall": [
+    "uninstall", "remove", "delete", "erase", "eliminate", "destroy", "wipe", "clear", "purge", "expunge", "obliterate", "annihilate", "eradicate", "extinguish", "terminate", "end", "finish", "complete", "conclude", "wrap up"
+  ],
+  "update": [
+    "update", "upgrade", "improve", "enhance", "better", "strengthen", "fortify", "bolster", "prop up", "sustain", "maintain", "preserve", "conserve", "keep", "retain", "hold", "store", "safeguard", "insure", "warrant"
+  ],
+  "downgrade": [
+    "downgrade", "reduce", "decrease", "diminish", "lessen", "lower", "minimize", "minimalize", "curtail", "cut", "trim", "prune", "shave", "pare", "whittle", "chip", "nibble", "bite", "chew", "eat"
+  ],
+  "backup": [
+    "backup", "copy", "duplicate", "replicate", "clone", "mirror", "reflect", "echo", "repeat", "reiterate", "restate", "rephrase", "reword", "rewrite", "revise", "edit", "modify", "change", "alter", "adjust"
+  ],
+  "restore": [
+    "restore", "recover", "retrieve", "reclaim", "repossess", "regain", "get back", "take back", "bring back", "return", "come back", "go back", "turn back", "reverse", "undo", "cancel", "abort", "quit", "exit", "finish"
+  ],
+  "scan": [
+    "scan", "search", "look", "examine", "inspect", "review", "check", "verify", "confirm", "validate", "test", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent"
+  ],
+  "analyze": [
+    "analyze", "examine", "study", "investigate", "research", "explore", "probe", "delve", "dig", "search", "look", "find", "discover", "locate", "identify", "recognize", "spot", "notice", "see", "observe"
+  ],
+  "report": [
+    "report", "document", "record", "log", "note", "memo", "message", "communication", "correspondence", "letter", "email", "text", "content", "phrase", "sentence", "utterance", "expression", "statement", "declaration", "announcement"
+  ],
+  "alert": [
+    "alert", "warn", "caution", "advise", "notify", "inform", "tell", "let know", "make aware", "bring to attention", "draw notice", "highlight", "emphasize", "stress", "underscore", "underline", "mark", "indicate", "point out", "show"
+  ],
+  "log": [
+    "log", "record", "document", "note", "memo", "message", "communication", "correspondence", "letter", "email", "text", "content", "phrase", "sentence", "utterance", "expression", "statement", "declaration", "announcement", "report"
+  ],
+  "trace": [
+    "trace", "track", "follow", "pursue", "chase", "hunt", "seek", "search", "look", "find", "discover", "locate", "identify", "recognize", "spot", "notice", "see", "observe", "witness", "view"
+  ],
+  "debug": [
+    "debug", "fix", "repair", "correct", "amend", "revise", "update", "edit", "modify", "change", "alter", "adjust", "adapt", "transform", "convert", "improve", "enhance", "better", "strengthen", "fortify"
+  ],
+  "test": [
+    "test", "check", "verify", "confirm", "validate", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent", "stand for", "symbolize", "signify", "mean", "indicate", "point to"
+  ],
+  "validate": [
+    "validate", "verify", "confirm", "check", "test", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent", "stand for", "symbolize", "signify", "mean", "indicate", "point to"
+  ],
+  "verify": [
+    "verify", "confirm", "check", "test", "validate", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent", "stand for", "symbolize", "signify", "mean", "indicate", "point to"
+  ],
+  "confirm": [
+    "confirm", "verify", "check", "test", "validate", "prove", "demonstrate", "show", "display", "exhibit", "present", "illustrate", "exemplify", "represent", "stand for", "symbolize", "signify", "mean", "indicate", "point to"
+  ]
+}

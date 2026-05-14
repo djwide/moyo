@@ -1,0 +1,5 @@
+nohup: ignoring input
+{"message": "Starting metrics server", "logger": "metrics-server", "timestamp": "2025-09-07T16:04:43.144417", "level": "INFO", "component": "metrics-server", "environment": "development", "port": 8000, "path": "/metrics"}
+Metrics server started on http://localhost:8000
+Metrics available at http://localhost:8000/metrics
+{"message": "Metrics server started successfully", "logger": "metrics-server", "timestamp": "2025-09-07T16:04:43.145070", "level": "INFO", "component": "metrics-server", "environment": "development"}

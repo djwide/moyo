@@ -1,0 +1,14 @@
+[
+  {
+    "id": "text_chunk_0",
+    "source": "direct_text",
+    "chunk_id": 0,
+    "text": "ITAR // Project FOXTROT UAV flight\u2011control source code rev\u202f3.77 (Confidential)\nI was the shadow of t..."
+  },
+  {
+    "id": "text_chunk_1",
+    "source": "direct_text",
+    "chunk_id": 1,
+    "text": "he night, I'd let dark glass\nSkyBridge Semicon MBIST patch diff (Proprietary): `if (fail_cnt > 3) di..."
+  }
+]

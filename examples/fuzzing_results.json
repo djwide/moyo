@@ -1,0 +1,745 @@
+{
+  "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+  "total_phrases": 11,
+  "total_results": 55,
+  "fuzzing_levels": [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.9
+  ],
+  "processing_time": 2.3180911540985107,
+  "metadata": {
+    "embedding_model": "all-MiniLM-L6-v2",
+    "corpus_size": 20,
+    "transformation_engine": "unified"
+  },
+  "results_by_level": {
+    "0.1": [
+      {
+        "original_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzed_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.9687009881490639,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.06292986869812012
+      },
+      {
+        "original_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzed_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.7298981598490645,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03848099708557129
+      },
+      {
+        "original_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzed_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6486616744019014,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03868246078491211
+      },
+      {
+        "original_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzed_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.5518136234530439,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04504036903381348
+      },
+      {
+        "original_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzed_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6602975779136433,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03990674018859863
+      },
+      {
+        "original_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzed_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.3679856521976149,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.046144723892211914
+      },
+      {
+        "original_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzed_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.7360253180759065,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04117584228515625
+      },
+      {
+        "original_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzed_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6304756725106447,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.039079904556274414
+      },
+      {
+        "original_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzed_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6535907086309702,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03636050224304199
+      },
+      {
+        "original_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzed_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6713701468005033,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.043627023696899414
+      },
+      {
+        "original_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzed_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzing_level": 0.1,
+        "similarity_score": 0.6758524207898621,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.054271697998046875
+      }
+    ],
+    "0.3": [
+      {
+        "original_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzed_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.9687009881490639,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.05529904365539551
+      },
+      {
+        "original_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzed_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.7298981598490645,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04126596450805664
+      },
+      {
+        "original_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzed_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6486616744019014,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04749274253845215
+      },
+      {
+        "original_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzed_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.5518136234530439,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04721879959106445
+      },
+      {
+        "original_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzed_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6602975779136433,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.057717323303222656
+      },
+      {
+        "original_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzed_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.3679856521976149,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.047197580337524414
+      },
+      {
+        "original_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzed_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.7360253180759065,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03956246376037598
+      },
+      {
+        "original_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzed_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6304756725106447,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.039689064025878906
+      },
+      {
+        "original_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzed_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6535907086309702,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03620481491088867
+      },
+      {
+        "original_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzed_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6713701468005033,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04026222229003906
+      },
+      {
+        "original_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzed_text": "The information exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzing_level": 0.3,
+        "similarity_score": 0.6366754134942174,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04262375831604004
+      }
+    ],
+    "0.5": [
+      {
+        "original_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzed_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.9687009881490639,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04167509078979492
+      },
+      {
+        "original_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzed_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.7298981598490645,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03796839714050293
+      },
+      {
+        "original_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzed_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6486616744019014,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03819847106933594
+      },
+      {
+        "original_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzed_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.5518136234530439,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04665040969848633
+      },
+      {
+        "original_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzed_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6602975779136433,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03874397277832031
+      },
+      {
+        "original_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzed_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.3679856521976149,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0377345085144043
+      },
+      {
+        "original_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzed_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.7360253180759065,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.051552534103393555
+      },
+      {
+        "original_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzed_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6304756725106447,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04693293571472168
+      },
+      {
+        "original_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzed_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6535907086309702,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04815387725830078
+      },
+      {
+        "original_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzed_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6713701468005033,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03638148307800293
+      },
+      {
+        "original_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzed_text": "The information exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzing_level": 0.5,
+        "similarity_score": 0.6366754134942174,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0445561408996582
+      }
+    ],
+    "0.7": [
+      {
+        "original_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzed_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.9687009881490639,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.036417484283447266
+      },
+      {
+        "original_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzed_text": "Our company experienced a significant information breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.7088952537407993,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.05029034614562988
+      },
+      {
+        "original_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzed_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6486616744019014,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0454561710357666
+      },
+      {
+        "original_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzed_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.5518136234530439,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.035912275314331055
+      },
+      {
+        "original_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzed_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6602975779136433,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04678988456726074
+      },
+      {
+        "original_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzed_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.3679856521976149,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0479888916015625
+      },
+      {
+        "original_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzed_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.7360253180759065,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03836655616760254
+      },
+      {
+        "original_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzed_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6304756725106447,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.046416521072387695
+      },
+      {
+        "original_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzed_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6535907086309702,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03759026527404785
+      },
+      {
+        "original_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzed_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6713701468005033,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03655529022216797
+      },
+      {
+        "original_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzed_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzing_level": 0.7,
+        "similarity_score": 0.6758524207898621,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03239107131958008
+      }
+    ],
+    "0.9": [
+      {
+        "original_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzed_text": "Unauthorized access to confidential customer data and financial information resulted in privacy violations and data exposure",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.9687009881490639,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03979825973510742
+      },
+      {
+        "original_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzed_text": "Our company experienced a significant data breach that exposed sensitive customer information including names, addresses, and payment details",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.7298981598490645,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04497051239013672
+      },
+      {
+        "original_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzed_text": "The security incident involved unauthorized access to our internal systems and resulted in the disclosure of confidential business documents",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6486616744019014,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.04198098182678223
+      },
+      {
+        "original_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzed_text": "A major vulnerability was discovered in our authentication system that could allow attackers to gain access to restricted employee data",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.5518136234530439,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.038184165954589844
+      },
+      {
+        "original_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzed_text": "The privacy violation occurred when personal information of over 10,000 customers was accidentally published on our public website",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6602975779136433,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03403449058532715
+      },
+      {
+        "original_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzed_text": "Our internal investigation revealed that proprietary trade secrets and intellectual property were compromised during the cyber attack",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.3679856521976149,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0363314151763916
+      },
+      {
+        "original_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzed_text": "The data leak incident exposed confidential financial records and strategic business plans to unauthorized third parties",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.7360253180759065,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03521370887756348
+      },
+      {
+        "original_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzed_text": "A serious security flaw in our database system allowed external actors to access classified customer information without authorization",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6304756725106447,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03828120231628418
+      },
+      {
+        "original_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzed_text": "The information security breach resulted in the unauthorized disclosure of sensitive employee records and internal communications",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6535907086309702,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.034693002700805664
+      },
+      {
+        "original_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzed_text": "Our systems were compromised by malicious actors who gained access to restricted customer data and confidential business information",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6713701468005033,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.0377805233001709
+      },
+      {
+        "original_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzed_text": "The data exposure incident involved the accidental release of private customer details and proprietary technology specifications",
+        "fuzzing_level": 0.9,
+        "similarity_score": 0.6758524207898621,
+        "transformation_method": "unified_transformation",
+        "target_concept": "unauthorized access to confidential customer data and financial information resulting in privacy violations and data exposure",
+        "metadata": {
+          "context_documents": 5,
+          "embedding_model": "all-MiniLM-L6-v2"
+        },
+        "processing_time": 0.03168797492980957
+      }
+    ]
+  }
+}

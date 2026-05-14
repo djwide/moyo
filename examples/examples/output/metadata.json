@@ -1,0 +1,20 @@
+[
+  {
+    "source": "file:sample_document.txt",
+    "chunk_index": 0,
+    "chunk_size": 141,
+    "text_preview": "Natural Language Processing (NLP) is a field of artificial intelligence that focuses on the interact..."
+  },
+  {
+    "source": "file:sample_document.txt",
+    "chunk_index": 1,
+    "chunk_size": 139,
+    "text_preview": "uters and human language. It involves the development of algorithms and models that can understand, ..."
+  },
+  {
+    "source": "file:sample_document.txt",
+    "chunk_index": 2,
+    "chunk_size": 239,
+    "text_preview": "generate human language. Key applications of NLP include: - Text classification and sentiment analys..."
+  }
+]

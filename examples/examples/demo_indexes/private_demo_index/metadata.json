@@ -1,0 +1,56 @@
+[
+  {
+    "id": "chunk_private_doc_001_0_ede700bd",
+    "source": "private_doc_001",
+    "chunk_index": 0,
+    "text_preview": "Our internal research has developed a neural network architecture for image recognition that uses co...",
+    "title": "Internal AI Research Report",
+    "author": "Internal Research Team",
+    "organization": "TechCorp Inc."
+  },
+  {
+    "id": "chunk_private_doc_001_1_ca5b1529",
+    "source": "private_doc_001",
+    "chunk_index": 1,
+    "text_preview": "ers with residual connections. This approach achieves 15% better performance than existing solutions...",
+    "title": "Internal AI Research Report",
+    "author": "Internal Research Team",
+    "organization": "TechCorp Inc."
+  },
+  {
+    "id": "chunk_private_doc_002_0_56eda479",
+    "source": "private_doc_002",
+    "chunk_index": 2,
+    "text_preview": "Our confidential product roadmap includes plans for a new machine learning platform that will integr...",
+    "title": "Confidential Product Roadmap",
+    "author": "Product Team",
+    "organization": "TechCorp Inc."
+  },
+  {
+    "id": "chunk_private_doc_002_1_1b23627e",
+    "source": "private_doc_002",
+    "chunk_index": 3,
+    "text_preview": "tegrate with existing systems. The platform will support multiple neural network architectures and p...",
+    "title": "Confidential Product Roadmap",
+    "author": "Product Team",
+    "organization": "TechCorp Inc."
+  },
+  {
+    "id": "chunk_private_doc_003_0_dbaf3673",
+    "source": "private_doc_003",
+    "chunk_index": 4,
+    "text_preview": "Based on current market conditions and our sales pipeline, we project Q4 2023 revenue to increase by...",
+    "title": "Financial Projections Q4 2023",
+    "author": "Finance Team",
+    "organization": "TechCorp Inc."
+  },
+  {
+    "id": "chunk_private_doc_003_1_ff4c0607",
+    "source": "private_doc_003",
+    "chunk_index": 5,
+    "text_preview": "ncrease by 25% compared to Q3. Key growth drivers include our new AI product line and expansion into...",
+    "title": "Financial Projections Q4 2023",
+    "author": "Finance Team",
+    "organization": "TechCorp Inc."
+  }
+]

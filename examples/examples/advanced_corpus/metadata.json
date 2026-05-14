@@ -1,0 +1,16 @@
+[
+  {
+    "id": "chunk_13e0c5f2",
+    "source": "ai_overview",
+    "chunk_index": 0,
+    "text_preview": "artificial intelligence is transforming industries across the globe. from healthcare to finance, ai ...",
+    "normalized": true
+  },
+  {
+    "id": "chunk_49bfb552",
+    "source": "ml_applications",
+    "chunk_index": 1,
+    "text_preview": "machine learning algorithms can identify patterns in data that humans might miss. this capability ma...",
+    "normalized": true
+  }
+]

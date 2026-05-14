@@ -1,0 +1,26 @@
+[
+  {
+    "id": "chunk_13e0c5f2",
+    "text": "artificial intelligence is transforming industries across the globe. from healthcare to finance, ai applications are becoming increasingly prevalent.",
+    "chunk_index": 0,
+    "source_document": "ai_overview",
+    "chunk_size": 149,
+    "start_position": null,
+    "end_position": null,
+    "metadata": {
+      "normalized": true
+    }
+  },
+  {
+    "id": "chunk_49bfb552",
+    "text": "machine learning algorithms can identify patterns in data that humans might miss. this capability makes ml valuable for predictive analytics and decision making.",
+    "chunk_index": 1,
+    "source_document": "ml_applications",
+    "chunk_size": 161,
+    "start_position": null,
+    "end_position": null,
+    "metadata": {
+      "normalized": true
+    }
+  }
+]

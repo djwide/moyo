@@ -1,0 +1,48 @@
+{
+  "id": "public_index_Demo Public Index_436fde5b",
+  "name": "Demo Public Index",
+  "description": "Demo public index for barrier analysis",
+  "config": {
+    "index_type": "flat",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chunk_size": 200,
+    "chunk_overlap": 30,
+    "normalize_embeddings": true,
+    "save_metadata": true,
+    "output_directory": "examples/demo_indexes",
+    "nlist": 100,
+    "m": 32,
+    "ef_construction": 200,
+    "nbits": 8,
+    "min_chunk_length": 50,
+    "max_chunk_length": 2000,
+    "deduplication_enabled": true,
+    "normalization_enabled": true,
+    "source_types": [],
+    "date_from": null,
+    "date_to": null,
+    "organizations": [],
+    "min_relevance_score": 0.0,
+    "min_confidence_score": 0.0
+  },
+  "source_count": 3,
+  "chunk_count": 6,
+  "vector_count": 6,
+  "index_size_bytes": 9216,
+  "created_at": "2025-09-07 15:29:11.776448",
+  "updated_at": "2025-09-07 15:29:11.776452",
+  "metadata": {
+    "embedding_model": "all-MiniLM-L6-v2",
+    "chunk_size": 200,
+    "chunk_overlap": 30,
+    "source_types": [
+      "press_release",
+      "patent",
+      "conference_talk"
+    ],
+    "organizations": [
+      "AI Research Institute",
+      "TechCorp Inc."
+    ]
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "corpus_id": "corpus_82ae50ac",
+  "created_at": "2025-09-06 17:51:58.788162",
+  "document_count": 3,
+  "chunk_count": 3,
+  "vector_count": 3,
+  "embedding_dimension": 384,
+  "index_type": "flat",
+  "embedding_model": "all-MiniLM-L6-v2",
+  "total_size_bytes": null,
+  "metadata": {
+    "config": {
+      "chunk_size": 150,
+      "chunk_overlap": 25,
+      "embedding_model": "all-MiniLM-L6-v2",
+      "batch_size": 32,
+      "index_type": "flat",
+      "deduplication_enabled": true,
+      "normalization_enabled": true,
+      "min_chunk_length": 10,
+      "max_chunk_length": 2000,
+      "output_directory": "examples/gui_bridge_corpus",
+      "save_chunks": true,
+      "save_metadata": true
+    },
+    "statistics": {
+      "text_statistics": {
+        "total_chunks": 3,
+        "total_characters": 212,
+        "average_length": 70.66666666666667,
+        "min_length": 67,
+        "max_length": 75,
+        "length_distribution": {
+          "short": 3,
+          "medium": 0,
+          "long": 0
+        }
+      },
+      "duplicate_statistics": {
+        "total_chunks": 3,
+        "unique_chunks": 3,
+        "duplicate_ratio": 0.0,
+        "duplicates_removed": 0
+      },
+      "source_distribution": {
+        "gui_input_1": 1,
+        "gui_input_2": 1,
+        "file:sample_document.txt": 1
+      }
+    }
+  }
+}
