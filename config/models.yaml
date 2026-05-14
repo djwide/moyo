@@ -1,0 +1,2 @@
+default_embedding: sentence-transformers/all-MiniLM-L6-v2
+default_index: FlatL2
