@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """
-Launcher script for moyo GUI.
+Launcher script for moyo GUI (legacy entry point).
 
-Prefer running after `pip install -e .` from the repo root; this script adds
-the project root and the vendored shared_utils directory to sys.path as a
-fallback for development without an editable install.
+Prefer the installed console script instead:
+
+    pip install -e .
+    moyo-gui
+
+This script is retained for convenience when running directly from a checkout
+without an editable install.  It adds the repo root to sys.path so that the
+`moyo` package (which includes `moyo.gui`) is importable even without
+installation — no separate shared_utils path manipulation is needed because
+shared_utils is vendored inside the `moyo` package.
 """
 
 import sys
 from pathlib import Path
 
-# Project root is one level above this file (repo root).
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-# shared_utils is vendored inside the repo root, not in a sibling directory.
-shared_utils_path = project_root / "shared_utils"
-if shared_utils_path.is_dir():
-    sys.path.insert(0, str(shared_utils_path))
+_repo_root = Path(__file__).parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 if __name__ == "__main__":
-    from moyo_gui import main
+    from moyo.gui.app import main
     main()

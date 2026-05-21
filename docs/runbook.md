@@ -131,8 +131,8 @@ moyo-datainput process "Text content" \
 # Process a single file
 moyo-datainput process --file document.txt
 
-# Process multiple files
-moyo-datainput process --files file1.txt file2.txt file3.txt
+# Process multiple files (repeat --files for each file)
+moyo-datainput process --files file1.txt --files file2.txt --files file3.txt
 
 # Process with custom output directory
 moyo-datainput process --file document.txt --output-dir indexes/custom
@@ -224,8 +224,20 @@ else:
 
 ### Public Source Gathering
 
-Use the `PublicSourcesCrawler` Python API directly (there is no `moyo-gather` CLI
-entry point yet):
+Use the `moyo-gather` CLI or the `PublicSourcesCrawler` Python API:
+
+```bash
+# Crawl by topic string
+moyo-gather crawl --topic "artificial intelligence"
+
+# Token-driven crawl (comma-separated list)
+moyo-gather crawl-tokens --tokens "neural networks,transformers,LLM"
+
+# Save results to a custom output directory
+moyo-gather crawl --topic "machine learning" --output results/ml_sources
+```
+
+Or call the Python API directly:
 
 ```python
 from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
@@ -233,7 +245,7 @@ from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 crawler = PublicSourcesCrawler()
 
 # Crawl by topic string
-results = crawler.crawl(["artificial intelligence", "machine learning"])
+results = crawler.crawl("artificial intelligence")
 
 # Token-driven crawl seeded from private-corpus centroids
 results = crawler.crawl_with_tokens(tokens)
@@ -312,8 +324,7 @@ moyo-probe search \
   --corpus-dir indexes/private \
   --query "confidential data" \
   --k 20 \
-  --similarity-threshold 0.7 \
-  --output results/search_results.json
+  --similarity-threshold 0.7
 ```
 
 ### Iterative LLM Search
@@ -413,8 +424,8 @@ ps aux | grep moyo
 
 **Solution**:
 ```bash
-# Ensure shared_utils is installed
-cd shared_utils && pip install -e .
+# shared_utils is vendored inside the moyo package — reinstall from the repo root
+pip install -e .
 
 # Verify installation
 python -c "import shared_utils; print('shared_utils available')"
@@ -429,8 +440,9 @@ python -c "import shared_utils; print('shared_utils available')"
 # Check index file integrity
 python -c "import faiss; faiss.read_index('path/to/index')"
 
-# Rebuild index if corrupted
-moyo-datainput process --file source.txt --force
+# Rebuild index if corrupted (remove the old index directory first, then reprocess)
+rm -rf indexes/private/corrupted_index
+moyo-datainput process --file source.txt
 ```
 
 #### LLM API Errors
@@ -689,8 +701,9 @@ moyo-probe fuzz      # LLM-assisted fuzzing
 moyo-probe search    # Corpus search
 moyo-probe test-llm  # Test LLM configuration
 
-# Public source gathering (Python API — no CLI entry point yet)
-# from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
+# Public source gathering
+moyo-gather crawl --topic <topic>
+moyo-gather crawl-tokens --tokens <comma-separated-tokens>
 ```
 
 #### Common Options

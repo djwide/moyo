@@ -1,5 +1,0 @@
-[console_scripts]
-moyo = moyo.cli:cli
-moyo-corpus = moyo.privateside.mapcorpus.cli:cli
-moyo-datainput = moyo.cli.datainput:datainput
-moyo-probe = moyo.publicside.barrierprobe.cli:cli
