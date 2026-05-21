@@ -1,4 +1,4 @@
-"""Shared text chunking utilities for sente and Moyo projects."""
+"""Shared text chunking utilities for sente and moyo projects."""
 
 import re
 from typing import List, Iterator, Optional

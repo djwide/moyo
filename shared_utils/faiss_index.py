@@ -1,4 +1,4 @@
-"""Shared FAISS index utilities for sente and Moyo projects."""
+"""Shared FAISS index utilities for sente and moyo projects."""
 
 import json
 import logging

@@ -203,7 +203,7 @@ def example_gui_bridge_usage():
 
 def main():
     """Run all examples."""
-    print("Moyo GUI Bridge Examples")
+    print("moyo GUI Bridge Examples")
     print("=" * 50)
     
     try:

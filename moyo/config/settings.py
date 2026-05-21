@@ -1,4 +1,4 @@
-"""Centralized configuration for Moyo project."""
+"""Centralized configuration for moyo project."""
 
 import os
 import yaml

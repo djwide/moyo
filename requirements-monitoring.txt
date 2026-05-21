@@ -1,7 +1,10 @@
-# Monitoring and Configuration Dependencies for Moyo
+# Monitoring and configuration dependencies for moyo
+# Most of these are now covered by pyproject.toml; this file exists for
+# environments that install deps separately (e.g. Docker build stages).
 
 # Configuration management
-pydantic>=1.10.0
+pydantic>=2,<3
+pydantic-settings>=2
 PyYAML>=6.0
 
 # Prometheus metrics
@@ -10,5 +13,5 @@ prometheus-client>=0.16.0
 # HTTP requests for metrics server
 requests>=2.28.0
 
-# Optional: For enhanced monitoring
-psutil>=5.9.0  # System metrics
+# Optional: system metrics
+psutil>=5.9.0

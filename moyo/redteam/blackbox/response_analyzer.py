@@ -129,7 +129,7 @@ class ResponseAnalyzer:
     def analyze_batch(self, results: List[ProbeResult]) -> List[AnomalySignal]:
         return [self.analyze(r) for r in results]
 
-    def summarise(self, signals: List[AnomalySignal]) -> Dict[str, Any]:
+    def summarize(self, signals: List[AnomalySignal]) -> Dict[str, Any]:
         flagged = [s for s in signals if s.flag]
         anomaly_type_counts: Dict[str, int] = {}
         for s in signals:
@@ -161,7 +161,7 @@ class ResponseAnalyzer:
         """Lightweight NER without spaCy dependency.
 
         Extracts capitalized multi-word sequences that look like proper names,
-        organisation codes, or product names. Falls back to a regex heuristic.
+        organization codes, or product names. Falls back to a regex heuristic.
         """
         # Try spaCy first
         try:

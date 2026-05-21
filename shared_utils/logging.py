@@ -1,4 +1,4 @@
-"""Shared logging utilities for sente and Moyo projects."""
+"""Shared logging utilities for sente and moyo projects."""
 
 import logging
 import sys

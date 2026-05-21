@@ -1,10 +1,10 @@
-# Moyo
+# moyo
 
-Experimental tooling for corpus mapping and barrier probing. Moyo helps organisations understand information barriers between their private data and public sources.
+Experimental tooling for corpus mapping and barrier probing. moyo helps organizations understand information barriers between their private data and public sources.
 
 ## Overview
 
-Moyo provides:
+moyo provides:
 
 - **Private side processing**: Ingest local data and build a FAISS-backed vector corpus
 - **Public side analysis**: Gather and index open-source information
@@ -14,28 +14,33 @@ Moyo provides:
 ## Architecture
 
 ```
-moyo/
-├── moyo/
-│   ├── cli.py                    # Main CLI (moyo setup/info/version)
-│   ├── config/                   # Configuration management
-│   ├── interfaces/               # Common interfaces
+.                               ← repo root (git clone goes here)
+├── moyo/                       ← Python package
+│   ├── cli.py                  # Main CLI (moyo setup/info/version)
+│   ├── config/                 # Configuration management
+│   ├── interfaces/             # Common interfaces
 │   ├── privateside/
-│   │   ├── datainput/            # Data input and GUI bridge
-│   │   └── mapcorpus/            # Corpus building and centroids
-│   │       ├── builder.py        # FAISS indexer
-│   │       ├── centroids.py      # Topic token extraction
+│   │   ├── datainput/          # Data input and GUI bridge
+│   │   └── mapcorpus/          # Corpus building and centroids
+│   │       ├── builder.py      # FAISS indexer
+│   │       ├── centroids.py    # Topic token extraction
 │   │       └── schema.py
-│   └── publicside/
-│       ├── gatherpublicsources/  # Crawler and source adapters
-│       │   ├── crawler.py        # crawl() and crawl_with_tokens()
-│       │   ├── sources/          # Patent, git, arXiv, web, etc.
-│       │   ├── parsers/
-│       │   └── enrichers/
-│       └── barrierprobe/         # Barrier analysis
-│           ├── barrier_analyzer.py
-│           ├── llm_fuzzer.py
-│           ├── iterative_llm_search.py
-│           └── two_layer_fuzzer.py
+│   ├── publicside/
+│   │   ├── gatherpublicsources/  # Crawler and source adapters
+│   │   │   ├── crawler.py      # crawl() and crawl_with_tokens()
+│   │   │   ├── sources/        # Patent, git, arXiv, web, etc.
+│   │   │   ├── parsers/
+│   │   │   └── enrichers/
+│   │   └── barrierprobe/       # Barrier analysis
+│   │       ├── barrier_analyzer.py
+│   │       ├── llm_fuzzer.py
+│   │       ├── iterative_llm_search.py
+│   │       └── two_layer_fuzzer.py
+│   └── redteam/                # LLM red-teaming
+│       ├── whitebox/
+│       └── blackbox/
+├── shared_utils/               # Vendored utilities (embeddings, FAISS, ingest)
+├── moyoGUI/                    # Optional PyQt5 desktop GUI
 ├── examples/
 └── docs/
 ```
@@ -43,9 +48,12 @@ moyo/
 ## Installation
 
 ```bash
-# From the monorepo root
-pip install -e shared_utils/
-pip install -e moyo/
+# From the repo root — shared_utils is vendored and installed automatically
+pip install -e .
+
+# Optional extras
+pip install -e ".[monitoring]"   # psutil, requests
+pip install -e ".[gui]"          # PyQt5, matplotlib, scikit-learn
 ```
 
 ## Quick Start
@@ -159,8 +167,8 @@ After `moyo setup`:
 
 ## Dependencies
 
-- `shared_utils` (vendored under `moyo/shared_utils/`) – text processing, embeddings, FAISS
-- `pydantic` – schemas and validation
+- `shared_utils` (vendored under `shared_utils/` in the repo root) – text processing, embeddings, FAISS
+- `pydantic>=2` + `pydantic-settings` – schemas and validation
 - `click` – CLI framework
 - `faiss-cpu` (or `faiss-gpu`) – vector similarity search
 - `openai >= 1.0.0` – LLM fuzzing
@@ -169,8 +177,9 @@ After `moyo setup`:
 ## Development
 
 ```bash
-cd moyo
-pip install -e .
+# Install in editable mode with all extras
+pip install -e ".[monitoring,gui]"
+
 python -m pytest tests/
 flake8 moyo/
 black moyo/
@@ -181,7 +190,8 @@ black moyo/
 A PyQt5 desktop GUI is available in `moyoGUI/`:
 
 ```bash
-cd moyo/moyoGUI
+pip install -e ".[gui]"
+cd moyoGUI
 python run_moyo_gui.py
 ```
 

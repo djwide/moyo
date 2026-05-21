@@ -1,6 +1,6 @@
-# Moyo GUI
+# moyo GUI
 
-A comprehensive graphical user interface for the Moyo project, providing user-friendly access to all major functionality through a tabbed interface.
+A comprehensive graphical user interface for the moyo project, providing user-friendly access to all major functionality through a tabbed interface.
 
 ## Features
 
@@ -34,7 +34,7 @@ A comprehensive graphical user interface for the Moyo project, providing user-fr
 
 - Python 3.8 or higher
 - PyQt5 (GUI framework)
-- Moyo project dependencies
+- moyo project dependencies
 
 ### Installation Steps
 
@@ -43,12 +43,11 @@ A comprehensive graphical user interface for the Moyo project, providing user-fr
    pip install PyQt5
    ```
 
-2. **Install Moyo dependencies**:
+2. **Install moyo dependencies**:
    ```bash
-   cd moyo
-   pip install -e .
+   pip install -e ".[gui]"
    ```
-   The vendored `shared_utils` package is installed automatically as part of moyo.
+   The vendored `shared_utils` package is installed automatically.
 
 ## Usage
 
@@ -56,13 +55,13 @@ A comprehensive graphical user interface for the Moyo project, providing user-fr
 
 #### Method 1: Using the launcher script (recommended)
 ```bash
-cd moyo/moyoGUI
+cd moyoGUI
 python run_moyo_gui.py
 ```
 
 #### Method 2: Direct execution
 ```bash
-cd moyo/moyoGUI
+cd moyoGUI
 python moyo_gui.py
 ```
 
@@ -90,7 +89,7 @@ python moyo_gui.py
 
 ## Architecture
 
-The Moyo GUI is built with PyQt5 and provides:
+The moyo GUI is built with PyQt5 and provides:
 
 - **Tabbed Interface**: Organized access to different functionality
 - **Threaded Operations**: Background processing to keep UI responsive
@@ -101,8 +100,8 @@ The Moyo GUI is built with PyQt5 and provides:
 ## Dependencies
 
 - `PyQt5`: GUI framework
-- `moyo`: Core Moyo functionality
-- `shared_utils`: Shared utilities from the SenTe project
+- `moyo`: Core moyo functionality
+- `shared_utils`: Shared utilities
 
 ## Development
 
@@ -134,13 +133,13 @@ To add a new tab:
    - Check for missing dependencies
 
 3. **Functionality not working**:
-   - Verify that the underlying Moyo modules are properly installed
+   - Verify that the underlying moyo modules are properly installed
    - Check the console output for error messages
 
 ## Configuration
 
-The GUI uses the same configuration as the underlying Moyo modules. Configuration files should be placed in the appropriate Moyo data directories.
+The GUI uses the same configuration as the underlying moyo modules. Configuration files should be placed in the appropriate moyo data directories.
 
 ## License
 
-This GUI is part of the Moyo project and follows the same licensing terms.
+This GUI is part of the moyo project and follows the same licensing terms.

@@ -1,4 +1,4 @@
-"""Shared embedding utilities for sente and Moyo projects."""
+"""Shared embedding utilities for sente and moyo projects."""
 
 from typing import Iterable, List, Optional
 import logging

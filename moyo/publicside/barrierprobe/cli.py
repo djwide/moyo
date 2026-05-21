@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 @click.option('--debug', is_flag=True, help='Enable debug logging')
 def cli(verbose: bool, debug: bool):
     """
-    Moyo Barrier Probe - LLM-assisted fuzzing and barrier analysis.
+    moyo Barrier Probe - LLM-assisted fuzzing and barrier analysis.
     
     This tool uses LLM-assisted techniques to probe information barriers between
     private and public corpora, helping identify potential information leakage.

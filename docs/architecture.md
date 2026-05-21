@@ -1,31 +1,30 @@
-# Moyo Architecture
+# moyo Architecture
 
 ## Overview
 
-Moyo is an experimental tool for corpus mapping and information-barrier analysis. It sits alongside sente in the SenTe monorepo and shares utilities via `shared_utils`.
+moyo is an experimental tool for corpus mapping and information-barrier analysis. It shares low-level utilities with sente via the vendored `shared_utils` package.
 
 ## Repository Structure
 
 ```
-SenTe/
-├── shared_utils/               # Shared utilities and ONNX models
-│   └── shared_utils/
-│       ├── embeddings.py, faiss_index.py, chunking.py, text_processing.py, ...
-│       └── models/             # miniLM_fp32.onnx, miniLM_int8.onnx
-├── moyo/                       # Moyo package
-│   ├── moyo/
-│   │   ├── cli.py              # Main CLI entry point
-│   │   ├── config/             # Configuration management
-│   │   ├── interfaces/         # Common interfaces
-│   │   ├── privateside/
-│   │   │   ├── datainput/      # GUI bridge and file/text input
-│   │   │   └── mapcorpus/      # Corpus building and centroids
-│   │   └── publicside/
-│   │       ├── gatherpublicsources/  # Crawler orchestrator and adapters
-│   │       └── barrierprobe/         # Barrier analysis and LLM search
-│   ├── examples/
-│   ├── docs/
-│   └── shared_utils/           # Vendored shared utilities (embeddings, FAISS, ingest, etc.)
+.                               ← repo root
+├── moyo/                       ← Python package
+│   ├── cli.py                  # Main CLI entry point
+│   ├── config/                 # Configuration management
+│   ├── interfaces/             # Common interfaces
+│   ├── privateside/
+│   │   ├── datainput/          # GUI bridge and file/text input
+│   │   └── mapcorpus/          # Corpus building and centroids
+│   ├── publicside/
+│   │   ├── gatherpublicsources/  # Crawler orchestrator and adapters
+│   │   └── barrierprobe/       # Barrier analysis and LLM search
+│   └── redteam/                # LLM red-teaming (whitebox + blackbox)
+├── shared_utils/               # Vendored shared utilities
+│   ├── embeddings.py, faiss_index.py, chunking.py, text_processing.py, ...
+│   └── models/                 # miniLM_fp32.onnx, miniLM_int8.onnx
+├── moyoGUI/                    # Optional PyQt5 desktop GUI
+├── examples/
+└── docs/
 ```
 
 ## Components
@@ -95,16 +94,15 @@ Closest matches → Text fuzzing → LLM queries → Semantic search → Refined
 ## Development
 
 ```bash
-# Install from the monorepo root
-pip install -e shared_utils/
-pip install -e moyo/
+# Install from the repo root (shared_utils is vendored and included automatically)
+pip install -e .
 
 # Run tests
-python -m pytest moyo/tests/
+python -m pytest tests/
 
 # Code quality
-flake8 moyo/moyo/
-black moyo/moyo/
+flake8 moyo/
+black moyo/
 ```
 
 ## Configuration

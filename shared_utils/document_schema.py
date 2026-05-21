@@ -1,4 +1,4 @@
-"""Normalized document schema for sente and Moyo projects.
+"""Normalized document schema for sente and moyo projects.
 
 This module defines a unified document schema that can be used across
 both private and public data processing pipelines.

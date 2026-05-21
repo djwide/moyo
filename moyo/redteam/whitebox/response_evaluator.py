@@ -106,7 +106,7 @@ class ResponseEvaluator:
 
         return evals
 
-    def summarise(self, evals: List[EvaluationResult]) -> Dict[str, Any]:
+    def summarize(self, evals: List[EvaluationResult]) -> Dict[str, Any]:
         """Produce a high-level summary dict from a list of EvaluationResults."""
         if not evals:
             return {"total": 0, "revealed": 0, "reveal_rate": 0.0, "by_strategy": {}}

@@ -1,8 +1,8 @@
-# Prometheus Value Proposition for Moyo/SenTe Project
+# Prometheus Value Proposition for moyo/sente Project
 
 ## Overview
 
-Prometheus monitoring integration provides significant value to the Moyo/SenTe project by enabling comprehensive observability, performance optimization, and operational insights for barrier analysis and corpus processing pipelines.
+Prometheus monitoring integration provides significant value to the moyo/sente project by enabling comprehensive observability, performance optimization, and operational insights for barrier analysis and corpus processing pipelines.
 
 ## Key Value Propositions
 
@@ -203,7 +203,7 @@ For development and deployment:
 
 ## Conclusion
 
-Prometheus monitoring provides essential observability for the Moyo/SenTe project's complex barrier analysis workflows. The investment in metrics collection and monitoring pays dividends through:
+Prometheus monitoring provides essential observability for the moyo/sente project's complex barrier analysis workflows. The investment in metrics collection and monitoring pays dividends through:
 
 - **Better Performance**: Data-driven optimization of all pipeline stages
 - **Lower Costs**: Efficient resource usage and LLM API optimization

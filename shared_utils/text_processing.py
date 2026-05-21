@@ -1,4 +1,4 @@
-"""Shared text processing utilities for sente and Moyo projects."""
+"""Shared text processing utilities for sente and moyo projects."""
 
 import re
 import hashlib

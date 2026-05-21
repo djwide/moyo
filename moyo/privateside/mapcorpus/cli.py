@@ -12,7 +12,7 @@ from .schema import CorpusConfig
 @click.option('--debug', is_flag=True, help='Enable debug logging')
 def cli(verbose: bool, debug: bool) -> None:
     """
-    Moyo Corpus Builder - Build and manage private knowledge corpora.
+    moyo Corpus Builder - Build and manage private knowledge corpora.
     
     This tool builds searchable corpora from various data sources, with support for
     text processing, deduplication, and vector indexing.

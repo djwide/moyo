@@ -283,7 +283,7 @@ def example_corpus_analysis():
 
 def main():
     """Run all examples."""
-    print("Moyo Corpus Builder Examples")
+    print("moyo Corpus Builder Examples")
     print("=" * 50)
     
     try:

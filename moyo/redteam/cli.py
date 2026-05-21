@@ -135,7 +135,7 @@ def whitebox_cmd(
                 all_eval_results.append(eval_result)
 
     # Summarise
-    summary = evaluator.summarise(all_eval_results)
+    summary = evaluator.summarize(all_eval_results)
 
     click.echo("\n" + click.style("=== RESULTS SUMMARY ===", fg="cyan", bold=True))
     click.echo(f"Total probes sent  : {summary['total_probes']}")
@@ -235,7 +235,7 @@ def blackbox_cmd(
     output_dir = str(pathlib.Path(output).parent / "rounds")
     round_results = prober.run_campaign(hypotheses, output_dir=output_dir)
 
-    summary = prober.summarise()
+    summary = prober.summarize()
 
     click.echo("\n" + click.style("=== RESULTS SUMMARY ===", fg="cyan", bold=True))
     click.echo(f"Rounds completed  : {summary['total_rounds']}")

@@ -1,4 +1,4 @@
-"""Shared ID generation utilities for sente and Moyo projects."""
+"""Shared ID generation utilities for sente and moyo projects."""
 
 import uuid
 import time

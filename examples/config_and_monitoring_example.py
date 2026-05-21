@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example demonstrating Moyo's centralized configuration, structured logging, and Prometheus metrics.
+Example demonstrating moyo's centralized configuration, structured logging, and Prometheus metrics.
 
 This example shows:
 1. Loading configuration from environment variables and YAML files
@@ -232,7 +232,7 @@ def example_environment_configuration():
 
 def main():
     """Run all examples."""
-    print("🚀 Moyo Configuration and Monitoring Examples")
+    print("moyo Configuration and Monitoring Examples")
     print("=" * 60)
     print()
     

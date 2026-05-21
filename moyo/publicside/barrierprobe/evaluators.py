@@ -14,7 +14,7 @@ def evaluate(candidate: str, embedding_model: str = "all-MiniLM-L6-v2") -> float
     """Return a semantic relevance score for candidate text in [0, 1].
 
     Uses the shared embedding infrastructure to embed the candidate and returns
-    its L2-normalised magnitude as a proxy for information density.  A score
+    its L2-normalized magnitude as a proxy for information density.  A score
     closer to 1.0 indicates higher semantic richness.
 
     For full barrier analysis (comparing against a private FAISS index) use
@@ -37,7 +37,7 @@ def evaluate(candidate: str, embedding_model: str = "all-MiniLM-L6-v2") -> float
         vec = np.array(embs[0], dtype=np.float32)
         norm = float(np.linalg.norm(vec))
         # Typical MiniLM L2 norm for a meaningful sentence is ~1.0 (if already
-        # normalised by sentence-transformers) so we cap at 1.0.
+        # normalized by sentence-transformers) so we cap at 1.0.
         return min(norm, 1.0)
     except Exception as exc:
         logger.warning(f"evaluate() failed: {exc}")

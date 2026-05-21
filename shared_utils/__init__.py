@@ -1,4 +1,4 @@
-"""Shared utilities for sente and Moyo projects."""
+"""Shared utilities for sente and moyo projects."""
 
 __version__ = "0.1.0"
 

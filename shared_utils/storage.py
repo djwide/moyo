@@ -1,4 +1,4 @@
-"""Shared storage utilities for sente and Moyo projects.
+"""Shared storage utilities for sente and moyo projects.
 
 Provides a uniform interface for local and S3-compatible backends.
 """

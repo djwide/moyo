@@ -1,4 +1,4 @@
-# Moyo GUI Bridge Guide
+# moyo GUI Bridge Guide
 
 The GUI Bridge provides a clean interface for GUI applications to process text and files, build FAISS indexes, and perform semantic searches.
 
@@ -184,7 +184,7 @@ class MoyoGUI:
     
     def setup_ui(self):
         self.root = tk.Tk()
-        self.root.title("Moyo Data Processor")
+        self.root.title("moyo Data Processor")
         
         # Text input
         tk.Label(self.root, text="Text Input:").pack()

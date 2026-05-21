@@ -1,8 +1,8 @@
-# Threat Model — Moyo Red Teaming Tool
+# Threat Model — moyo Red Teaming Tool
 
 ## Overview
 
-This document defines the threat model for Moyo's LLM red teaming capability.
+This document defines the threat model for moyo's LLM red teaming capability.
 The tool is designed to help organizations discover whether an LLM system (e.g.
 a fine-tuned or RAG-augmented model deployed internally) will reveal proprietary
 or classified information under adversarial prompting.
@@ -43,7 +43,7 @@ governance assessments, penetration testing of AI systems with written permissio
 - **Profile**: Authorized penetration tester or AI safety team
 - **Knowledge**: Full access to secret inventory (white-box) or blind audit
 - **Goal**: Measure exposure risk before deployment or after fine-tuning
-- **Mapped mode**: Both modes; Moyo is designed for this actor
+- **Mapped mode**: Both modes; moyo is designed for this actor
 
 ---
 
@@ -88,7 +88,7 @@ narrowing in on proprietary topics without prior knowledge.
 ### AV-8: Corpus Leakage via Embedding Proximity (Corpus-Level)
 Identifying that private training data is semantically too close to public content,
 revealing that private information may be reconstructible from public sources.
-- **Strategy**: `BarrierAnalyzer` + `TwoLayerFuzzer` (existing Moyo capability)
+- **Strategy**: `BarrierAnalyzer` + `TwoLayerFuzzer` (existing moyo capability)
 - **Mitigation**: Data deduplication before fine-tuning, minimum distance thresholds
 
 ---
@@ -148,7 +148,7 @@ revealing that private information may be reconstructible from public sources.
 
 ## Out of Scope
 
-- Attacks against Moyo itself (tool hardening is a separate concern)
+- Attacks against moyo itself (tool hardening is a separate concern)
 - Attacks that require physical access to infrastructure
 - Social engineering of human operators
 - Training data extraction via gradient-based membership inference (model-level; not prompt-based)

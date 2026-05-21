@@ -4,7 +4,7 @@ Generates exploratory probe hypotheses without knowing the organization's
 secrets. Uses three interchangeable backends:
 
 - 'llm'           : ask a helper LLM to brainstorm likely proprietary topics
-- 'public_corpus' : leverage existing Moyo public FAISS index to seed queries
+- 'public_corpus' : leverage existing moyo public FAISS index to seed queries
 - 'manual'        : use caller-supplied seed strings
 """
 

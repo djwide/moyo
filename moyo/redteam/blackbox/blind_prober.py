@@ -110,7 +110,7 @@ class BlindProber:
         return self.all_rounds
 
     def _run_round(self, round_num: int, hypotheses: List[Hypothesis]) -> BlackBoxRoundResult:
-        """Execute a single round: probe each hypothesis, analyse responses."""
+        """Execute a single round: probe each hypothesis, analyze responses."""
         probes_sent: List[ProbeResult] = []
         for hyp in hypotheses:
             # Send the hypothesis query as the probe directly
@@ -151,7 +151,7 @@ class BlindProber:
             new_hypotheses.extend(refined)
         return new_hypotheses
 
-    def summarise(self) -> Dict[str, Any]:
+    def summarize(self) -> Dict[str, Any]:
         """Produce a campaign summary dict."""
         if not self.all_rounds:
             return {"total_rounds": 0, "total_probes": 0, "total_flagged": 0}

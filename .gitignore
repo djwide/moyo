@@ -1,5 +1,6 @@
 __pycache__/
 .env
+*.egg-info/
 
 # Private data and indexes
 data/private/*

@@ -300,8 +300,8 @@ hypotheses = generator.generate_adaptive_hypotheses(
 
 ## Integration with Existing Systems
 
-### Moyo Integration
-The two-layer fuzzing system integrates seamlessly with the existing Moyo framework:
+### moyo Integration
+The two-layer fuzzing system integrates seamlessly with the existing moyo framework:
 
 ```python
 from moyo.publicside.barrierprobe.two_layer_fuzzer import TwoLayerFuzzer

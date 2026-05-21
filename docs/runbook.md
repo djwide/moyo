@@ -1,6 +1,6 @@
-# Moyo Runbook
+# moyo Runbook
 
-Operational guidance for running Moyo components and managing corpus mapping and barrier probing systems.
+Operational guidance for running moyo components and managing corpus mapping and barrier probing systems.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ Operational guidance for running Moyo components and managing corpus mapping and
 
 ## System Overview
 
-Moyo is an experimental tooling system for corpus mapping and barrier probing. It provides comprehensive tools for building knowledge corpora and assessing information barriers between private and public data sources.
+moyo is an experimental tooling system for corpus mapping and barrier probing. It provides comprehensive tools for building knowledge corpora and assessing information barriers between private and public data sources.
 
 ### Key Components
 
@@ -52,9 +52,8 @@ moyo/
 ### Step 1: Install Dependencies
 
 ```bash
-# Install moyo in development mode
+# Install moyo from the repo root
 # (vendored shared_utils is installed automatically)
-cd moyo
 pip install -e .
 ```
 
@@ -149,7 +148,7 @@ moyo-datainput process --file document.txt --json
 moyo-datainput process --file document.txt --no-save
 
 # Verbose processing with debug information
-moyo-datainput process --file document.txt --verbose --debug
+moyo-datainput process --file document.txt -v --debug
 ```
 
 ### Corpus Building
@@ -225,28 +224,19 @@ else:
 
 ### Public Source Gathering
 
-#### Crawl Public Sources
+Use the `PublicSourcesCrawler` Python API directly (there is no `moyo-gather` CLI
+entry point yet):
 
-```bash
-# Crawl sources for a specific topic
-moyo-gather crawl --topic "artificial intelligence" --sources patents,git,conferences
+```python
+from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 
-# Crawl with custom configuration
-moyo-gather crawl \
-  --topic "machine learning" \
-  --sources patents,press-releases \
-  --max-results 100 \
-  --output-dir data/public/ai_sources
-```
+crawler = PublicSourcesCrawler()
 
-#### Parse and Enrich Data
+# Crawl by topic string
+results = crawler.crawl(["artificial intelligence", "machine learning"])
 
-```bash
-# Parse crawled data
-moyo-gather parse --input-dir data/public/raw --output-dir data/public/parsed
-
-# Enrich with additional metadata
-moyo-gather enrich --input-dir data/public/parsed --output-dir data/public/enriched
+# Token-driven crawl seeded from private-corpus centroids
+results = crawler.crawl_with_tokens(tokens)
 ```
 
 ### Public Index Building
@@ -278,18 +268,18 @@ result = builder.build_index("Public AI Index", "AI-related public sources")
 #### Fuzz Phrases
 
 ```bash
-# Basic phrase fuzzing
+# Basic phrase fuzzing (repeat -p for each phrase)
 moyo-probe fuzz \
-  --phrases "data breach" "security incident" \
-  --target-concept "confidential information" \
-  --corpus-index indexes/private/corpus.index \
-  --output results/fuzzing_results.json
+  -p "data breach" -p "security incident" \
+  -t "confidential information" \
+  -i indexes/private/corpus.index \
+  -o results/fuzzing_results.json
 
 # Advanced fuzzing with custom parameters
 moyo-probe fuzz \
-  --phrases-file phrases.txt \
-  --target-concept "trade secrets" \
-  --corpus-index indexes/private/corpus.index \
+  -f phrases.txt \
+  -t "trade secrets" \
+  -i indexes/private/corpus.index \
   --llm-provider openai \
   --model gpt-4 \
   --max-iterations 10 \
@@ -462,10 +452,7 @@ moyo-probe test-llm --llm-provider openai --model gpt-4
 
 **Solution**:
 ```bash
-# Reduce batch size
-moyo-datainput process --file large_file.txt --batch-size 16
-
-# Use smaller chunk size
+# Use a smaller chunk size
 moyo-datainput process --file large_file.txt --chunk-size 256
 ```
 
@@ -493,21 +480,15 @@ iostat -x 1
 # Optimize configuration
 moyo-datainput process --file document.txt \
   --chunk-size 512 \
-  --batch-size 32 \
   --index-type flat
 ```
 
 #### Large Index Sizes
 
 ```bash
-# Use compressed index types
+# Use a compressed index type (ivf or hnsw)
 moyo-datainput process --file document.txt --index-type ivf
-
-# Optimize index parameters
-moyo-datainput process --file document.txt \
-  --index-type hnsw \
-  --hnsw-m 16 \
-  --hnsw-ef-construction 200
+moyo-datainput process --file document.txt --index-type hnsw
 ```
 
 ## Emergency Procedures
@@ -524,7 +505,7 @@ pkill -f moyo
 cp indexes/private/corrupted.index indexes/private/corrupted.index.backup
 
 # Rebuild from source
-moyo-datainput process --file source.txt --force
+moyo-datainput process --file source.txt
 ```
 
 #### Data Loss
@@ -708,10 +689,8 @@ moyo-probe fuzz      # LLM-assisted fuzzing
 moyo-probe search    # Corpus search
 moyo-probe test-llm  # Test LLM configuration
 
-# Public source commands
-moyo-gather crawl    # Crawl public sources
-moyo-gather parse    # Parse crawled data
-moyo-gather enrich   # Enrich parsed data
+# Public source gathering (Python API — no CLI entry point yet)
+# from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 ```
 
 #### Common Options
@@ -730,7 +709,7 @@ moyo-gather enrich   # Enrich parsed data
 | E001 | Module not found | Install missing dependencies |
 | E002 | API key invalid | Check API key configuration |
 | E003 | Index corrupted | Rebuild index from source |
-| E004 | Memory error | Reduce batch size or chunk size |
+| E004 | Memory error | Reduce chunk size |
 | E005 | File not found | Check file paths and permissions |
 | E006 | Network error | Check network connectivity |
 | E007 | Permission denied | Check file permissions |
@@ -745,6 +724,6 @@ moyo-gather enrich   # Enrich parsed data
 
 ---
 
-**Last Updated**: December 2024  
+**Last Updated**: May 2026  
 **Version**: 1.0  
-**Maintainer**: Moyo Operations Team
+**Maintainer**: moyo Operations Team

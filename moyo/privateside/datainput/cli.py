@@ -11,7 +11,7 @@ from .gui_bridge import GUIBridge, ProcessingConfig, process_text_and_build_inde
 @click.option('--debug', is_flag=True, help='Enable debug logging')
 def cli(verbose: bool, debug: bool) -> None:
     """
-    Moyo Data Input - Process private data and build FAISS indexes.
+    moyo Data Input - Process private data and build FAISS indexes.
     
     This tool processes text and files to create searchable vector indexes for private data.
     It supports various input formats and provides flexible configuration options.

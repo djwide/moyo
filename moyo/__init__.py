@@ -1,1 +1,1 @@
-"""Moyo package."""
+"""moyo package."""

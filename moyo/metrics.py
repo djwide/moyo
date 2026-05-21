@@ -1,4 +1,4 @@
-"""Prometheus metrics for Moyo project."""
+"""Prometheus metrics for moyo project."""
 
 import time
 from contextlib import contextmanager

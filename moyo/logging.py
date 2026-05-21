@@ -1,4 +1,4 @@
-"""Structured logging for Moyo project."""
+"""Structured logging for moyo project."""
 
 import json
 import logging
@@ -166,7 +166,7 @@ class MoyoLogger:
 
 
 def get_logger(name: str, settings=None) -> MoyoLogger:
-    """Get a configured Moyo logger."""
+    """Get a configured moyo logger."""
     return MoyoLogger(name, settings)
 
 

@@ -1,3 +1,5 @@
+import platform
+
 import click
 from pathlib import Path
 
@@ -11,9 +13,9 @@ from .logging import setup_logging
 @click.option('--config', '-c', help='Configuration file path')
 def cli(verbose: bool, debug: bool, config: str) -> None:
     """
-    Moyo - Experimental tooling for corpus mapping and barrier probing.
+    moyo - Experimental tooling for corpus mapping and barrier probing.
     
-    Moyo provides tools for building knowledge corpora and assessing information barriers
+    moyo provides tools for building knowledge corpora and assessing information barriers
     between private and public data sources.
     
     \b
@@ -69,10 +71,10 @@ def info_cmd() -> None:
         embedding_dim = "N/A"
         embedding_available = False
     
-    click.echo("Moyo System Information")
+    click.echo("moyo System Information")
     click.echo("=" * 40)
     click.echo(f"Version: {moyo_version}")
-    click.echo(f"Python: {click.get_current_context().meta.get('python_version', 'Unknown')}")
+    click.echo(f"Python: {platform.python_version()}")
     click.echo(f"Embedding Model: {'Available' if embedding_available else 'Not Available'}")
     if embedding_available:
         click.echo(f"Embedding Dimension: {embedding_dim}")
@@ -99,7 +101,7 @@ def setup_cmd(force: bool) -> None:
         'logs'
     ]
     
-    click.echo("Setting up Moyo directory structure...")
+    click.echo("Setting up moyo directory structure...")
     
     for dir_path in dirs_to_create:
         path = Path(dir_path)

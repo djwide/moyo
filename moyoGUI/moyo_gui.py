@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MoyoGUI - A comprehensive GUI for the Moyo project
+moyo GUI - A comprehensive GUI for the moyo project
 Provides tabs for data input, FAISS index creation, and 2D visualization
 """
 
@@ -1434,14 +1434,14 @@ class VisualizationTab(QWidget):
 
 
 class MoyoGUI(QMainWindow):
-    """Main Moyo GUI application"""
+    """Main moyo GUI application"""
     
     def __init__(self):
         super().__init__()
         self.init_ui()
         
     def init_ui(self):
-        self.setWindowTitle("Moyo GUI")
+        self.setWindowTitle("moyo GUI")
         self.setGeometry(100, 100, 1400, 900)
         
         # Create central widget and layout
@@ -1480,11 +1480,11 @@ class MoyoGUI(QMainWindow):
 
 
 def main():
-    """Main entry point for the Moyo GUI"""
+    """Main entry point for the moyo GUI"""
     app = QApplication(sys.argv)
     
     # Set application properties
-    app.setApplicationName("Moyo GUI")
+    app.setApplicationName("moyo GUI")
     app.setApplicationVersion("1.0.0")
     
     # Create and show the main window

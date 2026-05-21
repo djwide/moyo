@@ -1,4 +1,4 @@
-"""Reusable ingestion pipeline for Moyo and SenTe projects.
+"""Reusable ingestion pipeline for moyo and sente projects.
 
 Modules:
 - validators: MIME/type/size/archive guards

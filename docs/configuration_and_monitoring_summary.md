@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the implementation of centralized configuration, structured logging, and Prometheus metrics for the Moyo project.
+This document summarizes the implementation of centralized configuration, structured logging, and Prometheus metrics for the moyo project.
 
 ## What Was Implemented
 

@@ -1,4 +1,4 @@
-"""Prometheus metrics server for Moyo project."""
+"""Prometheus metrics server for moyo project."""
 
 import threading
 import time
@@ -73,7 +73,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Moyo Metrics Server</title>
+            <title>moyo Metrics Server</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 40px; }}
                 .endpoint {{ background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }}
@@ -81,7 +81,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             </style>
         </head>
         <body>
-            <h1>Moyo Metrics Server</h1>
+            <h1>moyo Metrics Server</h1>
             <p>Available endpoints:</p>
             
             <div class="endpoint">
