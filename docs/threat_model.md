@@ -32,12 +32,20 @@ governance assessments, penetration testing of AI systems with written permissio
 - **Knowledge**: No access to internal systems; queries the target LLM publicly
 - **Goal**: Extract proprietary data by probing the LLM with inferred questions
 - **Mapped mode**: Black-box (`moyo-redteam blackbox`)
+- **Hypotheses**: The hypothesis engine can be seeded from a **probe path**
+  (`--probe-path`) — a curated list of secrets a given target type would value
+  (see `probe_paths/`). Seeds are injected as high-confidence hypotheses and used
+  to focus LLM expansion.
 
 ### T2 — Insider Threat (White-Box)
 - **Profile**: Disgruntled employee, contractor, or compromised account
 - **Knowledge**: Has partial knowledge of what secrets the LLM may contain
 - **Goal**: Confirm and extract specific classified information
 - **Mapped mode**: White-box (`moyo-redteam whitebox`)
+- **Grounding**: With `--private-index`, probes are grounded in the private
+  corpus's mapcorpus centroids/topic tokens, and `--refine-rounds` iteratively
+  rewrites each unrevealed probe toward the protected passages a response comes
+  closest to (helper LLM only; secrets are never sent to it).
 
 ### T3 — Security Researcher / Auditor
 - **Profile**: Authorized penetration tester or AI safety team

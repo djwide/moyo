@@ -10,10 +10,65 @@ from .llm_fuzzer import LLMFuzzer, LLMFuzzerConfig, fuzz_phrases_for_barrier_ana
 from .barrier_analyzer import BarrierAnalyzer
 from .iterative_llm_search import refine_suspicious_pairs
 from .schema import BarrierProbeConfig
-from ..mapcorpus.builder import CorpusBuilder, CorpusConfig
 from shared_utils import FAISSIndex, get_logger
 
 logger = get_logger(__name__)
+
+# Provider-specific defaults (see https://docs.anthropic.com/en/docs/about-claude/models)
+_DEFAULT_MODEL_BY_PROVIDER = {
+    "openai": "gpt-4o",
+    "anthropic": "claude-sonnet-4-6",
+    "ollama": "llama3.1:8b",
+    "local": "all-MiniLM-L6-v2",
+}
+
+# Retired Anthropic snapshot IDs → current replacements
+_RETIRED_MODEL_ALIASES = {
+    "claude-3-5-sonnet-20241022": "claude-sonnet-4-6",
+    "claude-3-5-sonnet-20240620": "claude-sonnet-4-6",
+    "claude-3-7-sonnet-20250219": "claude-sonnet-4-6",
+}
+
+
+def _resolve_llm_model(provider: str, model: str) -> str:
+    """Pick a valid model ID for the provider; map retired Anthropic IDs."""
+    # Custom (OpenAI-compatible) endpoints define their own model names; never
+    # remap them to a hosted default.
+    if provider == "custom":
+        return model
+    if model in _RETIRED_MODEL_ALIASES:
+        replacement = _RETIRED_MODEL_ALIASES[model]
+        click.echo(
+            f"Note: model {model!r} is retired; using {replacement!r} instead.",
+            err=True,
+        )
+        return replacement
+    # If the supplied model clearly belongs to a hosted provider but a
+    # local/self-hosted provider was selected (or vice versa), fall back to
+    # the selected provider's default model.
+    looks_hosted = model.startswith("gpt-") or model.startswith("claude")
+    if model in ("gpt-4", ""):
+        return _DEFAULT_MODEL_BY_PROVIDER.get(provider, model)
+    if provider in ("anthropic", "ollama", "local") and looks_hosted:
+        return _DEFAULT_MODEL_BY_PROVIDER.get(provider, model)
+    if provider == "openai" and model.startswith("claude"):
+        return _DEFAULT_MODEL_BY_PROVIDER["openai"]
+    return model
+
+
+def _resolve_api_key(provider: str, api_key: Optional[str]) -> Optional[str]:
+    # Local / self-hosted providers do not use an API key.
+    if provider in ("ollama", "local"):
+        return None
+    # Custom OpenAI-compatible endpoints may or may not require a key; pass
+    # through whatever the caller supplied (self-hosted servers ignore it).
+    if provider == "custom":
+        return api_key
+    if api_key:
+        return api_key
+    if provider == "anthropic":
+        return os.environ.get("ANTHROPIC_API_KEY")
+    return os.environ.get("OPENAI_API_KEY")
 
 
 @click.group()
@@ -55,19 +110,27 @@ def cli(verbose: bool, debug: bool):
 @click.option('--target-concept', '-t', required=True, help='Target concept to move towards')
 @click.option('--corpus-index', '-i', type=click.Path(exists=True), required=True, help='Path to corpus FAISS index')
 @click.option('--output', '-o', type=click.Path(), help='Output file for results')
-@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic']), help='LLM provider')
-@click.option('--model', default='gpt-4', help='LLM model name')
-@click.option('--api-key', envvar='OPENAI_API_KEY', help='API key for LLM provider')
+@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option(
+    '--model',
+    default='gpt-4o',
+    help='LLM model (OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; Ollama: llama3.1:8b; custom: your endpoint model)',
+)
+@click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
+@click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
 @click.option('--max-iterations', default=5, help='Maximum fuzzing iterations')
 @click.option('--target-similarity', default=0.95, help='Target similarity to achieve')
 @click.option('--search-k', default=10, help='Number of similar phrases to retrieve')
 @click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
 @click.option('--verbose', '-v', is_flag=True, help='Verbose output')
 def fuzz(phrases, phrases_file, target_concept, corpus_index, output, 
-         llm_provider, model, api_key, max_iterations, target_similarity, 
+         llm_provider, model, api_key, base_url, max_iterations, target_similarity, 
          search_k, similarity_threshold, verbose):
     """Fuzz phrases using LLM-assisted semantic transformation."""
-    
+
+    model = _resolve_llm_model(llm_provider, model)
+    api_key = _resolve_api_key(llm_provider, api_key)
+
     # Set up logging
     if verbose:
         import logging
@@ -97,6 +160,7 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
         llm_provider=llm_provider,
         model_name=model,
         api_key=api_key,
+        base_url=base_url,
         max_iterations=max_iterations,
         target_similarity=target_similarity,
         search_k=search_k,
@@ -232,12 +296,20 @@ def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k,
 
 @cli.command()
 @click.option('--config', '-c', type=click.Path(exists=True), help='Configuration file')
-@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic']), help='LLM provider')
-@click.option('--model', default='gpt-4', help='LLM model name')
-@click.option('--api-key', envvar='OPENAI_API_KEY', help='API key for LLM provider')
-def test_llm(config, llm_provider, model, api_key):
+@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option(
+    '--model',
+    default='gpt-4o',
+    help='LLM model (OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; Ollama: llama3.1:8b; custom: your endpoint model)',
+)
+@click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
+@click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
+def test_llm(config, llm_provider, model, api_key, base_url):
     """Test LLM connectivity and basic functionality."""
-    
+
+    model = _resolve_llm_model(llm_provider, model)
+    api_key = _resolve_api_key(llm_provider, api_key)
+
     if config:
         with open(config, 'r') as f:
             config_dict = json.load(f)
@@ -246,7 +318,8 @@ def test_llm(config, llm_provider, model, api_key):
         fuzzer_config = LLMFuzzerConfig(
             llm_provider=llm_provider,
             model_name=model,
-            api_key=api_key
+            api_key=api_key,
+            base_url=base_url,
         )
     
     fuzzer = LLMFuzzer(fuzzer_config)
@@ -322,6 +395,23 @@ def analyze_corpus(corpus_dir, output, verbose):
         with open(output, 'w') as f:
             json.dump(analysis, f, indent=2)
         click.echo(f"\nAnalysis saved to: {output}")
+
+
+# Register the advanced and two-layer fuzzers as subcommands of `moyo-probe`
+# so all fuzzing lives under one entry point:
+#   moyo-probe advanced-fuzzing ...
+#   moyo-probe two-layer ...
+try:
+    from .cli_advanced_fuzzing import advanced_fuzzing
+    cli.add_command(advanced_fuzzing, name="advanced-fuzzing")
+except ImportError:
+    pass
+
+try:
+    from .cli_two_layer_fuzzer import cli as two_layer_cli
+    cli.add_command(two_layer_cli, name="two-layer")
+except ImportError:
+    pass
 
 
 if __name__ == '__main__':

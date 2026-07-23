@@ -7,8 +7,10 @@ This module implements a clean two-layer architecture:
 This ensures synthetic content never contaminates the public document space.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Set, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -22,11 +24,16 @@ from shared_utils import (
     generate_stable_document_id,
     generate_content_hash
 )
-from .llm_hypothesis_generator import (
-    LLMHypothesisGenerator,
-    AdaptiveHypothesisGenerator,
-    HypothesisGenerationConfig
-)
+
+# NOTE: `llm_hypothesis_generator` imports the node dataclasses defined below,
+# so importing it at module top would create a circular import. It is imported
+# lazily inside `create_two_layer_fuzzer`; annotations reference it only as
+# forward references (safe thanks to `from __future__ import annotations`).
+if TYPE_CHECKING:
+    from .llm_hypothesis_generator import (
+        AdaptiveHypothesisGenerator,
+        HypothesisGenerationConfig,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -525,6 +532,7 @@ def create_two_layer_fuzzer(faiss_index_path: str,
     # Create hypothesis generator if LLM config provided
     hypothesis_generator = None
     if llm_config:
+        from .llm_hypothesis_generator import AdaptiveHypothesisGenerator
         hypothesis_generator = AdaptiveHypothesisGenerator(llm_config)
     
     # Create fuzzer

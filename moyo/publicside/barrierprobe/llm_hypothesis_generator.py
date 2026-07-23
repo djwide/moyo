@@ -323,17 +323,21 @@ class LLMHypothesisGenerator:
             return LocalHypothesisGenerator(self.config.model_name)
         elif self.config.llm_provider == "openai":
             try:
-                import openai
+                from openai import OpenAI
+                kwargs = {}
                 if self.config.api_key:
-                    openai.api_key = self.config.api_key
-                return openai
+                    kwargs["api_key"] = self.config.api_key
+                return OpenAI(**kwargs)
             except ImportError:
                 logger.error("OpenAI library not installed")
                 return None
         elif self.config.llm_provider == "anthropic":
             try:
-                import anthropic
-                return anthropic.Anthropic(api_key=self.config.api_key)
+                from anthropic import Anthropic
+                kwargs = {}
+                if self.config.api_key:
+                    kwargs["api_key"] = self.config.api_key
+                return Anthropic(**kwargs)
             except ImportError:
                 logger.error("Anthropic library not installed")
                 return None
@@ -429,21 +433,21 @@ Focus on:
     def _call_llm(self, prompt: str) -> str:
         """Call the LLM with the given prompt."""
         if self.config.llm_provider == "openai":
-            response = self.llm_client.ChatCompletion.create(
+            response = self.llm_client.chat.completions.create(
                 model=self.config.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens
+                max_tokens=self.config.max_tokens,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         elif self.config.llm_provider == "anthropic":
             response = self.llm_client.messages.create(
                 model=self.config.model_name,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text
+            return response.content[0].text if response.content else ""
         else:
             raise ValueError(f"Unsupported LLM provider: {self.config.llm_provider}")
     

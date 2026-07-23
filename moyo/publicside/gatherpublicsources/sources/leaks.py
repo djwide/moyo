@@ -628,6 +628,8 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: Dict[st
 
 async def search_leaked_code(query: str, max_results: int = 100, sources: List[str] | None = None) -> List[PublicSource]:
     """Asynchronously search for leaked code snippets."""
+    # PLACEHOLDER endpoint. Returns no results until pointed at a real service
+    # (e.g. the GitHub code-search / paste-site sources in LeakedCodeCrawler.sources).
     url = "https://example.com/leaks"
     params = {"q": query, "n": max_results}
 

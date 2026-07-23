@@ -6,7 +6,7 @@ import requests
 from pathlib import Path
 from typing import Optional
 
-from .config.settings import get_settings, reload_settings
+from .config.settings import get_settings
 from .metrics_server import start_metrics_server, stop_metrics_server, get_metrics_server
 from .metrics import get_metrics_registry
 from .logging import get_logger
@@ -19,16 +19,12 @@ def metrics():
 
 
 @metrics.command()
-@click.option('--config', '-c', help='Configuration file path')
 @click.option('--daemon/--no-daemon', default=True, help='Run as daemon')
 @click.option('--port', '-p', type=int, help='Port to run metrics server on')
-def start(config: Optional[str], daemon: bool, port: Optional[int]):
+def start(daemon: bool, port: Optional[int]):
     """Start the Prometheus metrics server."""
     settings = get_settings()
-    
-    if config:
-        settings = reload_settings(config)
-    
+
     if port:
         settings.prometheus.port = port
     

@@ -43,7 +43,7 @@ moyo/
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - pip package manager
 - Git (for development)
 - At least 4GB RAM (8GB+ recommended)
@@ -148,7 +148,7 @@ moyo-datainput process --file document.txt --json
 moyo-datainput process --file document.txt --no-save
 
 # Verbose processing with debug information
-moyo-datainput process --file document.txt -v --debug
+moyo-datainput -v --debug process --file document.txt
 ```
 
 ### Corpus Building
@@ -293,11 +293,24 @@ moyo-probe fuzz \
   -t "trade secrets" \
   -i indexes/private/corpus.index \
   --llm-provider openai \
-  --model gpt-4 \
+  --model gpt-4o \
   --max-iterations 10 \
   --target-similarity 0.95 \
   --search-k 20
+
+# Fuzz with a local LLM via Ollama (no API key required)
+moyo-probe fuzz \
+  -p "data breach" \
+  -t "confidential information" \
+  -i indexes/private \
+  --llm-provider ollama \
+  --model llama3.1:8b
 ```
+
+`--llm-provider` accepts `openai`, `anthropic`, `ollama` (local Ollama
+server), and `local` (embedding-only synonym transformer, no LLM). Default
+models per provider: OpenAI `gpt-4o`, Anthropic `claude-sonnet-4-6`, Ollama
+`llama3.1:8b`. See the GUI README for local LLM (Ollama) setup.
 
 #### Test LLM Configuration
 
@@ -305,8 +318,11 @@ moyo-probe fuzz \
 # Test LLM connectivity and configuration
 moyo-probe test-llm \
   --llm-provider openai \
-  --model gpt-4 \
+  --model gpt-4o \
   --api-key $OPENAI_API_KEY
+
+# Test a local Ollama model
+moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
 ```
 
 ### Corpus Search
@@ -330,15 +346,19 @@ moyo-probe search \
 ### Iterative LLM Search
 
 ```python
+from moyo.publicside.barrierprobe.barrier_analyzer import BarrierAnalyzer
+from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
 from moyo.publicside.barrierprobe.iterative_llm_search import refine_suspicious_pairs
 
-# Refine suspicious phrase pairs
-refined_pairs = refine_suspicious_pairs(
-    suspicious_pairs,
-    private_index,
-    public_index,
-    llm_config
+# refine_suspicious_pairs takes a BarrierProbeResult and the analyzer that
+# produced it (indexes already loaded), and returns a refined result.
+config = BarrierProbeConfig(
+    public_index_path="indexes/public",
+    private_index_path="indexes/private",
 )
+analyzer = BarrierAnalyzer(config)
+result = analyzer.analyze_barriers(top_k=10)
+refined = refine_suspicious_pairs(result, analyzer, top_k=5)
 ```
 
 ## Monitoring and Maintenance
@@ -420,12 +440,34 @@ ps aux | grep moyo
 
 #### Import Errors
 
+**Problem**: `ModuleNotFoundError: No module named 'moyo'` when running `moyo` or `moyo-datainput`
+
+**Cause**: A console script under `~/.local/bin/` (often installed as root with `#!/usr/bin/python3`) is on your `PATH` before the scripts from your pyenv virtualenv. `python -c "import moyo"` may still work.
+
+**Solution**:
+```bash
+cd /path/to/moyo
+pyenv activate sente   # or your env where moyo is installed
+
+# Reinstall into *this* Python and remove stale ~/.local/bin scripts
+bash scripts/fix-cli-path.sh
+
+# Verify — should NOT point at ~/.local/bin
+which moyo-datainput
+head -1 "$(which moyo-datainput)"
+
+# Workaround (always uses the active python)
+python -m moyo.privateside.datainput.cli process "secret text"
+```
+
+If removal fails with permission denied: `sudo rm -f ~/.local/bin/moyo*`, then run `python -m pip install -e .` again.
+
 **Problem**: `ModuleNotFoundError: No module named 'shared_utils'`
 
 **Solution**:
 ```bash
 # shared_utils is vendored inside the moyo package — reinstall from the repo root
-pip install -e .
+python -m pip install -e .
 
 # Verify installation
 python -c "import shared_utils; print('shared_utils available')"
@@ -455,7 +497,7 @@ moyo-datainput process --file source.txt
 echo $OPENAI_API_KEY
 
 # Test LLM connection
-moyo-probe test-llm --llm-provider openai --model gpt-4
+moyo-probe test-llm --llm-provider openai --model gpt-4o
 ```
 
 #### Memory Issues
@@ -474,7 +516,7 @@ Enable debug logging for detailed troubleshooting:
 
 ```bash
 # Enable debug mode
-moyo-datainput process --file document.txt --debug
+moyo-datainput --debug process --file document.txt
 
 # Check debug logs
 tail -f logs/debug.log
@@ -673,9 +715,10 @@ config = CorpusConfig(
 from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzerConfig
 
 config = LLMFuzzerConfig(
-    llm_provider="openai",
-    model_name="gpt-4",
-    api_key="your-api-key",
+    llm_provider="openai",   # openai | anthropic | ollama | local
+    model_name="gpt-4o",
+    api_key="your-api-key",  # unused for ollama/local
+    base_url=None,           # Ollama endpoint, e.g. http://localhost:11434
     max_iterations=5,
     target_similarity=0.95,
     search_k=10,
@@ -737,6 +780,6 @@ moyo-gather crawl-tokens --tokens <comma-separated-tokens>
 
 ---
 
-**Last Updated**: May 2026  
-**Version**: 1.0  
+**Last Updated**: July 2026  
+**Version**: 1.1  
 **Maintainer**: moyo Operations Team

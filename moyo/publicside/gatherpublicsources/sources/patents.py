@@ -350,6 +350,10 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: Dict[st
 
 async def search_patents(query: str, max_results: int = 100, offices: List[str] | None = None) -> List[PublicSource]:
     """Asynchronously search patents via HTTP and return public sources."""
+    # PLACEHOLDER endpoint. This does not point at a real patent API and will
+    # return no results until replaced with a real service (e.g. the
+    # Google Patents / EPO endpoints defined in PatentCrawler.patent_offices,
+    # or a paid patent search API). See docs/crawler.md.
     url = "https://example.com/patents"
     params = {"q": query, "n": max_results}
 

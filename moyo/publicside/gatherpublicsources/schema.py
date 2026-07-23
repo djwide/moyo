@@ -117,7 +117,10 @@ class LeakedCode(BaseModel):
 
 class CrawlConfig(BaseModel):
     """Configuration for crawling operations."""
-    topic: str
+    topic: str = Field(
+        default="",
+        description="Primary topic label for jobs and output paths; per-query topics are passed to crawl().",
+    )
     source_types: List[SourceType] = Field(default_factory=list)
     max_results_per_source: int = 100
     max_total_results: int = 1000

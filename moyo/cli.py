@@ -10,8 +10,7 @@ from .logging import setup_logging
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
 @click.option('--debug', is_flag=True, help='Enable debug logging')
-@click.option('--config', '-c', help='Configuration file path')
-def cli(verbose: bool, debug: bool, config: str) -> None:
+def cli(verbose: bool, debug: bool) -> None:
     """
     moyo - Experimental tooling for corpus mapping and barrier probing.
     

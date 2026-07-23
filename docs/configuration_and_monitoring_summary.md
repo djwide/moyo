@@ -9,16 +9,18 @@ This document summarizes the implementation of centralized configuration, struct
 ### 1. **Centralized Configuration System**
 
 **Files Created/Modified:**
-- `moyo/moyo/config/settings.py` - Enhanced with comprehensive configuration classes
-- `moyo/config.yaml` - Sample configuration file
-- `moyo/requirements-monitoring.txt` - New dependencies
+- `moyo/config/settings.py` - Comprehensive Pydantic configuration classes
+- `.env.example` - Documented sample of the commonly-overridden settings
+- Monitoring dependencies are declared as the `[monitoring]` extra in `pyproject.toml`
 
 **Key Features:**
-- **Environment Variable Support**: All settings can be overridden via environment variables (e.g., `MOYO_ENVIRONMENT=production`)
-- **YAML Configuration**: Support for YAML configuration files with automatic loading
+- **Environment Variable Support**: All settings are set via defaults, a `.env` file, and `MOYO_*` environment variables, including nested prefixes like `MOYO_LOG_`, `MOYO_EMBEDDING_`, `MOYO_FAISS_`, `MOYO_LLM_`.
 - **Structured Configuration**: Type-safe configuration with validation using Pydantic
 - **Component-Specific Settings**: Separate configuration classes for logging, Prometheus, pipeline, embedding, FAISS, and LLM settings
-- **Custom Configuration**: Support for application-specific configuration sections
+
+> **Note:** configuration is environment-based only. An earlier YAML config
+> file (`config.yaml`) and its (never-wired) loader were removed; copy
+> `.env.example` to `.env` to persist overrides.
 
 **Usage:**
 ```python
@@ -32,7 +34,7 @@ print(f"Embedding model: {settings.embedding.model_name}")
 ### 2. **Structured Logging System**
 
 **Files Created:**
-- `moyo/moyo/logging.py` - Comprehensive structured logging implementation
+- `moyo/logging.py` - Comprehensive structured logging implementation
 
 **Key Features:**
 - **JSON Structured Logging**: Machine-readable log format with context
@@ -56,9 +58,9 @@ with logger.operation_context("data_processing", batch_size=1000):
 ### 3. **Prometheus Metrics System**
 
 **Files Created:**
-- `moyo/moyo/metrics.py` - Comprehensive metrics registry
-- `moyo/moyo/metrics_server.py` - HTTP server for metrics exposure
-- `moyo/moyo/cli_metrics.py` - CLI commands for metrics management
+- `moyo/metrics.py` - Comprehensive metrics registry
+- `moyo/metrics_server.py` - HTTP server for metrics exposure
+- `moyo/cli_metrics.py` - CLI commands for metrics management
 
 **Key Features:**
 - **Pipeline Metrics**: Timing and throughput for all pipeline operations
@@ -88,7 +90,7 @@ def process_documents():
 ### 4. **CLI Integration**
 
 **Files Modified:**
-- `moyo/moyo/cli.py` - Enhanced with configuration and metrics commands
+- `moyo/cli.py` - Registers the `metrics` command group (optional import)
 
 **New Commands:**
 ```bash
@@ -100,7 +102,6 @@ moyo metrics health         # Check server health
 moyo metrics export         # Export metrics to file
 
 # Configuration
-moyo --config custom.yaml   # Use custom configuration
 moyo --verbose              # Enable verbose logging
 moyo --debug                # Enable debug logging
 ```
@@ -108,9 +109,8 @@ moyo --debug                # Enable debug logging
 ### 5. **Example and Documentation**
 
 **Files Created:**
-- `moyo/examples/config_and_monitoring_example.py` - Comprehensive usage examples
-- `moyo/docs/prometheus_value_proposition.md` - Detailed value proposition
-- `moyo/docs/configuration_and_monitoring_summary.md` - This summary
+- `examples/config_and_monitoring_example.py` - Comprehensive usage examples
+- `docs/configuration_and_monitoring_summary.md` - This summary
 
 ## Configuration Options
 
@@ -146,39 +146,22 @@ export MOYO_FAISS_DIMENSION=768
 
 # LLM
 export MOYO_LLM_PROVIDER=openai
-export MOYO_LLM_MODEL=gpt-4
+export MOYO_LLM_MODEL=gpt-4o
 export MOYO_LLM_API_KEY=your-api-key
 ```
 
-### YAML Configuration
+### Persisting configuration with `.env`
 
-Create `config.yaml` for persistent configuration:
+For persistent overrides, copy `.env.example` to `.env` in the working
+directory. Values there are loaded automatically (environment variables still
+take precedence):
 
-```yaml
-environment: production
-debug: false
-
-logging:
-  level: INFO
-  structured: true
-  file_path: logs/moyo.log
-
-prometheus:
-  enabled: true
-  port: 8000
-
-pipeline:
-  batch_size: 2000
-  max_workers: 8
-
-embedding:
-  model_name: sentence-transformers/all-mpnet-base-v2
-  device: cuda
-
-custom_config:
-  fuzzing:
-    max_hypotheses_per_campaign: 100
-    similarity_threshold: 0.8
+```bash
+MOYO_ENVIRONMENT=production
+MOYO_LOG_LEVEL=INFO
+MOYO_PROMETHEUS_PORT=8000
+MOYO_EMBEDDING_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
+MOYO_EMBEDDING_DEVICE=cuda
 ```
 
 ## Metrics Available
@@ -213,7 +196,7 @@ custom_config:
 
 ### 1. Install Dependencies
 ```bash
-pip install -r moyo/requirements-monitoring.txt
+pip install -e ".[monitoring]"
 ```
 
 ### 2. Run the Example

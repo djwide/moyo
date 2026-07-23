@@ -231,14 +231,97 @@ class LocalLLMClient:
         return ' '.join(words)
 
 
+class OllamaClient:
+    """Minimal client for a locally running Ollama server.
+
+    Talks to the native Ollama HTTP API (``/api/generate``) using only the
+    Python standard library, so it adds no new dependencies. Ollama runs the
+    model fully locally and offloads to the GPU automatically when one is
+    available (e.g. an NVIDIA RTX card via CUDA).
+    """
+
+    DEFAULT_BASE_URL = "http://localhost:11434"
+
+    def __init__(self, model_name: str, base_url: Optional[str] = None,
+                 timeout: int = 180):
+        self.model_name = model_name
+        self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
+        self.timeout = timeout
+
+    def is_available(self) -> bool:
+        """Return True if the Ollama server responds and lists models."""
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=5) as resp:
+                return resp.status == 200
+        except Exception as exc:
+            logger.warning(f"Ollama not reachable at {self.base_url}: {exc}")
+            return False
+
+    def list_models(self) -> List[str]:
+        """Return the model tags currently installed on the server."""
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return [m.get("name", "") for m in data.get("models", [])]
+        except Exception as exc:
+            logger.warning(f"Could not list Ollama models: {exc}")
+            return []
+
+    def generate(self, prompt: str, system: Optional[str] = None,
+                 temperature: float = 0.7, max_tokens: int = 500) -> str:
+        """Generate a completion from the local model (non-streaming)."""
+        import urllib.request
+        import urllib.error
+
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+        if system:
+            payload["system"] = system
+
+        req = urllib.request.Request(
+            f"{self.base_url}/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            return (body.get("response") or "").strip()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(
+                f"Ollama request failed ({exc.code}): {detail}. "
+                f"Is the model '{self.model_name}' pulled? Try: ollama pull {self.model_name}"
+            ) from exc
+
+
 @dataclass
 class LLMFuzzerConfig:
     """Configuration for LLM-assisted fuzzing."""
     
     # LLM Configuration
-    llm_provider: str = "local"  # "openai", "anthropic", "local"
+    # Supported providers:
+    #   "openai"    – OpenAI hosted API
+    #   "anthropic" – Anthropic hosted API
+    #   "ollama"    – local Ollama server (native API)
+    #   "custom"    – any OpenAI-compatible endpoint (vLLM, LM Studio, Together,
+    #                 Groq, OpenRouter, DeepSeek, llama.cpp server, etc.) via base_url
+    #   "local"     – embedding-only synonym transformer (no LLM/API)
+    llm_provider: str = "local"
     model_name: str = "all-MiniLM-L6-v2"  # Default to local MiniLM model
     api_key: Optional[str] = None
+    # Endpoint for self-hosted / OpenAI-compatible providers (Ollama, custom).
+    base_url: Optional[str] = None
     max_tokens: int = 500
     temperature: float = 0.7
     
@@ -297,19 +380,63 @@ class LLMFuzzer:
         if self.config.llm_provider == "local":
             # Use local embedding-based text transformation
             return LocalLLMClient(self.config.model_name)
+        elif self.config.llm_provider == "ollama":
+            client = OllamaClient(self.config.model_name, base_url=self.config.base_url)
+            if not client.is_available():
+                logger.error(
+                    f"Ollama server not reachable at {client.base_url}. "
+                    "Start it with 'ollama serve' and pull a model "
+                    f"(e.g. 'ollama pull {self.config.model_name}')."
+                )
+                return None
+            installed = client.list_models()
+            if installed and not any(
+                m == self.config.model_name or m.startswith(self.config.model_name + ":")
+                for m in installed
+            ):
+                logger.warning(
+                    f"Model '{self.config.model_name}' is not installed in Ollama. "
+                    f"Available: {', '.join(installed) or 'none'}. "
+                    f"Pull it with: ollama pull {self.config.model_name}"
+                )
+            return client
         elif self.config.llm_provider == "openai":
             try:
-                import openai
+                from openai import OpenAI
+                kwargs = {}
                 if self.config.api_key:
-                    openai.api_key = self.config.api_key
-                return openai
+                    kwargs["api_key"] = self.config.api_key
+                return OpenAI(**kwargs)
+            except ImportError:
+                logger.error("OpenAI library not installed. Install with: pip install openai")
+                return None
+        elif self.config.llm_provider == "custom":
+            # Any OpenAI-compatible endpoint (vLLM, LM Studio, Together, Groq,
+            # OpenRouter, DeepSeek, llama.cpp server, ...). Requires base_url.
+            if not self.config.base_url:
+                logger.error(
+                    "Provider 'custom' requires a base_url pointing at an "
+                    "OpenAI-compatible endpoint (e.g. http://localhost:8000/v1)."
+                )
+                return None
+            try:
+                from openai import OpenAI
+                # Many self-hosted servers ignore the key but the SDK requires
+                # a non-empty value, so fall back to a placeholder.
+                return OpenAI(
+                    api_key=self.config.api_key or "not-needed",
+                    base_url=self.config.base_url,
+                )
             except ImportError:
                 logger.error("OpenAI library not installed. Install with: pip install openai")
                 return None
         elif self.config.llm_provider == "anthropic":
             try:
-                import anthropic
-                return anthropic.Client(api_key=self.config.api_key)
+                from anthropic import Anthropic
+                kwargs = {}
+                if self.config.api_key:
+                    kwargs["api_key"] = self.config.api_key
+                return Anthropic(**kwargs)
             except ImportError:
                 logger.error("Anthropic library not installed. Install with: pip install anthropic")
                 return None
@@ -335,27 +462,36 @@ class LLMFuzzer:
                 # Extract information from the prompt for local transformation
                 original_phrase, target_concept, similar_phrases = self._parse_fuzzing_prompt(prompt)
                 text = self.llm_client.transform_text(original_phrase, target_concept, similar_phrases)
-            elif self.config.llm_provider == "openai":
-                response = self.llm_client.ChatCompletion.create(
+            elif self.config.llm_provider == "ollama":
+                text = self.llm_client.generate(
+                    prompt,
+                    system=(
+                        "You are a helpful assistant for semantic text transformation. "
+                        "Return only the transformed phrase, with no preamble or explanation."
+                    ),
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+            elif self.config.llm_provider in ("openai", "custom"):
+                response = self.llm_client.chat.completions.create(
                     model=self.config.model_name,
                     messages=[
                         {"role": "system", "content": "You are a helpful assistant for semantic text transformation."},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": prompt},
                     ],
                     max_tokens=self.config.max_tokens,
-                    temperature=self.config.temperature
+                    temperature=self.config.temperature,
                 )
-                text = response.choices[0].message.content.strip()
+                text = (response.choices[0].message.content or "").strip()
             elif self.config.llm_provider == "anthropic":
                 response = self.llm_client.messages.create(
                     model=self.config.model_name,
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
+                    system="You are a helpful assistant for semantic text transformation.",
+                    messages=[{"role": "user", "content": prompt}],
                 )
-                text = response.content[0].text.strip()
+                text = (response.content[0].text if response.content else "").strip()
             else:
                 return None
 

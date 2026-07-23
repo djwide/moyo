@@ -32,26 +32,32 @@ The barrier analysis module provides tools to:
 
 ### Command Line Interface
 
+The barrier probe CLI is exposed as the `moyo-probe` console script. The
+`analyze` command takes the public and private indexes as `-p/--public-index`
+and `-r/--private-index` options (not positional arguments) and always runs a
+round of iterative LLM refinement on the suspicious pairs before reporting.
+
 #### Basic Analysis
 ```bash
 # Analyze barriers between public and private indexes
-python -m moyo.publicside.barrierprobe.cli probe analyze \
-    /path/to/public/index \
-    /path/to/private/index \
+moyo-probe analyze \
+    --public-index /path/to/public/index \
+    --private-index /path/to/private/index \
     --similarity-threshold 0.8 \
     --top-k 10
 ```
 
 #### Advanced Options
 ```bash
-# Save detailed results to file
-python -m moyo.publicside.barrierprobe.cli probe analyze \
-    /path/to/public/index \
-    /path/to/private/index \
+# Write JSON and HTML reports; cap the LLM-refined results with --llm-top-k
+moyo-probe analyze \
+    -p /path/to/public/index \
+    -r /path/to/private/index \
     --similarity-threshold 0.7 \
     --top-k 20 \
-    --save-results \
-    --output-dir data/barrierprobe/results
+    --llm-top-k 5 \
+    --output-json data/barrierprobe/results/report.json \
+    --output-html data/barrierprobe/results/report.html
 ```
 
 ### Programmatic Usage

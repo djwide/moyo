@@ -5,7 +5,7 @@ from typing import Optional
 import click
 
 from .crawler import PublicSourcesCrawler
-from .schema import SourceType
+from .schema import CrawlConfig, SourceType
 
 
 @click.group()
@@ -19,9 +19,10 @@ def cli() -> None:
 @click.option("--output", type=click.Path(), default=None, help="Optional output directory")
 def crawl(topic: str, output: Optional[str]) -> None:
     """Crawl public sources by topic string."""
-    crawler = PublicSourcesCrawler()
+    config = CrawlConfig(topic=topic)
     if output:
-        crawler.config.output_directory = output
+        config.output_directory = output
+    crawler = PublicSourcesCrawler(config)
     res = crawler.crawl(topic)
     click.echo(json.dumps(res.dict(), indent=2, default=str))
 
@@ -32,9 +33,10 @@ def crawl(topic: str, output: Optional[str]) -> None:
 def crawl_tokens(tokens: str, output: Optional[str]) -> None:
     """Crawl public sources using a list of tokens."""
     token_list = [t.strip() for t in tokens.split(",") if t.strip()]
-    crawler = PublicSourcesCrawler()
+    config = CrawlConfig(topic=", ".join(token_list) or "tokens_query")
     if output:
-        crawler.config.output_directory = output
+        config.output_directory = output
+    crawler = PublicSourcesCrawler(config)
     res = crawler.crawl_with_tokens(token_list)
     click.echo(json.dumps(res.dict(), indent=2, default=str))
 

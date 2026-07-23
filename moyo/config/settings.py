@@ -1,11 +1,14 @@
-"""Centralized configuration for moyo project."""
+"""Centralized configuration for moyo project.
 
-import os
-import yaml
+Settings are loaded from (in increasing precedence): field defaults, a ``.env``
+file in the working directory, and ``MOYO_*`` environment variables. See
+``.env.example`` for the commonly-overridden values.
+"""
+
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 
 
@@ -143,10 +146,7 @@ class Settings(BaseSettings):
     faiss: FAISSConfig = Field(default_factory=FAISSConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     red_team: RedTeamSettings = Field(default_factory=RedTeamSettings)
-    
-    # Custom YAML configuration
-    custom_config: Dict[str, Any] = Field(default_factory=dict)
-    
+
     @field_validator('environment')
     @classmethod
     def validate_environment(cls, v):
@@ -166,59 +166,13 @@ class Settings(BaseSettings):
     model_config = ConfigDict(
         env_prefix="MOYO_",
         env_file=".env",
-        env_file_encoding="utf-8"
+        env_file_encoding="utf-8",
+        extra="ignore",  # tolerate unrelated env vars / .env keys
     )
-    
-    # @classmethod
-    # def settings_customise_sources(
-    #     cls,
-    #     settings_cls,
-    #     init_settings,
-    #     env_settings,
-    #     dotenv_settings,
-    #     file_secret_settings,
-    # ):
-    #     """Customize settings sources to include YAML."""
-    #     return (
-    #         init_settings,
-    #         yaml_settings_source,
-    #         env_settings,
-    #         dotenv_settings,
-    #         file_secret_settings,
-    #     )
 
 
-def yaml_settings_source(settings_cls) -> Dict[str, Any]:
-    """Load settings from YAML configuration files."""
-    config_files = [
-        "config.yaml",
-        "moyo.yaml", 
-        "config/settings.yaml",
-        "config/config.yaml"
-    ]
-    
-    config_data = {}
-    
-    for config_file in config_files:
-        config_path = Path(config_file)
-        if config_path.exists():
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    yaml_data = yaml.safe_load(f)
-                    if yaml_data:
-                        config_data.update(yaml_data)
-            except Exception as e:
-                print(f"Warning: Could not load config file {config_file}: {e}")
-    
-    return config_data
-
-
-def load_settings(config_file: Optional[str] = None) -> Settings:
-    """Load settings with optional custom config file."""
-    if config_file and Path(config_file).exists():
-        # Temporarily set environment variable for custom config
-        os.environ["MOYO_CONFIG_FILE"] = config_file
-    
+def load_settings() -> Settings:
+    """Load settings from defaults, ``.env``, and ``MOYO_*`` environment vars."""
     return Settings()
 
 
@@ -231,8 +185,8 @@ def get_settings() -> Settings:
     return settings
 
 
-def reload_settings(config_file: Optional[str] = None) -> Settings:
+def reload_settings() -> Settings:
     """Reload settings from configuration."""
     global settings
-    settings = load_settings(config_file)
+    settings = load_settings()
     return settings

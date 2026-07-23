@@ -37,30 +37,25 @@ The iterative LLM search system enhances the barrier analysis by:
 
 ### Command Line Interface
 
-#### Basic Iterative Search
+Iterative LLM refinement is run automatically as part of the `moyo-probe
+analyze` command: after the initial barrier analysis it calls
+`refine_suspicious_pairs()` on the result before writing reports. There is no
+separate `--iterative-search` flag.
+
 ```bash
-# Run barrier analysis with iterative LLM search
-python -m moyo.publicside.barrierprobe.cli probe analyze \
-    /path/to/public/index \
-    /path/to/private/index \
-    --iterative-search \
-    --iterations 3 \
-    --top-k 10
+# analyze runs barrier analysis + one refinement pass over the top pairs.
+# --llm-top-k controls how many refined pairs are kept.
+moyo-probe analyze \
+    --public-index /path/to/public/index \
+    --private-index /path/to/private/index \
+    --similarity-threshold 0.8 \
+    --top-k 20 \
+    --llm-top-k 10 \
+    --output-json data/barrierprobe/results/report.json
 ```
 
-#### Advanced Options
-```bash
-# Customize iterative search parameters
-python -m moyo.publicside.barrierprobe.cli probe analyze \
-    /path/to/public/index \
-    /path/to/private/index \
-    --iterative-search \
-    --iterations 5 \
-    --top-k 20 \
-    --similarity-threshold 0.7 \
-    --save-results \
-    --output-dir data/barrierprobe/results
-```
+For multi-round iterative search (more than the single refinement pass the CLI
+performs), use the programmatic API below with `run_iterative_llm_search()`.
 
 ### Programmatic Usage
 

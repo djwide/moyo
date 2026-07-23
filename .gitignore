@@ -1,9 +1,31 @@
 __pycache__/
+*.pyc
 .env
 *.egg-info/
+
+# Build artifacts
+build/
+dist/
+*.whl
 
 # Private data and indexes
 data/private/*
 !data/private/.gitignore
 indexes/private/*
 !indexes/private/.gitignore
+
+# Logs, caches, run outputs
+logs/
+*.log
+cache/
+.cache/
+output/
+results/
+
+# Generated demo artifacts (examples create their own indexes/outputs)
+examples/examples/
+examples/output/
+examples/indexes/
+examples/cache/
+examples/metrics.log
+examples/fuzzing_results.json

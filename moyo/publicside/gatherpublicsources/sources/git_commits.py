@@ -468,6 +468,8 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: Dict[st
 
 async def search_git_commits(query: str, max_results: int = 100, platforms: List[str] | None = None) -> List[PublicSource]:
     """Asynchronously search commits and return public source records."""
+    # PLACEHOLDER endpoint. Returns no results until pointed at a real service
+    # (e.g. the GitHub/GitLab search APIs defined in GitCommitsCrawler.apis).
     url = "https://example.com/commits"
     params = {"q": query, "n": max_results}
 

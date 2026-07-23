@@ -1,6 +1,16 @@
 # LLM-Assisted Fuzzing for Barrier Probing
 
-This module provides LLM-assisted fuzzing capabilities for semantic barrier probing, allowing you to use large language models (defaulting to OpenAI's GPT-4) to intelligently transform phrases and reduce semantic distance to target concepts.
+This module provides LLM-assisted fuzzing capabilities for semantic barrier probing, allowing you to use large language models to intelligently transform phrases and reduce semantic distance to target concepts.
+
+Supported providers: `openai` (default model `gpt-4o`), `anthropic` (default `claude-sonnet-4-6`), `ollama` (local models such as `llama3.1:8b`, no API key), `custom` (any OpenAI-compatible endpoint via `--base-url` / `base_url` — vLLM, LM Studio, Together, Groq, OpenRouter, DeepSeek, llama.cpp server, etc.), and `local` (embedding-only synonym transformer, no LLM/API required).
+
+```bash
+# Any OpenAI-compatible server (vLLM, LM Studio, Together, Groq, OpenRouter, ...):
+moyo-probe test-llm --llm-provider custom \
+    --base-url http://localhost:8000/v1 \
+    --model my-model \
+    --api-key "$MY_API_KEY"      # optional; self-hosted servers usually ignore it
+```
 
 ## Overview
 
@@ -13,7 +23,7 @@ The LLM fuzzer works by:
 
 ## Key Features
 
-- **Multiple LLM Providers**: Support for OpenAI and Anthropic models
+- **Multiple LLM Providers**: OpenAI, Anthropic, local Ollama, any OpenAI-compatible `custom` endpoint, and an embedding-only local transformer
 - **Configurable Prompts**: Customizable prompt templates for different domains
 - **Semantic Search Integration**: Uses FAISS index for finding similar phrases
 - **Iterative Refinement**: Multi-step transformation with similarity tracking
@@ -43,7 +53,7 @@ index = FAISSIndex.load("path/to/corpus")
 # Configure the fuzzer
 config = LLMFuzzerConfig(
     llm_provider="openai",
-    model_name="gpt-4",
+    model_name="gpt-4o",
     api_key="your-api-key",
     max_iterations=5,
     target_similarity=0.95
@@ -89,9 +99,10 @@ moyo-probe test-llm --llm-provider openai --model gpt-4
 @dataclass
 class LLMFuzzerConfig:
     # LLM Configuration
-    llm_provider: str = "openai"  # "openai", "anthropic"
-    model_name: str = "gpt-4"
+    llm_provider: str = "local"   # "openai" | "anthropic" | "ollama" | "custom" | "local"
+    model_name: str = "all-MiniLM-L6-v2"
     api_key: Optional[str] = None
+    base_url: Optional[str] = None  # Ollama endpoint (default http://localhost:11434)
     max_tokens: int = 500
     temperature: float = 0.7
     
@@ -225,9 +236,10 @@ Options:
   -t, --target-concept TEXT    Target concept to move towards
   -i, --corpus-index PATH      Path to corpus FAISS index
   -o, --output PATH            Output file for results
-  --llm-provider [openai|anthropic]  LLM provider
+  --llm-provider [openai|anthropic|ollama|custom|local]  LLM provider
   --model TEXT                 LLM model name
-  --api-key TEXT              API key for LLM provider
+  --api-key TEXT              API key for LLM provider (openai/anthropic/custom)
+  --base-url TEXT             Endpoint for Ollama or a custom OpenAI-compatible server
   --max-iterations INTEGER     Maximum fuzzing iterations
   --target-similarity FLOAT    Target similarity to achieve
   --search-k INTEGER          Number of similar phrases to retrieve
@@ -254,9 +266,10 @@ moyo-probe test-llm [OPTIONS]
 
 Options:
   -c, --config PATH          Configuration file
-  --llm-provider [openai|anthropic]  LLM provider
+  --llm-provider [openai|anthropic|ollama|custom|local]  LLM provider
   --model TEXT               LLM model name
-  --api-key TEXT            API key for LLM provider
+  --api-key TEXT            API key for LLM provider (openai/anthropic/custom)
+  --base-url TEXT           Endpoint for Ollama or a custom OpenAI-compatible server
 ```
 
 ## Integration with Barrier Analysis
@@ -383,19 +396,33 @@ all_results = engine.fuzz_with_all_techniques(text, target, use_annealing=True)
 
 #### CLI Usage
 
+The advanced-fuzzing and two-layer commands are registered as subcommands of
+`moyo-probe`:
+
 ```bash
 # Apply specific technique
-moyo-probe advanced-fuzzing fuzz -t "data breach" -g "confidential information disclosure" -k grammar
+moyo-probe advanced-fuzzing fuzz \
+  -t "data breach" -g "confidential information disclosure" -k grammar
 
 # Apply all techniques
-moyo-probe advanced-fuzzing fuzz-all -t "data breach" -g "confidential information disclosure"
+moyo-probe advanced-fuzzing fuzz-all \
+  -t "data breach" -g "confidential information disclosure"
 
 # Batch processing from file
-moyo-probe advanced-fuzzing batch-fuzz -i phrases.txt -g "target concept" -o results.json
+moyo-probe advanced-fuzzing batch-fuzz \
+  -i phrases.txt -g "target concept" -o results.json
 
 # Generate configuration
 moyo-probe advanced-fuzzing config -o config.json
+
+# Two-layer fuzzing campaign
+moyo-probe two-layer run-campaign \
+  -i public_corpus.index -t "data breach" -p "security incident"
 ```
+
+> These can still be invoked standalone via
+> `python -m moyo.publicside.barrierprobe.cli_advanced_fuzzing ...` and
+> `python -m moyo.publicside.barrierprobe.cli_two_layer_fuzzer ...`.
 
 ### Technique Details
 

@@ -32,11 +32,7 @@ def example_configuration():
     print(f"FAISS index type: {settings.faiss.index_type}")
     print(f"Logging level: {settings.logging.level}")
     print(f"Prometheus enabled: {settings.prometheus.enabled}")
-    
-    # Show custom configuration
-    if settings.custom_config:
-        print(f"Custom config keys: {list(settings.custom_config.keys())}")
-    
+
     print()
 
 
@@ -225,8 +221,8 @@ def example_environment_configuration():
     print("  MOYO_FAISS_INDEX_TYPE=IVF100")
     print()
     
-    print("Or use a custom configuration file:")
-    print("  moyo --config custom_config.yaml")
+    print("Or persist them in a .env file (see .env.example):")
+    print("  echo 'MOYO_LOG_LEVEL=DEBUG' >> .env")
     print()
 
 
@@ -254,7 +250,7 @@ def main():
     print("1. Check the logs directory for structured log files")
     print("2. Use 'moyo metrics show' to view current metrics")
     print("3. Use 'moyo metrics start' to run the metrics server")
-    print("4. Configure your own settings in config.yaml")
+    print("4. Configure your own settings via environment variables or .env")
 
 
 if __name__ == "__main__":

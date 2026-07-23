@@ -671,6 +671,8 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: Dict[st
 
 async def search_press_releases(query: str, max_results: int = 100, sources: List[str] | None = None) -> List[PublicSource]:
     """Asynchronously search press releases and parse HTML into public sources."""
+    # PLACEHOLDER endpoint. Returns no results until pointed at a real service
+    # (e.g. the PR Newswire / Business Wire sources in PressReleasesCrawler.sources).
     url = "https://example.com/press"
     params = {"q": query, "n": max_results}
 

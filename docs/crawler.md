@@ -24,7 +24,7 @@ from pathlib import Path
 from moyo.privateside.mapcorpus import tokens_for_corpus
 from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 
-centroids, topic_tokens, labels, texts = tokens_for_corpus(Path('moyo/data/private/corpus.txt'), top_k=8)
+centroids, topic_tokens, labels, texts = tokens_for_corpus(Path('data/private/corpus.txt'), top_k=8)
 tokens = [t for cluster in topic_tokens for t in cluster][:25]
 
 crawler = PublicSourcesCrawler()

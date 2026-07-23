@@ -706,6 +706,8 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: Dict[st
 
 async def search_conference_talks(query: str, max_results: int = 100, sources: List[str] | None = None) -> List[PublicSource]:
     """Asynchronously search conference talks and return public sources."""
+    # PLACEHOLDER endpoint. Returns no results until pointed at a real service
+    # (e.g. the arXiv/IEEE/ACM APIs defined in ConferenceTalksCrawler.sources).
     url = "https://example.com/talks"
     params = {"q": query, "n": max_results}
 

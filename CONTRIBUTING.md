@@ -27,9 +27,13 @@ release artefacts.
 ```bash
 git clone https://github.com/<org>/moyo.git
 cd moyo
+pyenv activate sente   # or your virtualenv
 
-# Base install (no GUI or monitoring deps)
-pip install -e .
+# Base install (no GUI or monitoring deps) — always use the same python for pip and CLI
+python -m pip install -e .
+
+# If `moyo` / `moyo-datainput` fail with ModuleNotFoundError but `python -c "import moyo"` works:
+bash scripts/fix-cli-path.sh
 
 # With monitoring extras
 pip install -e ".[monitoring]"
@@ -71,5 +75,4 @@ moyo/               # Main package
 shared_utils/       # Vendored shared utilities (included in the wheel)
 docs/               # Operational runbook and guides
 tests/              # Test suite
-moyoGUI/            # Legacy launcher (kept for backwards compatibility)
 ```
