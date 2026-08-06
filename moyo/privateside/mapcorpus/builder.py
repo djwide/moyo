@@ -1,5 +1,6 @@
 """Corpus builder for creating FAISS indexes from processed data."""
 
+import re
 import time
 import logging
 from pathlib import Path
@@ -390,21 +391,36 @@ class CorpusBuilder:
             }
         )
     
+    def _corpus_name(self) -> str:
+        """Derive a corpus name for on-disk naming from the source documents."""
+        sources = {chunk.source_document for chunk in self.chunks}
+        stems = {Path(s.split("file:", 1)[-1]).stem for s in sources if s}
+        if len(stems) == 1:
+            raw = next(iter(stems))
+        else:
+            raw = self.corpus_id
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "_", raw.strip()).strip("._-")
+        return slug or self.corpus_id
+
     def _save_corpus(self) -> Optional[str]:
         """Save the corpus and index to disk.
         
+        Each corpus is written to its own subdirectory under the index root,
+        with the FAISS file named after the corpus (never a shared index.faiss).
+        
         Returns:
-            Path where corpus was saved, or None if failed
+            Path to the saved ``.faiss`` file, or None if failed
         """
         if not self.index:
             return None
         
         try:
-            output_dir = Path(self.config.output_directory)
+            corpus_name = self._corpus_name()
+            output_dir = Path(self.config.output_directory) / corpus_name
             ensure_directory(output_dir)
             
-            # Save FAISS index
-            self.index.save(output_dir)
+            # Save FAISS index, named after the corpus
+            index_path = self.index.save(output_dir, name=corpus_name)
             
             # Save chunks if requested
             if self.config.save_chunks:
@@ -420,7 +436,7 @@ class CorpusBuilder:
                 json.dump(corpus_info.dict(), f, indent=2, default=str)
             
             logger.info(f"Corpus saved to {output_dir}")
-            return str(output_dir)
+            return str(index_path)
             
         except Exception as e:
             logger.error(f"Error saving corpus: {e}")
@@ -488,9 +504,8 @@ class CorpusBuilder:
                     chunks_data = json.load(f)
                 builder.chunks = [DocumentChunk(**chunk_data) for chunk_data in chunks_data]
             
-            # Load FAISS index if available
-            index_file = index_dir / "index.faiss"
-            if index_file.exists():
+            # Load FAISS index if available (named after the corpus)
+            if list(index_dir.glob("*.faiss")):
                 builder.index = FAISSIndex.load(str(index_dir))
             
             logger.info(f"Loaded corpus from {index_path}")

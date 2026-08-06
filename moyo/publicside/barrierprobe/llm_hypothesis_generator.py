@@ -294,9 +294,10 @@ class LocalHypothesisGenerator:
 @dataclass
 class HypothesisGenerationConfig:
     """Configuration for hypothesis generation."""
-    llm_provider: str = "local"  # "openai", "anthropic", "local"
-    model_name: str = "all-MiniLM-L6-v2"
+    llm_provider: str = "ollama"  # "openai", "anthropic", "ollama", "local"
+    model_name: str = "llama3.1:8b"
     api_key: Optional[str] = None
+    base_url: Optional[str] = "http://localhost:11434"
     max_hypotheses_per_document: int = 3
     min_query_length: int = 10
     max_query_length: int = 200
@@ -319,8 +320,22 @@ class LLMHypothesisGenerator:
     def _initialize_llm_client(self):
         """Initialize the LLM client based on provider."""
         if self.config.llm_provider == "local":
-            # Use local embedding-based hypothesis generation
+            # Offline synonym fallback (not the default).
             return LocalHypothesisGenerator(self.config.model_name)
+        elif self.config.llm_provider == "ollama":
+            from moyo.publicside.barrierprobe.llm_fuzzer import OllamaClient
+
+            client = OllamaClient(
+                self.config.model_name,
+                base_url=self.config.base_url,
+            )
+            if not client.is_available():
+                logger.error(
+                    "Ollama not reachable for hypothesis generation at %s",
+                    client.base_url,
+                )
+                return None
+            return client
         elif self.config.llm_provider == "openai":
             try:
                 from openai import OpenAI
@@ -360,6 +375,11 @@ class LLMHypothesisGenerator:
             List of generated hypothesis nodes
         """
         hypotheses = []
+
+        if isinstance(self.llm_client, LocalHypothesisGenerator):
+            return self.llm_client.generate_hypotheses_from_documents(
+                documents, target_concept, base_hypothesis
+            )
         
         for doc in documents[:5]:  # Limit to top 5 documents
             doc_hypotheses = self._generate_hypotheses_for_document(
@@ -432,6 +452,16 @@ Focus on:
     
     def _call_llm(self, prompt: str) -> str:
         """Call the LLM with the given prompt."""
+        if self.config.llm_provider == "ollama":
+            return self.llm_client.generate(
+                prompt,
+                system=(
+                    "You are a research assistant that proposes retrieval queries. "
+                    "Follow the requested QUERY N: format exactly."
+                ),
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
         if self.config.llm_provider == "openai":
             response = self.llm_client.chat.completions.create(
                 model=self.config.model_name,

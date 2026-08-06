@@ -10,7 +10,9 @@ import json
 
 from .schema import BarrierProbeResult
 from .barrier_analyzer import BarrierAnalyzer
-from shared_utils import embed, generate_id
+from shared_utils import generate_id
+from shared_utils import embed
+from moyo.publicside.barrierprobe.llm_fuzzer import OllamaClient, DEFAULT_OLLAMA_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,11 @@ class IterativeLLMSearch:
         
         Args:
             barrier_analyzer: Barrier analyzer with loaded indexes
-            llm_client: LLM client for generating responses (optional)
+            llm_client: LLM client for generating responses. Defaults to local
+                Ollama ``llama3.1:8b``.
         """
         self.barrier_analyzer = barrier_analyzer
-        self.llm_client = llm_client
+        self.llm_client = llm_client or OllamaClient(DEFAULT_OLLAMA_MODEL)
         self.iteration_results = []
         
     def fuzz_text(self, text: str, fuzz_level: float = 0.1) -> str:

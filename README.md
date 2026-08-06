@@ -211,11 +211,14 @@ result = crawler.crawl_with_tokens(tokens)
 ### Environment Variables
 
 ```bash
-export OPENAI_API_KEY="..."      # Required for LLM fuzzing
+export OPENAI_API_KEY="..."      # Required for LLM fuzzing / OpenAI embeddings
 export ANTHROPIC_API_KEY="..."   # Alternative LLM provider
-export MOYO_EMBEDDING_MODEL="all-MiniLM-L6-v2"
+export MOYO_EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2"
+export MOYO_EMBEDDING_DEVICE="auto"   # auto | cuda | cpu
 export MOYO_CHUNK_SIZE="512"
 ```
+
+Embedding model tiers, GPU setup, and GUI options: [`docs/embeddings.md`](docs/embeddings.md).
 
 ### Data Directory Structure
 

@@ -331,13 +331,23 @@ class FAISSIndex:
         """Get number of vectors in index."""
         return self.index.ntotal
     
-    def save(self, directory: Union[str, Path]) -> None:
-        """Save index and metadata to directory."""
+    def save(self, directory: Union[str, Path], name: str = "index") -> Path:
+        """Save index and metadata to directory.
+
+        Args:
+            directory: Directory to write the index into.
+            name: Base name for the FAISS file, i.e. ``<name>.faiss``. Use the
+                corpus name so indexes are identifiable and never collide on a
+                single ``index.faiss``.
+
+        Returns:
+            Path to the written ``<name>.faiss`` file.
+        """
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         
-        # Save FAISS index
-        index_path = directory / "index.faiss"
+        # Save FAISS index, named after the corpus it was built from
+        index_path = directory / f"{name}.faiss"
         
         # Handle GPU indices - convert to CPU before saving
         if 'Gpu' in type(self.index).__name__:
@@ -390,13 +400,39 @@ class FAISSIndex:
         with open(info_path, 'w') as f:
             json.dump(info, f, indent=2)
         
-        logger.info(f"Saved index to {directory}")
+        logger.info(f"Saved index to {index_path}")
+        return index_path
     
     @classmethod
-    def load(cls, directory: Union[str, Path]) -> "FAISSIndex":
-        """Load index and metadata from directory."""
-        directory = Path(directory)
-        index_path = directory / "index.faiss"
+    def load(cls, path: Union[str, Path]) -> "FAISSIndex":
+        """Load index and metadata.
+
+        Args:
+            path: Either a ``<name>.faiss`` file or a directory containing a
+                single ``*.faiss`` file (``index.faiss`` is preferred when
+                present, for backward compatibility).
+        """
+        path = Path(path)
+
+        if path.is_file() and path.suffix == ".faiss":
+            index_path = path
+        elif (path / "index.faiss").exists():
+            index_path = path / "index.faiss"
+        else:
+            # A single corpus directory, or a root containing per-corpus
+            # subdirectories. Prefer a top-level .faiss, else the most recently
+            # built nested one.
+            faiss_files = sorted(path.glob("*.faiss"))
+            if not faiss_files:
+                faiss_files = sorted(
+                    path.rglob("*.faiss"), key=lambda p: p.stat().st_mtime, reverse=True
+                )
+            if not faiss_files:
+                raise FileNotFoundError(f"No .faiss file found in: {path}")
+            index_path = faiss_files[0]
+
+        # Companion files live alongside the .faiss file
+        directory = index_path.parent
         metadata_path = directory / "metadata.json"
         info_path = directory / "index_info.json"
         
@@ -493,7 +529,8 @@ def build_index_from_text(lines: List[str], index_path: Path, model_name: str) -
             raise RuntimeError("sentence-transformers not available")
         
         # Load model
-        model = SentenceTransformer(model_name)
+        from shared_utils.embeddings import resolve_device
+        model = SentenceTransformer(model_name, device=resolve_device())
         
         # Generate embeddings
         embeddings = model.encode(lines, normalize_embeddings=True)

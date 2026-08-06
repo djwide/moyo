@@ -1,0 +1,74 @@
+{
+  "_comment": "LLMs that a naive-prompt exploration (moyo-gather explore) fans out to. api_key values of the form \"$ENV_VAR\" are read from the environment / .env so secrets stay out of this file. Remove any block you have not configured a key for; unreachable ones are recorded as errors in the report but do not stop the run. Model names are swappable - change them to whatever your account has access to.",
+
+  "retrieval_llms": [
+    {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "api_key": "$OPENAI_API_KEY",
+      "label": "ChatGPT (OpenAI gpt-4o)"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "api_key": "$ANTHROPIC_API_KEY",
+      "label": "Claude (Anthropic Sonnet)"
+    },
+    {
+      "provider": "custom",
+      "model": "grok-4.5",
+      "base_url": "https://api.x.ai/v1",
+      "api_key": "$XAI_API_KEY",
+      "label": "Grok (xAI grok-4.5)"
+    },
+    {
+      "provider": "custom",
+      "model": "gemini-2.5-pro",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key": "$GEMINI_API_KEY",
+      "label": "Gemini (Google gemini-2.5-pro)"
+    },
+    {
+      "provider": "custom",
+      "model": "qwen-plus",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "api_key": "$DASHSCOPE_API_KEY",
+      "label": "Qwen (Alibaba qwen-plus)"
+    },
+    {
+      "provider": "custom",
+      "model": "kimi-k2.6",
+      "base_url": "https://api.moonshot.ai/v1",
+      "api_key": "$MOONSHOT_API_KEY",
+      "label": "Kimi (Moonshot kimi-k2.6)",
+      "temperature": 1
+    },
+    {
+      "provider": "custom",
+      "model": "meta-llama/llama-3.3-70b-instruct",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "Llama 3.3 70B Instruct"
+    },
+    {
+      "provider": "custom",
+      "model": "deepseek/deepseek-chat",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "DeepSeek Chat"
+    },
+    {
+      "provider": "custom",
+      "model": "meta-llama/llama-4-maverick",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "Llama 4 Maverick"
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "base_url": "http://localhost:11434",
+      "label": "Llama 3.1 8B (local)"
+    }
+  ]
+}

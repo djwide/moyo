@@ -2,8 +2,23 @@
 
 __version__ = "0.1.0"
 
-from .embeddings import embed, get_embedding_model, get_embedding_dimension
-from .chunking import chunk_text, chunk_text_simple, chunk_lines
+from .embeddings import (
+    embed,
+    get_embedding_model,
+    get_embedding_dimension,
+    resolve_device,
+    cuda_available,
+    get_device_info,
+    clear_embedding_cache,
+)
+from .chunking import (
+    chunk_text,
+    chunk_text_simple,
+    chunk_lines,
+    chunk_text_multi_granularity,
+    GranularChunk,
+    estimate_token_count,
+)
 from .faiss_index import FAISSIndex, StringStore, build_index, build_index_from_text
 from .storage import ensure_directory, list_files, copy_directory, get_storage, LocalStorage
 from .ids import (
@@ -82,10 +97,17 @@ except ImportError:
 __all__ = [
     "embed",
     "get_embedding_model",
-    "get_embedding_dimension", 
+    "get_embedding_dimension",
+    "resolve_device",
+    "cuda_available",
+    "get_device_info",
+    "clear_embedding_cache", 
     "chunk_text",
     "chunk_text_simple",
     "chunk_lines",
+    "chunk_text_multi_granularity",
+    "GranularChunk",
+    "estimate_token_count",
     "FAISSIndex",
     "StringStore",
     "build_index",

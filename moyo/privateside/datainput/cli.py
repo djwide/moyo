@@ -1,9 +1,59 @@
 import click
+from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import json
 
-from .gui_bridge import GUIBridge, ProcessingConfig, process_text_and_build_index, process_files_and_build_index
+from .gui_bridge import (
+    GUIBridge,
+    ProcessingConfig,
+    PRIVATE_INDEX_ROOT,
+    process_text_and_build_index,
+    process_files_and_build_index,
+)
+
+# Root under which all FAISS indexes live (private and public).
+INDEX_ROOT = "indexes"
+
+
+def discover_indexes(root: str = INDEX_ROOT) -> List[Path]:
+    """Return all ``*.faiss`` files under the index root, newest first."""
+    root_path = Path(root)
+    if not root_path.exists():
+        return []
+    faiss_files = [p for p in root_path.rglob("*.faiss") if p.is_file()]
+    return sorted(faiss_files, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def resolve_index(index_path: Optional[str], latest: bool) -> Optional[Path]:
+    """Resolve which index to use for search/info.
+
+    If ``index_path`` is given, use it. Otherwise fall back to the most
+    recently built index, or prompt the user to choose when several exist.
+    Returns None if no index could be resolved.
+    """
+    if index_path:
+        return Path(index_path)
+
+    indexes = discover_indexes()
+    if not indexes:
+        click.echo(f"❌ No indexes found under '{INDEX_ROOT}/'. Build one with 'process' first.")
+        return None
+
+    if latest or len(indexes) == 1:
+        chosen = indexes[0]
+        click.echo(f"Using most recent index: {chosen}")
+        return chosen
+
+    click.echo("Available indexes (most recent first):")
+    for i, path in enumerate(indexes, start=1):
+        mtime = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        click.echo(f"  {i}. {path}  (built {mtime})")
+
+    choice = click.prompt(
+        "Select an index by number", type=click.IntRange(1, len(indexes)), default=1
+    )
+    return indexes[choice - 1]
 
 
 @click.group()
@@ -48,26 +98,28 @@ def cli(verbose: bool, debug: bool) -> None:
 @click.option('--chunk-overlap', default=50, help='Overlap between chunks')
 @click.option('--model', default='all-MiniLM-L6-v2', help='Embedding model to use')
 @click.option('--index-type', default='flat', type=click.Choice(['flat', 'ivf', 'hnsw']), help='FAISS index type')
-@click.option('--output-dir', default='indexes/private', help='Output directory for index')
+@click.option('--name', '-n', 'index_name', default=None,
+              help='Corpus name for the index (defaults to the file/corpus name)')
 @click.option('--no-save', is_flag=True, help='Do not save index to disk')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
 def process(text: str, file_path: str, file_paths: List[str], chunk_size: int, chunk_overlap: int, 
-            model: str, index_type: str, output_dir: str, no_save: bool, json_output: bool) -> None:
-    """Process text or files and build FAISS index."""
+            model: str, index_type: str, index_name: str, no_save: bool, json_output: bool) -> None:
+    """Process text or files and build a FAISS index under indexes/private."""
     
-    # Create configuration
+    # Create configuration. Indexes are always written under indexes/private,
+    # one subdirectory per corpus, with the .faiss file named after the corpus.
     config = ProcessingConfig(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         embedding_model=model,
         index_type=index_type,
         save_index=not no_save,
-        output_dir=output_dir
+        output_dir=PRIVATE_INDEX_ROOT,
     )
     
     if text:
         # Process text input
-        result = process_text_and_build_index(text, config)
+        result = process_text_and_build_index(text, config, index_name=index_name)
         
         if json_output:
             click.echo(json.dumps(result.to_dict(), indent=2))
@@ -86,7 +138,7 @@ def process(text: str, file_path: str, file_paths: List[str], chunk_size: int, c
     
     elif file_path:
         # Process single file
-        result = process_files_and_build_index([file_path], config)[0]
+        result = process_files_and_build_index([file_path], config, index_name=index_name)[0]
         
         if json_output:
             click.echo(json.dumps(result.to_dict(), indent=2))
@@ -105,7 +157,7 @@ def process(text: str, file_path: str, file_paths: List[str], chunk_size: int, c
     
     elif file_paths:
         # Process multiple files
-        results = process_files_and_build_index(file_paths, config)
+        results = process_files_and_build_index(file_paths, config, index_name=index_name)
         
         if json_output:
             click.echo(json.dumps([r.to_dict() for r in results], indent=2))
@@ -131,15 +183,20 @@ def process(text: str, file_path: str, file_paths: List[str], chunk_size: int, c
 
 
 @cli.command()
-@click.argument('index_path', type=click.Path(exists=True))
+@click.argument('index_path', type=click.Path(exists=True), required=False)
 @click.option('--query', '-q', required=True, help='Search query')
 @click.option('--k', default=10, help='Number of results to return')
+@click.option('--latest', is_flag=True, help='Use the most recently built index without prompting')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
-def search(index_path: str, query: str, k: int, json_output: bool) -> None:
-    """Search an existing index."""
+def search(index_path: str, query: str, k: int, latest: bool, json_output: bool) -> None:
+    """Search an index. Defaults to the most recent index or lets you choose."""
+    
+    resolved = resolve_index(index_path, latest)
+    if resolved is None:
+        return
     
     bridge = GUIBridge()
-    load_result = bridge.load_index(index_path)
+    load_result = bridge.load_index(resolved)
     
     if not load_result.success:
         click.echo(f"❌ Failed to load index: {load_result.message}")
@@ -164,13 +221,18 @@ def search(index_path: str, query: str, k: int, json_output: bool) -> None:
 
 
 @cli.command()
-@click.argument('index_path', type=click.Path(exists=True))
+@click.argument('index_path', type=click.Path(exists=True), required=False)
+@click.option('--latest', is_flag=True, help='Use the most recently built index without prompting')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
-def info(index_path: str, json_output: bool) -> None:
-    """Get information about an index."""
+def info(index_path: str, latest: bool, json_output: bool) -> None:
+    """Show info for an index. Defaults to the most recent index or lets you choose."""
+    
+    resolved = resolve_index(index_path, latest)
+    if resolved is None:
+        return
     
     bridge = GUIBridge()
-    load_result = bridge.load_index(index_path)
+    load_result = bridge.load_index(resolved)
     
     if not load_result.success:
         click.echo(f"❌ Failed to load index: {load_result.message}")

@@ -59,11 +59,23 @@ class EmbeddingConfig(BaseSettings):
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="Default embedding model"
     )
-    device: str = Field(default="cpu", description="Device for embedding computation")
+    device: str = Field(
+        default="auto",
+        description="Device for embedding computation: auto | cuda | cpu",
+    )
     batch_size: int = Field(default=32, description="Batch size for embedding generation")
     normalize: bool = Field(default=True, description="Normalize embeddings")
     
     model_config = ConfigDict(env_prefix="MOYO_EMBEDDING_")
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, v: str) -> str:
+        allowed = {"auto", "cuda", "cpu", "gpu"}
+        normalized = (v or "auto").strip().lower()
+        if normalized not in allowed:
+            raise ValueError(f"device must be one of {sorted(allowed)}, got {v!r}")
+        return "cuda" if normalized == "gpu" else normalized
 
 
 class FAISSConfig(BaseSettings):
@@ -80,12 +92,13 @@ class FAISSConfig(BaseSettings):
 class LLMConfig(BaseSettings):
     """LLM configuration for hypothesis generation."""
     
-    provider: str = Field(default="openai", description="LLM provider")
-    model: str = Field(default="gpt-3.5-turbo", description="LLM model name")
+    provider: str = Field(default="openai", description="LLM provider: openai, anthropic, ollama, custom, echo")
+    model: str = Field(default="gpt-4o", description="LLM model name")
     api_key: Optional[str] = Field(default=None, description="API key")
+    base_url: Optional[str] = Field(default=None, description="Base URL for ollama/custom (OpenAI-compatible) endpoints")
     max_tokens: int = Field(default=1000, description="Maximum tokens for generation")
     temperature: float = Field(default=0.7, description="Generation temperature")
-    timeout: int = Field(default=30, description="Request timeout in seconds")
+    timeout: int = Field(default=120, description="Request timeout in seconds")
     
     model_config = ConfigDict(env_prefix="MOYO_LLM_")
 

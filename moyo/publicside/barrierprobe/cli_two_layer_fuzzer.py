@@ -34,7 +34,7 @@ def cli(verbose):
 @click.option('--output', '-o', default='fuzzing_results.json', help='Output file for results')
 @click.option('--max-iterations', '-m', default=5, help='Maximum fuzzing iterations')
 @click.option('--k-neighbors', '-k', default=10, help='Number of k-NN neighbors for PDG')
-@click.option('--embedding-model', '-e', default='all-MiniLM-L6-v2', help='Embedding model to use')
+@click.option('--embedding-model', '-e', default='all-MiniLM-L6-v2', help='Embedding model to use (MiniLM)')
 @click.option('--llm-provider', default=None, help='LLM provider (openai, anthropic)')
 @click.option('--llm-model', default='gpt-4', help='LLM model name')
 @click.option('--llm-api-key', default=None, help='LLM API key')
@@ -116,7 +116,7 @@ def analyze_graph(faiss_index, output):
         return
     
     try:
-        from shared_utils import FAISSIndex
+        from shared_utils import FAISSIndex, embed
         
         # Load FAISS index
         click.echo(f"Loading FAISS index: {faiss_index}")

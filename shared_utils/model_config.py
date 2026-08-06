@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 # Default data directory (respects SENTE_DATA_DIR if set)
 DATA_DIR = pathlib.Path(os.environ.get("SENTE_DATA_DIR", "data"))
@@ -16,15 +16,124 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_FILE = DATA_DIR / "model_config.json"
 
-EMBEDDING_MODELS = {
-    "mini": "all-MiniLM-L6-v2",
-    "multilingual": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-    "openai-large": "text-embedding-3-large",
-    "openai-small": "text-embedding-3-small",
+# Full catalog: key → metadata. GUI and CLI should prefer this over hard-coded lists.
+# ``backend``: "local" uses sentence-transformers; "openai" uses the OpenAI API.
+EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
+    "mini": {
+        "model_name": "all-MiniLM-L6-v2",
+        "dimensions": 384,
+        "backend": "local",
+        "tier": "fast",
+        "label": "MiniLM-L6 — fast (384d)",
+        "description": "Default for prototyping. Fast on CPU/GPU; English only.",
+    },
+    "mini-l12": {
+        "model_name": "all-MiniLM-L12-v2",
+        "dimensions": 384,
+        "backend": "local",
+        "tier": "fast",
+        "label": "MiniLM-L12 — fast+ (384d)",
+        "description": "Modest quality bump over L6; same 384d index layout.",
+    },
+    "mpnet": {
+        "model_name": "all-mpnet-base-v2",
+        "dimensions": 768,
+        "backend": "local",
+        "tier": "balanced",
+        "label": "MPNet — balanced (768d)",
+        "description": "Strong local default for barrier analysis. Prefer GPU for bulk builds.",
+    },
+    "bge-base": {
+        "model_name": "BAAI/bge-base-en-v1.5",
+        "dimensions": 768,
+        "backend": "local",
+        "tier": "balanced",
+        "label": "BGE-base — retrieval (768d)",
+        "description": "Often beats MPNet on retrieval benchmarks. English.",
+    },
+    "e5-base": {
+        "model_name": "intfloat/e5-base-v2",
+        "dimensions": 768,
+        "backend": "local",
+        "tier": "balanced",
+        "label": "E5-base — retrieval (768d)",
+        "description": "Strong retrieval model. Prefers 'query: '/'passage: ' prefixes for best results.",
+    },
+    "multilingual": {
+        "model_name": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        "dimensions": 768,
+        "backend": "local",
+        "tier": "balanced",
+        "label": "Multilingual MPNet (768d)",
+        "description": "Use when public or private corpora are not English-only.",
+    },
+    "openai-small": {
+        "model_name": "text-embedding-3-small",
+        "dimensions": 1536,
+        "backend": "openai",
+        "tier": "api",
+        "label": "OpenAI small (1536d)",
+        "description": "API quality; private data leaves the machine. Requires OPENAI_API_KEY.",
+    },
+    "openai-large": {
+        "model_name": "text-embedding-3-large",
+        "dimensions": 3072,
+        "backend": "openai",
+        "tier": "api",
+        "label": "OpenAI large (3072d)",
+        "description": "Highest API quality; costlier. Requires OPENAI_API_KEY.",
+    },
+}
+
+# Backward-compatible key → HF/API model name map
+EMBEDDING_MODELS: Dict[str, str] = {
+    key: meta["model_name"] for key, meta in EMBEDDING_CATALOG.items()
 }
 
 DEFAULT_MODEL_KEY = "mini"
 DEFAULT_MODEL_NAME = EMBEDDING_MODELS[DEFAULT_MODEL_KEY]
+
+OPENAI_MODEL_NAMES = {
+    meta["model_name"]
+    for meta in EMBEDDING_CATALOG.values()
+    if meta["backend"] == "openai"
+} | {"openai-small", "openai-large"}
+
+
+def list_embedding_choices() -> List[Dict[str, Any]]:
+    """Return catalog entries with their keys for GUI/CLI population."""
+    return [{"key": key, **meta} for key, meta in EMBEDDING_CATALOG.items()]
+
+
+def get_catalog_entry(model_key_or_name: str) -> Optional[Dict[str, Any]]:
+    """Look up catalog metadata by key or by model_name."""
+    if model_key_or_name in EMBEDDING_CATALOG:
+        return {"key": model_key_or_name, **EMBEDDING_CATALOG[model_key_or_name]}
+    for key, meta in EMBEDDING_CATALOG.items():
+        if meta["model_name"] == model_key_or_name:
+            return {"key": key, **meta}
+    return None
+
+
+def get_dimensions(model_key_or_name: str, default: int = 384) -> int:
+    entry = get_catalog_entry(model_key_or_name)
+    return int(entry["dimensions"]) if entry else default
+
+
+def is_openai_model(model_key_or_name: str) -> bool:
+    entry = get_catalog_entry(model_key_or_name)
+    if entry:
+        return entry["backend"] == "openai"
+    return model_key_or_name in OPENAI_MODEL_NAMES
+
+
+def resolve_model_name(model_key_or_name: Optional[str] = None) -> str:
+    """Resolve a GUI key or HF name to the canonical model_name string."""
+    if not model_key_or_name:
+        return get_current_model_name()
+    if model_key_or_name in EMBEDDING_MODELS:
+        return EMBEDDING_MODELS[model_key_or_name]
+    return model_key_or_name
 
 
 def get_model_config() -> dict:
@@ -71,5 +180,3 @@ def get_model_key_for_name(model_name: str) -> str:
         if name == model_name:
             return key
     raise ValueError(f"Invalid model name: {model_name}. Available models: {list(EMBEDDING_MODELS.values())}")
-
-

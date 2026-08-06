@@ -49,6 +49,11 @@ are written to JSON that the **Create Private Index** tab can read.
 
 Embed prepared chunks and write a FAISS index (`flat`, `ivf`, or `hnsw`).
 
+Choose an **embedding model** from the shared catalog (MiniLM, MPNet, BGE,
+E5, multilingual, OpenAI) and a **device** (`Auto` / `CUDA` / `CPU`). See
+[`docs/embeddings.md`](embeddings.md) for tier recommendations. Public and
+private indices must use the same model.
+
 ### Gather Public Sources
 
 Crawl public corpora (patents, press releases, git commits, conferences,
@@ -62,9 +67,10 @@ source-type filters, output directory.
 ### Build Public Corpus
 
 Loads `sources.json` files emitted by the previous tab and builds a FAISS
-index. Exposes the full `IndexConfig`: embedding model, chunk size/overlap,
-min/max chunk length, source-type / relevance / confidence filters,
-deduplication and normalization toggles, and index type.
+index. Exposes the full `IndexConfig`: embedding model + device, chunk
+size/overlap, min/max chunk length, source-type / relevance / confidence
+filters, deduplication and normalization toggles, and index type. Model
+tiers are documented in [`docs/embeddings.md`](embeddings.md).
 
 ### Barrier Probe
 
@@ -199,3 +205,4 @@ into each tab's log pane.
 | `UMAP not installed` | `pip install umap-learn` |
 | `scipy not available` | `pip install scipy` |
 | `LLM client not initialised` | Either install `openai`/`anthropic`, or set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, or use the `local` provider. |
+| Device shows "CUDA not available" | See [`docs/embeddings.md`](embeddings.md) § GPU setup (`nvidia-smi`, `/dev/nvidia*`, WSL restart, CUDA PyTorch build). |
