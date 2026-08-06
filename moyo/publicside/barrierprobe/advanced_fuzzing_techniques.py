@@ -19,7 +19,7 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from shared_utils import embed
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +362,7 @@ class RandomWalkParaphraser:
     
     def __init__(self, config: AdvancedFuzzingConfig):
         self.config = config
-        self.embedding_model = SentenceTransformer(config.embedding_model)
+        self._embedding_model = config.embedding_model
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
@@ -379,7 +379,7 @@ class RandomWalkParaphraser:
     def random_walk_paraphrase(self, text: str, target_concept: str) -> str:
         """Perform random walk paraphrasing towards target concept."""
         current_text = text
-        target_embedding = self.embedding_model.encode([target_concept])[0]
+        target_embedding = embed([target_concept], self._embedding_model)[0]
         
         for step in range(self.config.walk_length):
             # Generate candidate paraphrases
@@ -388,7 +388,7 @@ class RandomWalkParaphraser:
             # Calculate similarity to target for each candidate
             candidate_scores = []
             for candidate in candidates:
-                candidate_embedding = self.embedding_model.encode([candidate])[0]
+                candidate_embedding = embed([candidate], self._embedding_model)[0]
                 similarity = np.dot(candidate_embedding, target_embedding) / (
                     np.linalg.norm(candidate_embedding) * np.linalg.norm(target_embedding)
                 )
@@ -450,7 +450,7 @@ class DifferentialRandomFuzzer:
     
     def __init__(self, config: AdvancedFuzzingConfig):
         self.config = config
-        self.embedding_model = SentenceTransformer(config.embedding_model)
+        self._embedding_model = config.embedding_model
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
@@ -468,7 +468,7 @@ class DifferentialRandomFuzzer:
         """Apply differential evolution to find optimal fuzzed version."""
         # Initialize population
         population = self._initialize_population(text)
-        target_embedding = self.embedding_model.encode([target_concept])[0]
+        target_embedding = embed([target_concept], self._embedding_model)[0]
         
         for generation in range(self.config.max_iterations):
             # Evaluate fitness
@@ -525,7 +525,7 @@ class DifferentialRandomFuzzer:
         fitness_scores = []
         
         for individual in population:
-            individual_embedding = self.embedding_model.encode([individual])[0]
+            individual_embedding = embed([individual], self._embedding_model)[0]
             similarity = np.dot(individual_embedding, target_embedding) / (
                 np.linalg.norm(individual_embedding) * np.linalg.norm(target_embedding)
             )
@@ -694,13 +694,13 @@ class SimulatedAnnealingOptimizer:
     
     def __init__(self, config: AdvancedFuzzingConfig):
         self.config = config
-        self.embedding_model = SentenceTransformer(config.embedding_model)
+        self._embedding_model = config.embedding_model
     
     def optimize_with_annealing(self, text: str, target_concept: str, 
                               fuzzing_function: callable) -> str:
         """Optimize fuzzing using simulated annealing."""
         current_solution = text
-        target_embedding = self.embedding_model.encode([target_concept])[0]
+        target_embedding = embed([target_concept], self._embedding_model)[0]
         current_energy = self._calculate_energy(current_solution, target_embedding)
         
         temperature = self.config.initial_temperature
@@ -733,7 +733,7 @@ class SimulatedAnnealingOptimizer:
     
     def _calculate_energy(self, solution: str, target_embedding: np.ndarray) -> float:
         """Calculate energy (similarity to target) of a solution."""
-        solution_embedding = self.embedding_model.encode([solution])[0]
+        solution_embedding = embed([solution], self._embedding_model)[0]
         similarity = np.dot(solution_embedding, target_embedding) / (
             np.linalg.norm(solution_embedding) * np.linalg.norm(target_embedding)
         )

@@ -20,11 +20,12 @@ class IndexConfig(BaseModel):
     """Configuration for building FAISS indexes."""
     index_type: IndexType = IndexType.FLAT
     embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_device: str = "auto"  # auto | cuda | cpu (unused for Ollama; kept for compat)
     chunk_size: int = 512
     chunk_overlap: int = 50
     normalize_embeddings: bool = True
     save_metadata: bool = True
-    output_directory: str = "data/barrierprobe/indexes"
+    output_directory: str = "indexes/public"
     
     # Index-specific parameters
     nlist: int = 100  # For IVF
@@ -56,6 +57,8 @@ class PublicChunk(BaseModel):
     chunk_index: int
     start_char: int
     end_char: int
+    level: str = "section"  # granularity: "section", "sentence", or "item"
+    parent_id: Optional[str] = None  # parent section chunk id (for sentences)
     metadata: Dict[str, Any] = Field(default_factory=dict)
     embedding: Optional[List[float]] = None
     created_at: datetime = Field(default_factory=datetime.now)

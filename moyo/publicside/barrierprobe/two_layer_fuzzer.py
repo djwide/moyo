@@ -16,9 +16,8 @@ from datetime import datetime
 import json
 
 from shared_utils import (
+    embed,
     FAISSIndex, 
-    embed, 
-    get_embedding_model,
     NormalizedDocument,
     DocumentCollection,
     generate_stable_document_id,

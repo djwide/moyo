@@ -6,6 +6,7 @@ Provides tabs for data input, FAISS index creation, and 2D visualization.
 
 import sys
 import json
+import re
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -341,27 +342,43 @@ class DataInputTab(QWidget):
                 f.write("-" * 50 + "\n")
 
 
+def _populate_embedding_model_combo(combo: QComboBox, default_key: str = "mini") -> None:
+    """Fill a combo with catalog labels; itemData stores the model key."""
+    from shared_utils.model_config import list_embedding_choices
+
+    combo.clear()
+    default_index = 0
+    for i, entry in enumerate(list_embedding_choices()):
+        combo.addItem(entry["label"], entry["key"])
+        combo.setItemData(i, entry["description"], Qt.ToolTipRole)
+        if entry["key"] == default_key:
+            default_index = i
+    combo.setCurrentIndex(default_index)
+
+
+def _device_status_text() -> str:
+    from shared_utils.embeddings import get_device_info
+
+    info = get_device_info()
+    if info["cuda_available"]:
+        name = info.get("gpu_name") or "GPU"
+        mem = info.get("gpu_memory_gb")
+        mem_s = f", {mem} GB" if mem is not None else ""
+        return f"CUDA available ({name}{mem_s}) — auto will use GPU"
+    return (
+        "CUDA not available — embeddings will run on CPU. "
+        "On WSL2 check nvidia-smi / /dev/nvidia* and restart WSL if needed."
+    )
+
+
 class FAISSIndexTab(QWidget):
     """Tab for creating a FAISS index from a corpus."""
-
-    EMBEDDING_MODELS = {
-        "mini": "all-MiniLM-L6-v2",
-        "multilingual": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        "openai-large": "text-embedding-3-large",
-        "openai-small": "text-embedding-3-small",
-    }
-    MODEL_DIMENSIONS = {
-        "mini": 384,
-        "multilingual": 768,
-        "openai-large": 3072,
-        "openai-small": 1536,
-    }
 
     def __init__(self):
         super().__init__()
         self.default_corpus_path = _repo_root / "data" / "private" / "corpus.txt"
-        self.default_private_index_path = _repo_root / "data" / "private_faiss_index"
-        self.default_public_index_path = _repo_root / "data" / "public_faiss_index"
+        self.default_private_index_path = _repo_root / "indexes" / "private"
+        self.default_public_index_path = _repo_root / "indexes" / "public"
         self.init_ui()
 
     def init_ui(self):
@@ -404,20 +421,39 @@ class FAISSIndexTab(QWidget):
         model_layout = QHBoxLayout()
         model_layout.addWidget(QLabel("Embedding Model:"))
         self.embedding_model_combo = QComboBox()
-        self.embedding_model_combo.addItems(["mini", "multilingual", "openai-large", "openai-small"])
-        self.embedding_model_combo.setCurrentText("mini")
-        self.embedding_model_combo.currentTextChanged.connect(self.on_model_changed)
+        _populate_embedding_model_combo(self.embedding_model_combo, default_key="mini")
+        self.embedding_model_combo.currentIndexChanged.connect(self.on_model_changed)
         model_layout.addWidget(self.embedding_model_combo)
         index_layout.addLayout(model_layout)
+
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("Device:"))
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("Auto (CUDA if available)", "auto")
+        self.device_combo.addItem("CUDA (GPU)", "cuda")
+        self.device_combo.addItem("CPU", "cpu")
+        self.device_combo.setCurrentIndex(0)
+        device_layout.addWidget(self.device_combo)
+        index_layout.addLayout(device_layout)
+
+        self.device_status_label = QLabel(_device_status_text())
+        self.device_status_label.setWordWrap(True)
+        self.device_status_label.setStyleSheet("color: #555;")
+        index_layout.addWidget(self.device_status_label)
 
         params_layout = QHBoxLayout()
         params_layout.addWidget(QLabel("Dimension:"))
         self.dimension_label = QLabel("384")
         params_layout.addWidget(self.dimension_label)
+        self.model_hint_label = QLabel("")
+        self.model_hint_label.setWordWrap(True)
+        self.model_hint_label.setStyleSheet("color: #555;")
+        params_layout.addWidget(self.model_hint_label, stretch=1)
         index_layout.addLayout(params_layout)
 
         index_group.setLayout(index_layout)
         layout.addWidget(index_group)
+        self.on_model_changed()
 
         output_group = QGroupBox("Index Output")
         output_layout = QVBoxLayout()
@@ -466,12 +502,22 @@ class FAISSIndexTab(QWidget):
         self.index_output_label.setEnabled(not self.use_default_index_checkbox.isChecked())
 
     def on_model_changed(self):
-        model_key = self.embedding_model_combo.currentText()
-        self.dimension_label.setText(str(self.MODEL_DIMENSIONS.get(model_key, 384)))
+        from shared_utils.model_config import get_catalog_entry
+
+        model_key = self.embedding_model_combo.currentData() or "mini"
+        entry = get_catalog_entry(model_key) or {}
+        self.dimension_label.setText(str(entry.get("dimensions", 384)))
+        hint = entry.get("description", "")
+        if entry.get("backend") == "openai":
+            hint = f"{hint} (device ignored — API)"
+            self.device_combo.setEnabled(False)
+        else:
+            self.device_combo.setEnabled(True)
+        self.model_hint_label.setText(hint)
 
     def on_index_type_changed(self):
         index_type = self.index_type_radio.currentText()
-        loc = "data/private_faiss_index" if index_type == "Private" else "data/public_faiss_index"
+        loc = "indexes/private" if index_type == "Private" else "indexes/public"
         self.use_default_index_checkbox.setText(f"Use default location ({loc})")
 
     def select_corpus(self):
@@ -543,22 +589,33 @@ class FAISSIndexTab(QWidget):
             self.output_text.append(f"Processing {len(texts)} text items...")
             self.progress_bar.setValue(40)
 
-            model_key = self.embedding_model_combo.currentText()
-            model_name = self.EMBEDDING_MODELS.get(model_key, "all-MiniLM-L6-v2")
+            model_key = self.embedding_model_combo.currentData() or "mini"
+            from shared_utils.model_config import get_catalog_entry, resolve_model_name
+            entry = get_catalog_entry(model_key) or {}
+            model_name = resolve_model_name(model_key)
+            device = self.device_combo.currentData() or "auto"
 
             try:
-                from shared_utils.embeddings import embed
+                from shared_utils.embeddings import embed, resolve_device
                 from shared_utils.faiss_index import FAISSIndex
                 import faiss
+                resolved = resolve_device(device) if entry.get("backend") != "openai" else "api"
                 gpu_msg = "GPU" if hasattr(faiss, "GpuIndexFlatIP") else "CPU"
                 self.output_text.append(f"Using FAISS {gpu_msg} backend")
+                self.output_text.append(f"Embedding device: {resolved}")
             except ImportError as e:
                 self.output_text.append(f"Error importing shared_utils: {e}")
                 return
 
             self.output_text.append(f"Generating embeddings using {model_name}...")
             self.progress_bar.setValue(50)
-            embeddings = embed(texts, model_name=model_name, batch_size=32, normalize=True)
+            embeddings = embed(
+                texts,
+                model_name=model_name,
+                batch_size=32,
+                normalize=True,
+                device=device,
+            )
 
             if not embeddings:
                 self.output_text.append("Failed to generate embeddings")
@@ -575,7 +632,7 @@ class FAISSIndexTab(QWidget):
             else:
                 faiss_type = "flat"
 
-            dimension = self.MODEL_DIMENSIONS.get(model_key, 384)
+            dimension = entry.get("dimensions", 384)
             self.output_text.append(f"Creating {faiss_type.upper()} index (dim={dimension})...")
             self.progress_bar.setValue(80)
 
@@ -594,11 +651,14 @@ class FAISSIndexTab(QWidget):
             faiss_index.add_vectors(embeddings, metadata)
             self.progress_bar.setValue(90)
 
-            self.output_text.append(f"Saving index to {index_path}...")
-            faiss_index.save(index_path)
+            corpus_name = re.sub(r"[^A-Za-z0-9._-]+", "_", corpus_path.stem).strip("._-") or "corpus"
+            index_dir = index_path / corpus_name
+            index_dir.mkdir(parents=True, exist_ok=True)
+            self.output_text.append(f"Saving index to {index_dir}...")
+            saved_path = faiss_index.save(index_dir, name=corpus_name)
 
             self.output_text.append("FAISS index created successfully!")
-            self.output_text.append(f"Index saved to: {index_path}")
+            self.output_text.append(f"Index saved to: {saved_path}")
             self.output_text.append(f"Total vectors: {faiss_index.get_vector_count()}")
             self.output_text.append(f"Index type: {faiss_type.upper()}, dimension: {dimension}")
             self.progress_bar.setValue(100)
@@ -673,27 +733,73 @@ class GatherPublicSourcesTab(QWidget):
         self._mode_buttons = QButtonGroup(self)
         self.topic_radio = QRadioButton("Single topic")
         self.tokens_radio = QRadioButton("Token list")
+        self.prompt_radio = QRadioButton("Naive prompt (AI explore)")
         self.topic_radio.setChecked(True)
         self._mode_buttons.addButton(self.topic_radio)
         self._mode_buttons.addButton(self.tokens_radio)
+        self._mode_buttons.addButton(self.prompt_radio)
         self.topic_radio.toggled.connect(self._refresh_mode)
+        self.prompt_radio.toggled.connect(self._refresh_mode)
         mode_layout.addWidget(self.topic_radio)
         mode_layout.addWidget(self.tokens_radio)
+        mode_layout.addWidget(self.prompt_radio)
         mode_layout.addStretch(1)
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
-        # --- Topic / tokens input
+        # --- Topic / tokens / naive-prompt input
         self.topic_input = QLineEdit()
         self.topic_input.setPlaceholderText("e.g. 'artificial intelligence safety'")
         self.tokens_input = QLineEdit()
         self.tokens_input.setPlaceholderText("Comma-separated: neural networks, transformers, LLM")
         self.tokens_input.setEnabled(False)
+        self.prompt_input = QTextEdit()
+        self.prompt_input.setPlaceholderText(
+            "Ask in plain language, e.g. 'give me all the info you can on the recipe for Coca-Cola'"
+        )
+        self.prompt_input.setFixedHeight(60)
+        self.prompt_input.setEnabled(False)
 
         topic_row = QFormLayout()
         topic_row.addRow("Topic:", self.topic_input)
         topic_row.addRow("Tokens:", self.tokens_input)
+        topic_row.addRow("Naive prompt:", self.prompt_input)
         layout.addLayout(topic_row)
+
+        self.explore_note = QLabel(
+            "Explore mode rewords your prompt via the local Ollama fuzzer "
+            "(llama3.1:8b, black-box — no target concept). Mode basic paraphrases "
+            "only; full rotates translate / abstract / summarize / typo. Asks every "
+            "configured retrieval LLM (see config/retrieval_llms.json), then writes "
+            "exploration.md plus a corroborated claims summary.md. Foreign-language "
+            "results are translated to English with a language annotation. Optional "
+            "impact criteria below refine what counts as high-impact (base definition "
+            "covers classified, proprietary, and personal/sensitive information)."
+        )
+        self.explore_note.setWordWrap(True)
+        self.explore_note.setVisible(False)
+        layout.addWidget(self.explore_note)
+
+        self.explore_fuzz_mode_combo = QComboBox()
+        self.explore_fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
+        self.explore_fuzz_mode_combo.addItem(
+            "full (translate / abstract / summarize / typo)", "full"
+        )
+        self.explore_fuzz_row = QWidget()
+        explore_fuzz_layout = QFormLayout(self.explore_fuzz_row)
+        explore_fuzz_layout.setContentsMargins(0, 0, 0, 0)
+        explore_fuzz_layout.addRow("Fuzz mode:", self.explore_fuzz_mode_combo)
+        self.explore_fuzz_row.setVisible(False)
+        layout.addWidget(self.explore_fuzz_row)
+
+        self.impact_definition_input = QTextEdit()
+        self.impact_definition_input.setPlaceholderText(
+            "Optional: additional high-impact criteria for summary.md "
+            "(appended to the built-in definition)"
+        )
+        self.impact_definition_input.setFixedHeight(50)
+        self.impact_definition_input.setVisible(False)
+        layout.addWidget(self.impact_definition_input)
 
         # --- Source type filter
         types_group = QGroupBox("Source Types (leave all unchecked = use defaults)")
@@ -760,8 +866,15 @@ class GatherPublicSourcesTab(QWidget):
 
     def _refresh_mode(self):
         is_topic = self.topic_radio.isChecked()
+        is_prompt = self.prompt_radio.isChecked()
+        is_tokens = self.tokens_radio.isChecked()
         self.topic_input.setEnabled(is_topic)
-        self.tokens_input.setEnabled(not is_topic)
+        self.tokens_input.setEnabled(is_tokens)
+        self.prompt_input.setEnabled(is_prompt)
+        self.explore_note.setVisible(is_prompt)
+        self.explore_fuzz_row.setVisible(is_prompt)
+        self.impact_definition_input.setVisible(is_prompt)
+        self.run_btn.setText("Explore" if is_prompt else "Start Crawl")
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
@@ -778,6 +891,10 @@ class GatherPublicSourcesTab(QWidget):
     def _start_crawl(self):
         if self._worker is not None:
             QMessageBox.information(self, "Busy", "A crawl is already running.")
+            return
+
+        if self.prompt_radio.isChecked():
+            self._start_explore()
             return
 
         topic_mode = self.topic_radio.isChecked()
@@ -839,8 +956,65 @@ class GatherPublicSourcesTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
+    def _start_explore(self):
+        prompt = self.prompt_input.toPlainText().strip()
+        if not prompt:
+            QMessageBox.warning(self, "Missing input", "Enter a naive prompt to explore.")
+            return
+
+        try:
+            from moyo.publicside.gatherpublicsources.explorer import explore_and_save
+        except Exception as exc:
+            QMessageBox.critical(self, "Import error", str(exc))
+            return
+
+        output_dir = self.output_dir_input.text().strip() or "data/public_sources"
+        impact_extra = self.impact_definition_input.toPlainText().strip() or None
+        fuzz_mode = self.explore_fuzz_mode_combo.currentData() or "basic"
+
+        def job():
+            return explore_and_save(
+                prompt,
+                output_directory=output_dir,
+                impact_definition=impact_extra,
+                fuzz_mode=fuzz_mode,
+                progress=print,
+            )
+
+        self._last_output_dir = Path(output_dir)
+        self.log.clear()
+        self.log.append(f"Exploring prompt across configured LLMs (fuzz_mode={fuzz_mode})…")
+        self.progress_bar.setVisible(True)
+        _busy(self.run_btn, True, "Explore")
+
+        self._worker = BackgroundWorker(job)
+        self._worker.log.connect(self.log.append)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
     def _on_done(self, result):
         try:
+            # Explore result (naive-prompt mode) vs crawl result.
+            if hasattr(result, "seeds") and hasattr(result, "markdown"):
+                from moyo.publicside.gatherpublicsources.explorer import (
+                    format_retrieval_table,
+                )
+
+                ok = sum(1 for r in result.results if getattr(r, "ok", False))
+                self.log.append(
+                    f"✅ Done. seeds={len(result.seeds)} "
+                    f"llms={len(result.llm_labels)} successful={ok}/{len(result.results)}"
+                )
+                self.log.append(format_retrieval_table(result))
+                if result.output_path:
+                    self.log.append(f"Report: {result.output_path}")
+                    self._last_output_dir = Path(result.output_path)
+                    self.open_results_btn.setEnabled(True)
+                if getattr(result, "summary_path", None):
+                    self.log.append(f"Summary: {result.summary_path}")
+                return
+
             sources_found = getattr(result, "sources_found", 0)
             sources_processed = getattr(result, "sources_processed", 0)
             sources_failed = getattr(result, "sources_failed", 0)
@@ -859,13 +1033,14 @@ class GatherPublicSourcesTab(QWidget):
 
     def _on_failed(self, msg: str):
         self.log.append(f"❌ {msg}")
-        QMessageBox.critical(self, "Crawl failed", msg)
+        QMessageBox.critical(self, "Task failed", msg)
         self._cleanup_worker()
 
     def _cleanup_worker(self):
         self._worker = None
         self.progress_bar.setVisible(False)
-        _busy(self.run_btn, False, "Start Crawl")
+        label = "Explore" if self.prompt_radio.isChecked() else "Start Crawl"
+        _busy(self.run_btn, False, label)
 
     def _open_last_output(self):
         if self._last_output_dir and self._last_output_dir.exists():
@@ -922,13 +1097,25 @@ class BuildPublicCorpusTab(QWidget):
         embed_layout = QFormLayout()
 
         self.model_combo = QComboBox()
-        self.model_combo.addItems([
-            "all-MiniLM-L6-v2",
-            "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-            "text-embedding-3-large",
-            "text-embedding-3-small",
-        ])
+        _populate_embedding_model_combo(self.model_combo, default_key="mini")
+        self.model_combo.currentIndexChanged.connect(self._on_public_model_changed)
         embed_layout.addRow("Embedding model:", self.model_combo)
+
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("Auto (CUDA if available)", "auto")
+        self.device_combo.addItem("CUDA (GPU)", "cuda")
+        self.device_combo.addItem("CPU", "cpu")
+        embed_layout.addRow("Device:", self.device_combo)
+
+        self.device_status_label = QLabel(_device_status_text())
+        self.device_status_label.setWordWrap(True)
+        self.device_status_label.setStyleSheet("color: #555;")
+        embed_layout.addRow("", self.device_status_label)
+
+        self.model_hint_label = QLabel("")
+        self.model_hint_label.setWordWrap(True)
+        self.model_hint_label.setStyleSheet("color: #555;")
+        embed_layout.addRow("", self.model_hint_label)
 
         self.chunk_size_spin = QSpinBox()
         self.chunk_size_spin.setRange(64, 8192)
@@ -956,6 +1143,7 @@ class BuildPublicCorpusTab(QWidget):
 
         embed_group.setLayout(embed_layout)
         layout.addWidget(embed_group)
+        self._on_public_model_changed()
 
         # --- Source filters
         filter_group = QGroupBox("Source Filters")
@@ -999,7 +1187,7 @@ class BuildPublicCorpusTab(QWidget):
         # --- Output
         out_group = QGroupBox("Output")
         out_layout = QFormLayout()
-        self.output_dir_input = QLineEdit("data/barrierprobe/indexes")
+        self.output_dir_input = QLineEdit("indexes/public")
         out_btn = QPushButton("Browse…")
         out_btn.clicked.connect(self._pick_output_dir)
         out_row = QHBoxLayout()
@@ -1026,6 +1214,22 @@ class BuildPublicCorpusTab(QWidget):
         layout.addWidget(self.log)
 
         self.setLayout(layout)
+
+    def _on_public_model_changed(self):
+        from shared_utils.model_config import get_catalog_entry
+
+        model_key = self.model_combo.currentData() or "mini"
+        entry = get_catalog_entry(model_key) or {}
+        hint = entry.get("description", "")
+        dims = entry.get("dimensions")
+        if dims:
+            hint = f"{dims}d — {hint}" if hint else f"{dims}d"
+        if entry.get("backend") == "openai":
+            hint = f"{hint} (device ignored — API)"
+            self.device_combo.setEnabled(False)
+        else:
+            self.device_combo.setEnabled(True)
+        self.model_hint_label.setText(hint)
 
     def _pick_sources_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Sources Directory")
@@ -1077,18 +1281,24 @@ class BuildPublicCorpusTab(QWidget):
         sources_dir = Path(self.sources_dir_input.text().strip() or "data/public_sources")
         name = self.name_input.text().strip() or "public_index"
         description = self.description_input.text().strip()
-        output_dir = self.output_dir_input.text().strip() or "data/barrierprobe/indexes"
+        output_dir = self.output_dir_input.text().strip() or "indexes/public"
 
         try:
             from moyo.publicside.barrierprobe.schema import IndexConfig, IndexType
             from moyo.publicside.barrierprobe.public_index_builder import PublicIndexBuilder
+            from shared_utils.model_config import resolve_model_name
         except Exception as exc:
             QMessageBox.critical(self, "Import error", str(exc))
             return
 
+        model_key = self.model_combo.currentData() or "mini"
+        model_name = resolve_model_name(model_key)
+        device = self.device_combo.currentData() or "auto"
+
         cfg = IndexConfig(
             index_type=IndexType(self.index_type_combo.currentText()),
-            embedding_model=self.model_combo.currentText(),
+            embedding_model=model_name,
+            embedding_device=device,
             chunk_size=self.chunk_size_spin.value(),
             chunk_overlap=self.chunk_overlap_spin.value(),
             min_chunk_length=self.min_len_spin.value(),
@@ -1187,7 +1397,7 @@ class BarrierProbeTab(QWidget):
         # --- Index paths
         idx_group = QGroupBox("Indices")
         idx_layout = QFormLayout()
-        self.public_path = QLineEdit("data/barrierprobe/indexes/public_index")
+        self.public_path = QLineEdit("indexes/public")
         pub_btn = QPushButton("Browse…")
         pub_btn.clicked.connect(lambda: self._pick(self.public_path, "Public Index"))
         pub_row = QHBoxLayout()
@@ -1453,9 +1663,10 @@ class FuzzerTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Use an LLM (OpenAI / Anthropic / local) to iteratively transform input "
-            "phrases toward a target concept and probe how close they land to corpus "
-            "content. Useful for discovering paraphrases that bypass keyword filters."
+            "Use an LLM (default: local Ollama llama3.1:8b) to iteratively transform input "
+            "phrases toward a target concept. Mode basic paraphrases only; full rotates "
+            "translate, abstract, summarize, and typo. Foreign-language outputs are "
+            "translated to English with a language annotation in saved reports."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -1491,11 +1702,11 @@ class FuzzerTab(QWidget):
         llm_group = QGroupBox("LLM Configuration")
         llm_layout = QFormLayout()
         self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["local", "ollama", "openai", "anthropic", "custom"])
+        self.provider_combo.addItems(["ollama", "openai", "anthropic", "custom", "local"])
         self.provider_combo.currentTextChanged.connect(self._on_provider_changed)
         llm_layout.addRow("Provider:", self.provider_combo)
 
-        self.model_input = QLineEdit("all-MiniLM-L6-v2")
+        self.model_input = QLineEdit("llama3.1:8b")
         llm_layout.addRow("Model:", self.model_input)
 
         self.api_key_input = QLineEdit()
@@ -1507,7 +1718,8 @@ class FuzzerTab(QWidget):
         self.base_url_input.setPlaceholderText(
             "Ollama http://localhost:11434  |  custom OpenAI-compatible http://localhost:8000/v1"
         )
-        self.base_url_input.setEnabled(False)
+        self.base_url_input.setText("http://localhost:11434")
+        self.base_url_input.setEnabled(True)
         llm_layout.addRow("Base URL:", self.base_url_input)
         llm_group.setLayout(llm_layout)
         layout.addWidget(llm_group)
@@ -1542,6 +1754,13 @@ class FuzzerTab(QWidget):
         self.temperature_spin.setSingleStep(0.05)
         self.temperature_spin.setValue(0.7)
         fuzz_layout.addRow("Temperature:", self.temperature_spin)
+
+        self.fuzz_mode_combo = QComboBox()
+        self.fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
+        self.fuzz_mode_combo.addItem(
+            "full (translate / abstract / summarize / typo)", "full"
+        )
+        fuzz_layout.addRow("Fuzz mode:", self.fuzz_mode_combo)
 
         fuzz_group.setLayout(fuzz_layout)
         layout.addWidget(fuzz_group)
@@ -1629,6 +1848,7 @@ class FuzzerTab(QWidget):
             similarity_threshold=self.sim_threshold_spin.value(),
             max_iterations=self.max_iter_spin.value(),
             target_similarity=self.target_sim_spin.value(),
+            fuzz_mode=self.fuzz_mode_combo.currentData() or "basic",
         )
 
     def _test_llm(self):
@@ -1703,12 +1923,16 @@ class FuzzerTab(QWidget):
             self.table.setRowCount(len(self._last_results))
             for row, r in enumerate(self._last_results):
                 self.table.setItem(row, 0, QTableWidgetItem(str(r.get("original_phrase", ""))))
-                self.table.setItem(row, 1, QTableWidgetItem(str(r.get("fuzzed_phrase", ""))))
+                fuzzed = r.get("fuzzed_phrase_for_report") or r.get("fuzzed_phrase", "")
+                self.table.setItem(row, 1, QTableWidgetItem(str(fuzzed)))
                 self.table.setItem(row, 2, QTableWidgetItem(f"{r.get('final_similarity', 0.0):.3f}"))
                 self.table.setItem(row, 3, QTableWidgetItem(str(r.get("iterations", 0))))
             if self._last_results:
                 avg_sim = sum(r.get("final_similarity", 0.0) for r in self._last_results) / len(self._last_results)
-                self.log.append(f"✅ Done. Average final similarity: {avg_sim:.3f}")
+                mode = self._last_results[0].get("fuzz_mode", "basic")
+                self.log.append(
+                    f"✅ Done (mode={mode}). Average final similarity: {avg_sim:.3f}"
+                )
                 self.save_btn.setEnabled(True)
             else:
                 self.log.append("⚠️  Fuzzer returned no results.")
@@ -1758,8 +1982,8 @@ class VisualizationTab(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.default_private_index_path = _repo_root / "data" / "private_faiss_index"
-        self.default_public_index_path = _repo_root / "data" / "public_faiss_index"
+        self.default_private_index_path = _repo_root / "indexes" / "private"
+        self.default_public_index_path = _repo_root / "indexes" / "public"
         self.private_index = None
         self.public_index = None
         # Cached arrays: avoid recomputing on every plot change
@@ -1791,7 +2015,7 @@ class VisualizationTab(QWidget):
         data_layout.addLayout(private_layout)
 
         self.use_default_private_checkbox = QCheckBox(
-            "Use default private index (data/private_faiss_index)"
+            "Use default private index (indexes/private)"
         )
         self.use_default_private_checkbox.setChecked(True)
         self.use_default_private_checkbox.toggled.connect(self.on_private_method_changed)
@@ -1807,7 +2031,7 @@ class VisualizationTab(QWidget):
         data_layout.addLayout(public_layout)
 
         self.use_default_public_checkbox = QCheckBox(
-            "Use default public index (data/public_faiss_index)"
+            "Use default public index (indexes/public)"
         )
         self.use_default_public_checkbox.setChecked(True)
         self.use_default_public_checkbox.toggled.connect(self.on_public_method_changed)

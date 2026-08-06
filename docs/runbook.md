@@ -134,9 +134,12 @@ moyo-datainput process --file document.txt
 # Process multiple files (repeat --files for each file)
 moyo-datainput process --files file1.txt --files file2.txt --files file3.txt
 
-# Process with custom output directory
-moyo-datainput process --file document.txt --output-dir indexes/custom
+# Name the index explicitly (otherwise it is named after the corpus/file)
+moyo-datainput process --file document.txt --name my_corpus
 ```
+
+Indexes are always written under `indexes/private/<name>/<name>.faiss` (one
+subdirectory per corpus, and never a shared `index.faiss`).
 
 #### Advanced Processing
 

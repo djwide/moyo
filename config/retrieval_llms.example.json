@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy to config/retrieval_llms.json to configure the LLMs a naive-prompt exploration fans out to. api_key values of the form \"$ENV_VAR\" are read from the environment so secrets stay out of this file. Provider kinds: openai/anthropic = closed API, custom = open / self-hosted OpenAI-compatible endpoint, ollama = local, echo = offline stub.",
+  "retrieval_llms": [
+    {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "api_key": "$OPENAI_API_KEY",
+      "label": "OpenAI GPT-4o"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "api_key": "$ANTHROPIC_API_KEY",
+      "label": "Anthropic Claude Sonnet"
+    },
+    {
+      "provider": "custom",
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "base_url": "http://localhost:8000/v1",
+      "api_key": "$OPENAI_COMPAT_API_KEY",
+      "label": "Self-hosted Llama 3.1 70B"
+    },
+    {
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "base_url": "http://localhost:11434",
+      "label": "Local Ollama Llama 3.1 8B"
+    }
+  ]
+}

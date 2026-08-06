@@ -16,7 +16,14 @@ from .schema import (
     SearchResult, IndexType
 )
 from ..gatherpublicsources.schema import PublicSource, SourceType
-from shared_utils import embed, chunk_text, FAISSIndex, ensure_directory, generate_id
+from shared_utils import (
+    embed,
+    chunk_text,
+    chunk_text_multi_granularity,
+    FAISSIndex,
+    ensure_directory,
+    generate_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,47 +119,60 @@ class PublicIndexBuilder:
         """
         chunks_created = 0
         
-        # Chunk the content
-        text_chunks = chunk_text(
+        # Chunk the content at multiple granularities (variable-size section
+        # chunks plus their sentence sub-chunks) so short/paraphrased queries can
+        # match a fine-grained unit instead of a diluted whole-chunk vector.
+        granular_chunks = chunk_text_multi_granularity(
             source.content,
             chunk_size=self.config.chunk_size,
-            overlap=self.config.chunk_overlap
+            overlap=self.config.chunk_overlap,
         )
         
-        # Create PublicChunk objects
-        for i, chunk_content in enumerate(text_chunks):
-            # Skip chunks that are too short or too long
-            if len(chunk_content) < self.config.min_chunk_length:
-                continue
-            if len(chunk_content) > self.config.max_chunk_length:
-                continue
+        source_metadata = {
+            "source_title": source.title,
+            "source_url": str(source.url) if source.url else None,
+            "source_author": source.author,
+            "source_organization": source.organization,
+            "source_published_date": source.published_date.isoformat() if source.published_date else None,
+            "source_relevance_score": source.relevance_score,
+            "source_confidence_score": source.confidence_score,
+            "source_tags": source.tags,
+            **source.metadata
+        }
+        
+        # Map each granular chunk's local index to the PublicChunk id we assign,
+        # so sentence chunks can reference their parent section chunk.
+        index_to_id: Dict[int, str] = {}
+        for gc in granular_chunks:
+            # Size filters apply to section-level chunks only; sentence sub-chunks
+            # are intentionally short and are pre-filtered by the chunker.
+            if gc.level == "section":
+                if len(gc.text) < self.config.min_chunk_length:
+                    continue
+                if len(gc.text) > self.config.max_chunk_length:
+                    continue
             
-            # Calculate character positions
-            start_char = source.content.find(chunk_content)
-            end_char = start_char + len(chunk_content)
+            # Positions are best-effort: sentence text is whitespace-normalized
+            # and may not be a verbatim substring of the raw source.
+            start_char = source.content.find(gc.text)
+            end_char = start_char + len(gc.text) if start_char >= 0 else -1
             
-            # Create chunk
+            parent_id = index_to_id.get(gc.parent_index) if gc.parent_index is not None else None
+            
             chunk = PublicChunk(
-                id=generate_id(f"chunk_{source.id}_{i}"),
-                content=chunk_content,
+                id=generate_id(f"chunk_{source.id}_{gc.index}"),
+                content=gc.text,
                 source_id=source.id,
                 source_type=source.source_type,
-                chunk_index=i,
+                chunk_index=gc.index,
                 start_char=start_char,
                 end_char=end_char,
-                metadata={
-                    "source_title": source.title,
-                    "source_url": str(source.url) if source.url else None,
-                    "source_author": source.author,
-                    "source_organization": source.organization,
-                    "source_published_date": source.published_date.isoformat() if source.published_date else None,
-                    "source_relevance_score": source.relevance_score,
-                    "source_confidence_score": source.confidence_score,
-                    "source_tags": source.tags,
-                    **source.metadata
-                }
+                level=gc.level,
+                parent_id=parent_id,
+                metadata=dict(source_metadata),
             )
             
+            index_to_id[gc.index] = chunk.id
             self.chunks.append(chunk)
             chunks_created += 1
         
@@ -242,7 +262,8 @@ class PublicIndexBuilder:
             embeddings = embed(
                 chunk_texts,
                 model_name=self.config.embedding_model,
-                batch_size=32
+                batch_size=32,
+                device=getattr(self.config, "embedding_device", "auto"),
             )
             
             # Assign embeddings to chunks
@@ -256,9 +277,27 @@ class PublicIndexBuilder:
                 index_type=self.config.index_type.value
             )
             
-            # Add vectors to index
+            # Add vectors to index WITH their text and metadata so search
+            # results carry the matched text and can link back to the parent
+            # section chunk (previously add_vectors() stored no text at all).
             vectors = np.array(embeddings, dtype=np.float32)
-            self.faiss_index.add_vectors(embeddings)
+            vector_metadata = [
+                {
+                    "text": chunk.content,
+                    "level": chunk.level,
+                    "parent_id": chunk.parent_id,
+                    "chunk_id": chunk.id,
+                    "source_id": chunk.source_id,
+                    "source_document": chunk.metadata.get("source_title") or chunk.source_id,
+                    "chunk_index": chunk.chunk_index,
+                }
+                for chunk in self.chunks
+            ]
+            self.faiss_index.add_vectors_with_texts(
+                embeddings,
+                [chunk.content for chunk in self.chunks],
+                vector_metadata,
+            )
             
             # Create index metadata
             index_id = generate_id(f"public_index_{name}")
@@ -321,10 +360,9 @@ class PublicIndexBuilder:
             index_dir = output_dir / public_index.id
             ensure_directory(index_dir)
             
-            # Save FAISS index
+            # Save FAISS index, named after the public index
             if self.faiss_index:
-                index_path = index_dir / "index.faiss"
-                self.faiss_index.save(str(index_path))
+                self.faiss_index.save(index_dir, name=public_index.id)
             
             # Save chunks
             chunks_path = index_dir / "chunks.json"
@@ -363,7 +401,11 @@ class PublicIndexBuilder:
                 return result
             
             # Create query embedding
-            query_embedding = embed([query], model_name=self.config.embedding_model)[0]
+            query_embedding = embed(
+                [query],
+                model_name=self.config.embedding_model,
+                device=getattr(self.config, "embedding_device", "auto"),
+            )[0]
             
             # Search index
             distances, indices = self.faiss_index.search([query_embedding], k)
@@ -457,10 +499,9 @@ def load_public_index(index_path: str) -> Optional[PublicIndexBuilder]:
         # Load chunks
         builder.chunks = [PublicChunk(**chunk_data) for chunk_data in chunks_data]
         
-        # Load FAISS index
-        index_file = index_dir / "index.faiss"
-        if index_file.exists():
-            builder.faiss_index = FAISSIndex.load(str(index_file))
+        # Load FAISS index (named after the public index)
+        if list(index_dir.glob("*.faiss")):
+            builder.faiss_index = FAISSIndex.load(str(index_dir))
         
         logger.info(f"Loaded index from {index_path}")
         return builder

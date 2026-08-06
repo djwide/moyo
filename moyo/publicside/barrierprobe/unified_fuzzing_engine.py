@@ -13,8 +13,8 @@ import random
 import time
 
 from shared_utils import (
+    embed,
     FAISSIndex, 
-    embed, 
     normalize_text,
     TextNormalizationConfig,
     get_logger
@@ -27,11 +27,12 @@ logger = get_logger(__name__)
 class FuzzingConfig:
     """Unified configuration for the fuzzing engine."""
     
-    # Core Configuration
+    # Core Configuration — local Ollama LLM for generation + vectors
     embedding_model: str = "all-MiniLM-L6-v2"
-    llm_provider: str = "local"  # "local", "openai", "anthropic"
-    model_name: str = "all-MiniLM-L6-v2"
+    llm_provider: str = "ollama"  # "ollama", "openai", "anthropic", "local"
+    model_name: str = "llama3.1:8b"
     api_key: Optional[str] = None
+    base_url: Optional[str] = "http://localhost:11434"
     
     # Two-Layer Configuration
     k_neighbors: int = 10

@@ -12,22 +12,37 @@ import json
 from typing import Optional, Dict, Any
 
 
-# Model naming conventions
+# Model naming conventions (kept for path helpers; prefer shared_utils.model_config)
 MODEL_CONFIGS = {
     "all-MiniLM-L6-v2": {
         "name": "minilm_l6_v2",
         "dimensions": 384,
         "description": "MiniLM L6 v2 - Fast, lightweight model"
     },
-    "all-mpnet-base-v2": {
-        "name": "mpnet_base_v2", 
-        "dimensions": 768,
-        "description": "MPNet Base v2 - Balanced performance"
-    },
     "all-MiniLM-L12-v2": {
         "name": "minilm_l12_v2",
         "dimensions": 384,
         "description": "MiniLM L12 v2 - Better quality than L6"
+    },
+    "all-mpnet-base-v2": {
+        "name": "mpnet_base_v2",
+        "dimensions": 768,
+        "description": "MPNet Base v2 - Balanced performance"
+    },
+    "BAAI/bge-base-en-v1.5": {
+        "name": "bge_base_en_v15",
+        "dimensions": 768,
+        "description": "BGE base English v1.5 - Strong retrieval"
+    },
+    "intfloat/e5-base-v2": {
+        "name": "e5_base_v2",
+        "dimensions": 768,
+        "description": "E5 base v2 - Strong retrieval"
+    },
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
+        "name": "multilingual_mpnet_base_v2",
+        "dimensions": 768,
+        "description": "Multilingual MPNet base v2"
     },
     "paraphrase-multilingual-MiniLM-L12-v2": {
         "name": "multilingual_minilm_l12_v2",
@@ -40,7 +55,7 @@ MODEL_CONFIGS = {
         "description": "OpenAI Text Embedding 3 Small"
     },
     "text-embedding-3-large": {
-        "name": "openai_text_embedding_3_large", 
+        "name": "openai_text_embedding_3_large",
         "dimensions": 3072,
         "description": "OpenAI Text Embedding 3 Large"
     },

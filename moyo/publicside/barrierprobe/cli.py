@@ -19,7 +19,7 @@ _DEFAULT_MODEL_BY_PROVIDER = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-6",
     "ollama": "llama3.1:8b",
-    "local": "all-MiniLM-L6-v2",
+    "local": "llama3.1:8b",
 }
 
 # Retired Anthropic snapshot IDs → current replacements
@@ -110,11 +110,11 @@ def cli(verbose: bool, debug: bool):
 @click.option('--target-concept', '-t', required=True, help='Target concept to move towards')
 @click.option('--corpus-index', '-i', type=click.Path(exists=True), required=True, help='Path to corpus FAISS index')
 @click.option('--output', '-o', type=click.Path(), help='Output file for results')
-@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
 @click.option(
     '--model',
-    default='gpt-4o',
-    help='LLM model (OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; Ollama: llama3.1:8b; custom: your endpoint model)',
+    default='llama3.1:8b',
+    help='LLM model (default Ollama llama3.1:8b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
@@ -122,10 +122,17 @@ def cli(verbose: bool, debug: bool):
 @click.option('--target-similarity', default=0.95, help='Target similarity to achieve')
 @click.option('--search-k', default=10, help='Number of similar phrases to retrieve')
 @click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
+@click.option(
+    '--fuzz-mode',
+    type=click.Choice(['basic', 'full'], case_sensitive=False),
+    default='basic',
+    show_default=True,
+    help='basic = paraphrase only; full = translate, abstract, summarize, typo',
+)
 @click.option('--verbose', '-v', is_flag=True, help='Verbose output')
 def fuzz(phrases, phrases_file, target_concept, corpus_index, output, 
          llm_provider, model, api_key, base_url, max_iterations, target_similarity, 
-         search_k, similarity_threshold, verbose):
+         search_k, similarity_threshold, fuzz_mode, verbose):
     """Fuzz phrases using LLM-assisted semantic transformation."""
 
     model = _resolve_llm_model(llm_provider, model)
@@ -164,13 +171,15 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
         max_iterations=max_iterations,
         target_similarity=target_similarity,
         search_k=search_k,
-        similarity_threshold=similarity_threshold
+        similarity_threshold=similarity_threshold,
+        fuzz_mode=fuzz_mode,
     )
     
     # Run fuzzing
     click.echo(f"Starting LLM-assisted fuzzing for {len(all_phrases)} phrases...")
     click.echo(f"Target concept: {target_concept}")
     click.echo(f"LLM provider: {llm_provider}, Model: {model}")
+    click.echo(f"Fuzz mode: {config.fuzz_mode} ({', '.join(config.fuzz_strategies)})")
     
     results = fuzz_phrases_for_barrier_analysis(all_phrases, target_concept, index, config)
     
@@ -180,15 +189,22 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
     click.echo("="*60)
     
     for i, result in enumerate(results):
+        report_phrase = result.get("fuzzed_phrase_for_report") or result["fuzzed_phrase"]
         click.echo(f"\nPhrase {i+1}:")
         click.echo(f"  Original: {result['original_phrase']}")
         click.echo(f"  Fuzzed:   {result['fuzzed_phrase']}")
+        if result.get("fuzzed_phrase_original_language"):
+            click.echo(
+                f"  Report:   {report_phrase} "
+                f"(from {result['fuzzed_phrase_original_language']})"
+            )
         click.echo(f"  Similarity: {result['final_similarity']:.3f}")
         click.echo(f"  Iterations: {result['iterations']}")
         
-        if verbose and result['transformation_history']:
+        history = result.get("transformation_history_for_report") or result.get("transformation_history") or []
+        if verbose and history:
             click.echo("  Transformation history:")
-            for j, step in enumerate(result['transformation_history']):
+            for j, step in enumerate(history):
                 click.echo(f"    {j+1}. {step}")
     
     # Save results
@@ -209,10 +225,14 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
 @cli.command()
 @click.option('--corpus-dir', '-c', type=click.Path(exists=True), required=True, help='Corpus directory')
 @click.option('--query', '-q', required=True, help='Query phrase to find similar phrases for')
-@click.option('--k', default=10, help='Number of similar phrases to retrieve')
-@click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
+@click.option('--k', default=3, help='Number of top matches to return (always shown, even below threshold)')
+@click.option('--similarity-threshold', default=0.8, help='Similarity threshold used to highlight strong matches')
 def search(corpus_dir, query, k, similarity_threshold):
-    """Search for semantically similar phrases in the corpus."""
+    """Search for semantically similar phrases in the corpus.
+
+    Always returns the top ``k`` matches (default 3) whether or not they meet
+    the similarity threshold; matches at or above the threshold are highlighted.
+    """
     
     # Load corpus index
     try:
@@ -229,24 +249,41 @@ def search(corpus_dir, query, k, similarity_threshold):
     )
     fuzzer = LLMFuzzer(config)
     
-    # Search for similar phrases
+    # Search for the top-k matches regardless of threshold; highlight the
+    # ones that clear it.
     click.echo(f"Searching for phrases similar to: '{query}'")
-    similar_phrases = fuzzer.find_similar_phrases(query, index, k)
+    similar_phrases = fuzzer.find_similar_phrases(query, index, k, enforce_threshold=False)
     
     if not similar_phrases:
-        click.echo("No similar phrases found.")
+        click.echo("No matches found (the index appears to be empty).")
         return
     
-    # Display results
-    click.echo(f"\nFound {len(similar_phrases)} similar phrases:")
+    above = sum(1 for p in similar_phrases if p.get("above_threshold"))
+    click.echo(
+        f"\nTop {len(similar_phrases)} matches "
+        f"({above} at/above threshold {similarity_threshold:.2f}):"
+    )
     click.echo("-" * 60)
     
     for i, phrase_info in enumerate(similar_phrases):
-        click.echo(f"{i+1}. Similarity: {phrase_info['similarity']:.3f}")
-        click.echo(f"   Text: {phrase_info['text']}")
-        if 'metadata' in phrase_info and phrase_info['metadata']:
-            source = phrase_info['metadata'].get('source_document', 'Unknown')
-            click.echo(f"   Source: {source}")
+        is_above = phrase_info.get("above_threshold", False)
+        marker = "✅ ABOVE THRESHOLD" if is_above else "•  below threshold"
+        click.echo(f"{i+1}. [{marker}] Similarity: {phrase_info['similarity']:.3f}")
+        text = phrase_info.get('text') or "(no text stored for this vector)"
+        click.echo(f"   Text: {text}")
+        meta = phrase_info.get('metadata') or {}
+        if meta:
+            # Builders disagree on the field name: public indexes use
+            # source_document/source_title; datainput private indexes use source.
+            source = (
+                meta.get('source_document')
+                or meta.get('source')
+                or meta.get('source_title')
+                or meta.get('source_id')
+                or 'Unknown'
+            )
+            level = meta.get('level')
+            click.echo(f"   Source: {source}" + (f"   Level: {level}" if level else ""))
         click.echo()
 
 
@@ -296,11 +333,11 @@ def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k,
 
 @cli.command()
 @click.option('--config', '-c', type=click.Path(exists=True), help='Configuration file')
-@click.option('--llm-provider', default='openai', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
 @click.option(
     '--model',
-    default='gpt-4o',
-    help='LLM model (OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; Ollama: llama3.1:8b; custom: your endpoint model)',
+    default='llama3.1:8b',
+    help='LLM model (default Ollama llama3.1:8b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
@@ -370,7 +407,13 @@ def analyze_corpus(corpus_dir, output, verbose):
     if index.metadata:
         sources = {}
         for meta in index.metadata:
-            source = meta.get('source_document', 'Unknown')
+            source = (
+                meta.get('source_document')
+                or meta.get('source')
+                or meta.get('source_title')
+                or meta.get('source_id')
+                or 'Unknown'
+            )
             sources[source] = sources.get(source, 0) + 1
         
         click.echo(f"\nSource distribution:")
@@ -380,7 +423,7 @@ def analyze_corpus(corpus_dir, output, verbose):
         if verbose:
             click.echo(f"\nSample phrases:")
             for i, meta in enumerate(index.metadata[:5]):
-                text = meta.get('text', 'No text available')
+                text = meta.get('text') or meta.get('text_preview') or 'No text available'
                 click.echo(f"  {i+1}. {text[:100]}...")
     
     # Save analysis

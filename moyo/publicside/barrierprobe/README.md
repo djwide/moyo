@@ -99,8 +99,8 @@ moyo-probe test-llm --llm-provider openai --model gpt-4
 @dataclass
 class LLMFuzzerConfig:
     # LLM Configuration
-    llm_provider: str = "local"   # "openai" | "anthropic" | "ollama" | "custom" | "local"
-    model_name: str = "all-MiniLM-L6-v2"
+    llm_provider: str = "ollama"   # "openai" | "anthropic" | "ollama" | "custom" | "local"
+    model_name: str = "llama3.1:8b"
     api_key: Optional[str] = None
     base_url: Optional[str] = None  # Ollama endpoint (default http://localhost:11434)
     max_tokens: int = 500

@@ -1,14 +1,16 @@
 """LLM-assisted fuzzing for barrier probing.
 
-This module provides functionality to use LLMs (defaulting to OpenAI) to assist in fuzzing
-by finding semantically close phrases and using the LLM to reduce semantic distance.
+Defaults to a locally running Ollama model (``llama3.1:8b``) for *generation*.
+Semantic similarity / FAISS neighbour lookup uses MiniLM embeddings
+(``all-MiniLM-L6-v2``) via ``shared_utils.embed``.
 """
 
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import time
+import random
 
 from shared_utils import (
     embed,
@@ -20,15 +22,225 @@ from shared_utils import (
 
 logger = get_logger(__name__)
 
+DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
+DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+# basic = paraphrase only; full = the other strategies (no paraphrase).
+BASIC_FUZZ_STRATEGIES = ("paraphrase",)
+FULL_FUZZ_STRATEGIES = ("translate", "abstract", "summarize", "typo")
+FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES + FULL_FUZZ_STRATEGIES
+FUZZ_MODES = ("basic", "full")
+
+
+def strategies_for_fuzz_mode(mode: str) -> List[str]:
+    """Resolve fuzz strategies for ``basic`` or ``full`` mode."""
+    key = (mode or "basic").strip().lower()
+    if key == "full":
+        return list(FULL_FUZZ_STRATEGIES)
+    if key == "basic":
+        return list(BASIC_FUZZ_STRATEGIES)
+    raise ValueError(f"Unknown fuzz mode {mode!r}; expected one of {FUZZ_MODES}")
+
+
+@dataclass
+class LocalizedText:
+    """English report text with optional foreign-language provenance."""
+
+    english: str
+    original_language: Optional[str] = None
+    original_text: Optional[str] = None
+
+    @property
+    def was_translated(self) -> bool:
+        lang = (self.original_language or "").strip().lower()
+        return bool(lang) and lang not in {"english", "en", "eng"}
+
+    def for_report(self) -> str:
+        """Markdown suitable for exploration / fuzz reports."""
+        body = (self.english or "").strip()
+        if not self.was_translated:
+            return body
+        lang = self.original_language.strip()
+        original = (self.original_text or "").strip()
+        parts = [f"_Translated from {lang}_", "", body]
+        if original and original != body:
+            parts.extend(
+                [
+                    "",
+                    f"<details>",
+                    f"<summary>Original ({lang})</summary>",
+                    "",
+                    original,
+                    "",
+                    "</details>",
+                ]
+            )
+        return "\n".join(parts)
+
+
+_ENGLISH_HINT_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "with",
+        "that",
+        "this",
+        "from",
+        "as",
+        "by",
+        "it",
+        "not",
+        "at",
+        "have",
+        "has",
+        "had",
+        "you",
+        "your",
+        "we",
+        "they",
+        "their",
+        "what",
+        "which",
+        "who",
+        "how",
+        "when",
+        "where",
+        "why",
+        "can",
+        "will",
+        "would",
+        "should",
+        "about",
+        "into",
+        "than",
+        "then",
+        "also",
+        "more",
+        "most",
+        "some",
+        "any",
+        "all",
+        "if",
+        "but",
+        "so",
+        "do",
+        "does",
+        "did",
+        "been",
+        "being",
+        "there",
+        "these",
+        "those",
+        "such",
+        "only",
+        "other",
+        "over",
+        "after",
+        "before",
+        "between",
+        "through",
+        "during",
+        "without",
+        "within",
+        "under",
+        "again",
+        "further",
+        "once",
+        "here",
+        "each",
+        "few",
+        "own",
+        "same",
+        "too",
+        "very",
+        "just",
+        "because",
+        "while",
+        "where",
+        "although",
+        "however",
+        "therefore",
+        "information",
+        "recipe",
+        "public",
+        "known",
+        "source",
+    }
+)
+
+
+def _looks_like_english(text: str) -> bool:
+    """Heuristic: mostly Latin letters plus common English function words."""
+    sample = (text or "").strip()
+    if not sample:
+        return True
+    # Non-Latin scripts (Cyrillic, CJK, Arabic, etc.) → not English.
+    non_latin = sum(
+        1
+        for ch in sample
+        if ch.isalpha() and ord(ch) > 0x024F and not (0x1E00 <= ord(ch) <= 0x1EFF)
+    )
+    letters = sum(1 for ch in sample if ch.isalpha())
+    if letters and non_latin / letters > 0.08:
+        return False
+    tokens = [t.lower() for t in sample.replace("\n", " ").split() if t.isalpha()]
+    if len(tokens) < 4:
+        # Short snippets: treat as English if overwhelmingly ASCII letters.
+        ascii_letters = sum(1 for ch in sample if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+        return (not letters) or (ascii_letters / max(letters, 1) > 0.92)
+    hits = sum(1 for t in tokens if t in _ENGLISH_HINT_WORDS)
+    return hits / len(tokens) >= 0.12
+
+
+def _parse_localization_json(reply: str) -> Optional[Tuple[str, str]]:
+    """Parse ``{"language":..., "english":...}`` from an LLM reply."""
+    raw = (reply or "").strip()
+    if not raw:
+        return None
+    # Strip optional markdown fences.
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:].strip()
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        data = json.loads(raw[start : end + 1])
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    language = data.get("language") or data.get("lang") or ""
+    english = data.get("english") or data.get("translation") or data.get("text") or ""
+    if not isinstance(language, str) or not isinstance(english, str):
+        return None
+    return language.strip(), english.strip()
+
 
 class LocalLLMClient:
-    """Local LLM client using embedding-based text transformation."""
+    """Offline synonym / pattern transformer (fallback when no LLM is available)."""
     
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-        """Initialize the local LLM client.
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL):
+        """Initialize the local transformer.
         
         Args:
-            model_name: Name of the embedding model to use
+            model_name: MiniLM embedding model used for similarity gating
         """
         self.model_name = model_name
         self.transformation_patterns = self._load_transformation_patterns()
@@ -316,12 +528,12 @@ class LLMFuzzerConfig:
     #   "ollama"    – local Ollama server (native API)
     #   "custom"    – any OpenAI-compatible endpoint (vLLM, LM Studio, Together,
     #                 Groq, OpenRouter, DeepSeek, llama.cpp server, etc.) via base_url
-    #   "local"     – embedding-only synonym transformer (no LLM/API)
-    llm_provider: str = "local"
-    model_name: str = "all-MiniLM-L6-v2"  # Default to local MiniLM model
+    #   "local"     – embedding-only synonym transformer (offline fallback; not default)
+    llm_provider: str = "ollama"
+    model_name: str = DEFAULT_OLLAMA_MODEL
     api_key: Optional[str] = None
     # Endpoint for self-hosted / OpenAI-compatible providers (Ollama, custom).
-    base_url: Optional[str] = None
+    base_url: Optional[str] = DEFAULT_OLLAMA_BASE_URL
     max_tokens: int = 500
     temperature: float = 0.7
     
@@ -332,28 +544,77 @@ class LLMFuzzerConfig:
     # Fuzzing Configuration
     max_iterations: int = 5  # Maximum fuzzing iterations
     target_similarity: float = 0.95  # Target similarity to achieve
+    # MiniLM for similarity / FAISS neighbour lookup (generation stays on Ollama).
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    # ``basic`` = paraphrase only; ``full`` = translate/abstract/summarize/typo.
+    fuzz_mode: str = "basic"
+    # Explicit override; when empty, derived from ``fuzz_mode``.
+    fuzz_strategies: List[str] = field(default_factory=list)
     prompt_template: str = """
-You are an expert at semantic analysis and text transformation. Your task is to modify the given phrase to make it semantically closer to the target concept while maintaining its core meaning.
+You are an expert at semantic text transformation for information retrieval and barrier probing.
 
 Target concept: {target_concept}
+Fuzz strategy for this step: {strategy}
+Strategy instructions: {strategy_instructions}
 
 Original phrase: {original_phrase}
 
-Similar phrases from the corpus:
+Similar phrases from the corpus (optional context):
 {similar_phrases}
 
 Instructions:
-1. Analyze the semantic relationship between the original phrase and target concept
-2. Study the similar phrases to understand the semantic patterns
-3. Transform the original phrase to reduce semantic distance to the target
-4. Maintain the original meaning while making it more semantically aligned
-5. Return only the transformed phrase, no explanations
+1. Apply ONLY the named fuzz strategy to the original phrase.
+2. Prefer keeping the phrase useful for retrieving information about the target concept.
+3. Return only the transformed phrase, no explanations or quotes.
 
 Transformed phrase:"""
 
+    def __post_init__(self) -> None:
+        mode = (self.fuzz_mode or "basic").strip().lower()
+        if mode not in FUZZ_MODES:
+            mode = "basic"
+        self.fuzz_mode = mode
+        if not self.fuzz_strategies:
+            self.fuzz_strategies = strategies_for_fuzz_mode(self.fuzz_mode)
+
+
+STRATEGY_INSTRUCTIONS = {
+    "paraphrase": (
+        "Reword the phrase with different wording and syntax while preserving meaning. "
+        "Keep the result in English."
+    ),
+    "translate": (
+        "Translate the phrase into another natural language (prefer Spanish, French, "
+        "German, or Mandarin). Return the foreign-language phrase only — do not "
+        "translate it back to English in this step."
+    ),
+    "abstract": (
+        "Raise the level of abstraction: replace concrete specifics with more general "
+        "categories while keeping the core topic recognizable. Keep the result in English."
+    ),
+    "summarize": (
+        "Compress the phrase into a shorter English summary that retains the key claim or ask."
+    ),
+    "typo": (
+        "Introduce realistic intentional typos / keyboard-adjacent errors / mild "
+        "misspellings while keeping the phrase readable to a human. Keep the language "
+        "of the original phrase."
+    ),
+}
+
+REWORD_SYSTEM = (
+    "You are a research assistant that turns a user's information request into "
+    "effective retrieval queries. You return only the queries, no commentary."
+)
+
 
 class LLMFuzzer:
-    """LLM-assisted fuzzer for semantic barrier probing."""
+    """LLM-assisted fuzzer for semantic barrier probing.
+
+    White-box paths (``fuzz_phrase``) steer toward a known target concept.
+    Black-box helpers such as :meth:`reword_for_retrieval` do not take a target
+    concept — they only diversify a naive prompt for downstream probing.
+    """
     
     def __init__(self, config: Optional[LLMFuzzerConfig] = None):
         """Initialize the LLM fuzzer.
@@ -374,12 +635,36 @@ class LLMFuzzer:
         # Initialize LLM client
         self.llm_client = self._initialize_llm_client()
         self.interaction_log: List[Dict[str, str]] = []
-        
+
+    @classmethod
+    def local_ollama(
+        cls,
+        model_name: str = "llama3.1:8b",
+        base_url: Optional[str] = None,
+        max_tokens: int = 800,
+        temperature: float = 0.7,
+    ) -> "LLMFuzzer":
+        """Build a fuzzer backed by a locally running Ollama model.
+
+        Defaults to ``llama3.1:8b`` — the same local model used for black-box
+        explore rewording.
+        """
+        return cls(
+            LLMFuzzerConfig(
+                llm_provider="ollama",
+                model_name=model_name,
+                base_url=base_url or OllamaClient.DEFAULT_BASE_URL,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        )
     def _initialize_llm_client(self):
         """Initialize the LLM client based on configuration."""
         if self.config.llm_provider == "local":
-            # Use local embedding-based text transformation
-            return LocalLLMClient(self.config.model_name)
+            # Offline synonym transformer; still uses MiniLM for similarity gating.
+            return LocalLLMClient(
+                getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
+            )
         elif self.config.llm_provider == "ollama":
             client = OllamaClient(self.config.model_name, base_url=self.config.base_url)
             if not client.is_available():
@@ -444,11 +729,14 @@ class LLMFuzzer:
             logger.error(f"Unsupported LLM provider: {self.config.llm_provider}")
             return None
     
-    def query_llm(self, prompt: str) -> Optional[str]:
+    def query_llm(self, prompt: str, system: Optional[str] = None) -> Optional[str]:
         """Query the LLM with the given prompt.
         
         Args:
             prompt: The prompt to send to the LLM
+            system: Optional system message (ignored by the embedding-only
+                ``local`` provider). Defaults to a short transformation system
+                prompt for chat providers.
             
         Returns:
             The LLM response or None if failed
@@ -456,6 +744,12 @@ class LLMFuzzer:
         if not self.llm_client:
             logger.error("LLM client not initialized")
             return None
+
+        default_system = (
+            "You are a helpful assistant for semantic text transformation. "
+            "Return only the transformed phrase, with no preamble or explanation."
+        )
+        system_msg = system if system is not None else default_system
             
         try:
             if self.config.llm_provider == "local":
@@ -465,10 +759,7 @@ class LLMFuzzer:
             elif self.config.llm_provider == "ollama":
                 text = self.llm_client.generate(
                     prompt,
-                    system=(
-                        "You are a helpful assistant for semantic text transformation. "
-                        "Return only the transformed phrase, with no preamble or explanation."
-                    ),
+                    system=system_msg,
                     temperature=self.config.temperature,
                     max_tokens=self.config.max_tokens,
                 )
@@ -476,7 +767,7 @@ class LLMFuzzer:
                 response = self.llm_client.chat.completions.create(
                     model=self.config.model_name,
                     messages=[
-                        {"role": "system", "content": "You are a helpful assistant for semantic text transformation."},
+                        {"role": "system", "content": system_msg},
                         {"role": "user", "content": prompt},
                     ],
                     max_tokens=self.config.max_tokens,
@@ -488,7 +779,7 @@ class LLMFuzzer:
                     model=self.config.model_name,
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
-                    system="You are a helpful assistant for semantic text transformation.",
+                    system=system_msg,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 text = (response.content[0].text if response.content else "").strip()
@@ -501,7 +792,205 @@ class LLMFuzzer:
         except Exception as e:
             logger.error(f"Error querying LLM: {e}")
             return None
-    
+
+    def localize_to_english(self, text: str) -> LocalizedText:
+        """Translate non-English text to English for report writing.
+
+        Returns the original text unchanged (language unset) when the content
+        is already English or localization fails.
+        """
+        raw = (text or "").strip()
+        if not raw:
+            return LocalizedText(english="")
+
+        if _looks_like_english(raw):
+            return LocalizedText(english=raw)
+
+        ask = (
+            "Detect the language of the text below. If it is not English, translate "
+            "it into clear English. Reply with ONLY a JSON object on one line:\n"
+            '{"language":"<English name of the source language>",'
+            '"english":"<English translation>"}\n'
+            'If the text is already English, use language "English" and put the '
+            "original text in english unchanged.\n\n"
+            f"TEXT:\n{raw[:6000]}"
+        )
+        try:
+            reply = self.query_llm(
+                ask,
+                system=(
+                    "You are a precise translation assistant. Output JSON only, "
+                    "no markdown fences."
+                ),
+            ) or ""
+        except Exception as exc:
+            logger.warning("localize_to_english failed (%s); keeping original", exc)
+            return LocalizedText(english=raw)
+
+        parsed = _parse_localization_json(reply)
+        if not parsed:
+            return LocalizedText(english=raw)
+
+        language, english = parsed
+        if not english.strip():
+            return LocalizedText(english=raw)
+        if (language or "").strip().lower() in {"english", "en", "eng"}:
+            return LocalizedText(english=english.strip())
+        return LocalizedText(
+            english=english.strip(),
+            original_language=language.strip(),
+            original_text=raw,
+        )
+
+    def text_for_report(self, text: str) -> str:
+        """English report body with original-language annotation when needed."""
+        return self.localize_to_english(text).for_report()
+
+    @staticmethod
+    def _parse_numbered_lines(text: str) -> List[str]:
+        """Extract list items from a numbered/bulleted LLM response."""
+        import re
+
+        items: List[str] = []
+        for raw_line in (text or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            line = re.sub(r"^\s*(\d+[\.\)]|[-*•])\s*", "", line)
+            line = line.strip().strip('"').strip("'").strip()
+            if line:
+                items.append(line)
+        return items
+
+    @staticmethod
+    def _augment_reword_seeds(prompt: str, seeds: List[str], n: int) -> List[str]:
+        """Deterministically pad seeds when the LLM under-delivers."""
+        base = prompt.strip().rstrip("?.")
+        fallbacks = [
+            base,
+            f"{base} overview and key facts",
+            f"detailed explanation of {base}",
+            f"history and background of {base}",
+            f"technical details and specifics of {base}",
+            f"common questions and authoritative sources about {base}",
+        ]
+        out = list(seeds)
+        seen = {s.lower() for s in out}
+        for cand in fallbacks:
+            if len(out) >= n:
+                break
+            if cand.lower() not in seen:
+                out.append(cand)
+                seen.add(cand.lower())
+        return out
+
+    def reword_for_retrieval(
+        self,
+        prompt: str,
+        n: int = 5,
+        fuzz_mode: Optional[str] = None,
+    ) -> List[str]:
+        """Black-box reword a naive prompt into ``n`` retrieval query seeds.
+
+        No target concept is used — explore / public-side probing is black-box
+        and only needs diverse retrieval phrasings of the user's request.
+
+        ``fuzz_mode``:
+        - ``basic`` — paraphrase-only rewording (default)
+        - ``full`` — rotate translate / abstract / summarize / typo
+        """
+        mode = (fuzz_mode or self.config.fuzz_mode or "basic").strip().lower()
+        if mode not in FUZZ_MODES:
+            mode = "basic"
+        if mode == "full":
+            return self._reword_with_strategies(
+                prompt, n, strategies_for_fuzz_mode("full")
+            )
+        return self._reword_paraphrase_batch(prompt, n)
+
+    def _reword_paraphrase_batch(self, prompt: str, n: int) -> List[str]:
+        """Generate ``n`` paraphrase-style retrieval queries in one LLM call."""
+        ask = (
+            f'A non-technical user asked: "{prompt}".\n'
+            f"How can I reword this request to most effectively retrieve information? "
+            f"Give me {n} different answers. Each should approach the topic from a "
+            f"different angle. Return each reworded query on its own line, numbered "
+            f"1 to {n}, with no extra commentary."
+        )
+        text = ""
+        try:
+            text = self.query_llm(ask, system=REWORD_SYSTEM) or ""
+        except Exception as exc:
+            logger.warning("Black-box rewording failed (%s); using deterministic seeds", exc)
+
+        seeds = [s for s in self._parse_numbered_lines(text) if s]
+        return self._dedupe_and_pad_seeds(prompt, seeds, n)
+
+    def _reword_with_strategies(
+        self, prompt: str, n: int, strategies: List[str]
+    ) -> List[str]:
+        """Build seeds by rotating named fuzz strategies (full explore mode)."""
+        if not strategies:
+            strategies = list(BASIC_FUZZ_STRATEGIES)
+        seeds: List[str] = []
+        for i in range(max(1, n)):
+            strategy = strategies[i % len(strategies)]
+            transformed = self._apply_blackbox_strategy(prompt, strategy)
+            if transformed:
+                seeds.append(transformed)
+        return self._dedupe_and_pad_seeds(prompt, seeds, n)
+
+    def _apply_blackbox_strategy(self, phrase: str, strategy: str) -> Optional[str]:
+        """Apply one fuzz strategy to a prompt without a target concept."""
+        strategy_key = (strategy or "paraphrase").lower()
+        if strategy_key == "typo":
+            # Prefer a light deterministic typo pass; fall back to LLM if empty.
+            local = self._apply_intentional_typos(phrase.strip())
+            if local and local.strip().lower() != phrase.strip().lower():
+                return local.strip()
+
+        instructions = STRATEGY_INSTRUCTIONS.get(
+            strategy_key, STRATEGY_INSTRUCTIONS["paraphrase"]
+        )
+        ask = (
+            "Transform the user's information request into one effective retrieval "
+            f"query using ONLY the '{strategy_key}' strategy.\n"
+            f"Strategy instructions: {instructions}\n\n"
+            f"Original request: {phrase.strip()}\n\n"
+            "Return only the transformed query, with no quotes or explanation."
+        )
+        try:
+            text = self.query_llm(ask, system=REWORD_SYSTEM) or ""
+        except Exception as exc:
+            logger.warning(
+                "Black-box strategy %s failed (%s)", strategy_key, exc
+            )
+            return None
+        line = (text or "").strip().strip('"').strip("'")
+        if not line:
+            return None
+        # If the model returned multiple lines, keep the first non-empty.
+        for raw in line.splitlines():
+            cleaned = raw.strip()
+            cleaned = cleaned.lstrip("0123456789.-)•* ").strip().strip('"').strip("'")
+            if cleaned:
+                return cleaned
+        return None
+
+    def _dedupe_and_pad_seeds(
+        self, prompt: str, seeds: List[str], n: int
+    ) -> List[str]:
+        deduped: List[str] = []
+        seen = set()
+        for s in seeds:
+            key = s.lower()
+            if key not in seen:
+                deduped.append(s)
+                seen.add(key)
+        if len(deduped) < n:
+            deduped = self._augment_reword_seeds(prompt, deduped, n)
+        return deduped[:n]
+
     def _parse_fuzzing_prompt(self, prompt: str) -> Tuple[str, str, List[str]]:
         """Parse the fuzzing prompt to extract original phrase, target concept, and similar phrases.
         
@@ -536,25 +1025,32 @@ class LLMFuzzer:
     def find_similar_phrases(self, 
                            query: str, 
                            index: FAISSIndex, 
-                           k: Optional[int] = None) -> List[Dict[str, Any]]:
+                           k: Optional[int] = None,
+                           enforce_threshold: bool = True) -> List[Dict[str, Any]]:
         """Find semantically similar phrases in the index.
         
         Args:
             query: Query phrase to find similar phrases for
             index: FAISS index containing the corpus
             k: Number of results to return (defaults to config.search_k)
+            enforce_threshold: When True (default), drop results below the
+                configured similarity threshold. When False, return the top-k
+                results regardless, each tagged with ``above_threshold`` so the
+                caller can decide what to do with weaker matches.
             
         Returns:
-            List of similar phrases with metadata
+            List of similar phrases with metadata, best first. Each entry
+            includes ``similarity`` and an ``above_threshold`` flag.
         """
         if k is None:
             k = self.config.search_k
-            
+        
         # Normalize query
         normalized_query = normalize_text(query, self.normalization_config)
         
-        # Generate query embedding
-        query_embeddings = embed([normalized_query])
+        # MiniLM embeddings for FAISS neighbour lookup.
+        emb_model = getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
+        query_embeddings = embed([normalized_query], emb_model)
         if not query_embeddings:
             logger.error("Failed to generate query embedding")
             return []
@@ -562,134 +1058,182 @@ class LLMFuzzer:
         # Search index
         distances, indices, metadata = index.search(query_embeddings[0], k=k)
         
-        # Filter by similarity threshold
         results = []
         for i, (distance, idx, meta) in enumerate(zip(distances, indices, metadata)):
-            if distance >= self.config.similarity_threshold:
-                results.append({
-                    "rank": i + 1,
-                    "similarity": distance,
-                    "index": idx,
-                    "metadata": meta,
-                    "text": meta.get("text", "")
-                })
+            above_threshold = distance >= self.config.similarity_threshold
+            if enforce_threshold and not above_threshold:
+                continue
+            results.append({
+                "rank": i + 1,
+                "similarity": distance,
+                "above_threshold": above_threshold,
+                "index": idx,
+                "metadata": meta,
+                "text": self._resolve_result_text(meta, index)
+            })
         
         return results
-    
-    def create_fuzzing_prompt(self, 
-                            target_concept: str,
-                            original_phrase: str,
-                            similar_phrases: List[Dict[str, Any]]) -> str:
-        """Create a prompt for LLM-assisted fuzzing.
-        
-        Args:
-            target_concept: The target concept to move towards
-            original_phrase: The original phrase to transform
-            similar_phrases: List of similar phrases from the corpus
-            
-        Returns:
-            Formatted prompt for the LLM
+
+    @staticmethod
+    def _resolve_result_text(meta: Dict[str, Any], index: FAISSIndex) -> str:
+        """Best-effort text for a hit: full text, then preview, then string store.
+
+        Different builders populate metadata differently (``text`` from the
+        public index builder, ``text_preview`` from the datainput builder), so
+        fall back through the available fields and finally the string store.
         """
-        # Format similar phrases
+        text = meta.get("text") or meta.get("text_preview")
+        if not text and meta.get("text_id") is not None:
+            text = index.get_text_by_id(meta["text_id"])
+        return text or ""
+    
+    def create_fuzzing_prompt(
+        self,
+        target_concept: str,
+        original_phrase: str,
+        similar_phrases: List[Dict[str, Any]],
+        strategy: str = "paraphrase",
+    ) -> str:
+        """Create a prompt for LLM-assisted fuzzing with a named strategy."""
         phrases_text = ""
-        for i, phrase_info in enumerate(similar_phrases[:5]):  # Top 5 phrases
-            phrases_text += f"{i+1}. {phrase_info['text']} (similarity: {phrase_info['similarity']:.3f})\n"
-        
-        # Create prompt using template
-        prompt = self.config.prompt_template.format(
+        for i, phrase_info in enumerate(similar_phrases[:5]):
+            phrases_text += (
+                f"{i+1}. {phrase_info['text']} "
+                f"(similarity: {phrase_info['similarity']:.3f})\n"
+            )
+        strategy_key = (strategy or "paraphrase").lower()
+        instructions = STRATEGY_INSTRUCTIONS.get(
+            strategy_key, STRATEGY_INSTRUCTIONS["paraphrase"]
+        )
+        return self.config.prompt_template.format(
             target_concept=target_concept,
             original_phrase=original_phrase,
-            similar_phrases=phrases_text
+            similar_phrases=phrases_text or "(none)",
+            strategy=strategy_key,
+            strategy_instructions=instructions,
         )
-        
-        return prompt
-    
-    def fuzz_phrase(self,
-                   original_phrase: str,
-                   target_concept: str,
-                   index: FAISSIndex) -> Tuple[str, float, List[str], List[Dict[str, str]]]:
-        """Fuzz a phrase to reduce semantic distance to target concept.
-        
-        Args:
-            original_phrase: The original phrase to fuzz
-            target_concept: The target concept to move towards
-            index: FAISS index for semantic search
-            
-        Returns:
-            Tuple of (fuzzed_phrase, final_similarity, transformation_history)
+
+    @staticmethod
+    def _apply_intentional_typos(text: str, rate: float = 0.18) -> str:
+        """Introduce light keyboard-adjacent typos without destroying readability."""
+        if not text or len(text) < 3:
+            return text
+        neighbors = {
+            "a": "sq", "b": "vn", "c": "xv", "d": "sf", "e": "wr",
+            "f": "dg", "g": "fh", "h": "gj", "i": "uo", "j": "hk",
+            "k": "jl", "l": "k", "m": "n", "n": "bm", "o": "ip",
+            "p": "o", "q": "wa", "r": "et", "s": "ad", "t": "ry",
+            "u": "yi", "v": "cb", "w": "qe", "x": "zc", "y": "tu",
+            "z": "x",
+        }
+        chars = list(text)
+        # Typo ~rate of alphabetic characters (at least one when possible).
+        alpha_idxs = [i for i, ch in enumerate(chars) if ch.isalpha()]
+        if not alpha_idxs:
+            return text
+        n_typos = max(1, int(len(alpha_idxs) * rate))
+        for idx in random.sample(alpha_idxs, min(n_typos, len(alpha_idxs))):
+            ch = chars[idx]
+            opts = neighbors.get(ch.lower(), "")
+            if not opts:
+                continue
+            repl = random.choice(opts)
+            chars[idx] = repl.upper() if ch.isupper() else repl
+        return "".join(chars)
+
+    def _cosine(self, a: List[float], b: List[float]) -> float:
+        denom = (sum(x * x for x in a) ** 0.5) * (sum(x * x for x in b) ** 0.5)
+        if not denom:
+            return 0.0
+        return sum(x * y for x, y in zip(a, b)) / denom
+
+    def fuzz_phrase(
+        self,
+        original_phrase: str,
+        target_concept: str,
+        index: FAISSIndex,
+    ) -> Tuple[str, float, List[str], List[Dict[str, str]]]:
+        """Fuzz a phrase toward ``target_concept`` via rotating strategies.
+
+        Mode ``basic`` uses paraphrase only; ``full`` rotates translate,
+        abstract, summarize, and typo. Generation uses the configured LLM
+        (Ollama by default); similarity is scored with MiniLM embeddings.
         """
         current_phrase = original_phrase
         transformation_history = [original_phrase]
         interactions: List[Dict[str, str]] = []
-        
-        logger.info(f"Starting fuzzing for phrase: '{original_phrase}'")
-        logger.info(f"Target concept: '{target_concept}'")
-        
-        for iteration in range(self.config.max_iterations):
-            logger.info(f"Fuzzing iteration {iteration + 1}/{self.config.max_iterations}")
-            
-            # Find similar phrases
-            similar_phrases = self.find_similar_phrases(current_phrase, index)
-            
-            if not similar_phrases:
-                logger.warning("No similar phrases found, stopping fuzzing")
-                break
-            
-            # Create fuzzing prompt
-            prompt = self.create_fuzzing_prompt(target_concept, current_phrase, similar_phrases)
+        strategies = list(self.config.fuzz_strategies or strategies_for_fuzz_mode(self.config.fuzz_mode))
+        emb_model = getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
 
-            # Query LLM
-            fuzzed_phrase = self.query_llm(prompt)
-            
+        logger.info("Starting fuzzing for phrase: %r", original_phrase)
+        logger.info("Target concept: %r", target_concept)
+        logger.info("Fuzz mode=%s strategies=%s", self.config.fuzz_mode, strategies)
+
+        for iteration in range(self.config.max_iterations):
+            strategy = strategies[iteration % len(strategies)]
+            logger.info(
+                "Fuzzing iteration %d/%d [%s]",
+                iteration + 1,
+                self.config.max_iterations,
+                strategy,
+            )
+
+            similar_phrases = self.find_similar_phrases(current_phrase, index)
+            prompt = self.create_fuzzing_prompt(
+                target_concept, current_phrase, similar_phrases or [], strategy=strategy
+            )
+
+            if strategy == "typo" and self.config.llm_provider == "local":
+                fuzzed_phrase = self._apply_intentional_typos(current_phrase)
+            else:
+                fuzzed_phrase = self.query_llm(prompt)
+                if strategy == "typo" and fuzzed_phrase:
+                    # Reinforce with a light local typo pass if LLM stayed too clean.
+                    if fuzzed_phrase.strip().lower() == current_phrase.strip().lower():
+                        fuzzed_phrase = self._apply_intentional_typos(current_phrase)
+
             if not fuzzed_phrase:
                 logger.warning("LLM query failed, stopping fuzzing")
                 break
 
-            interactions.append({"prompt": prompt, "response": fuzzed_phrase})
-            
-            # Normalize the fuzzed phrase
+            interactions.append(
+                {"prompt": prompt, "response": fuzzed_phrase, "strategy": strategy}
+            )
             fuzzed_phrase = normalize_text(fuzzed_phrase, self.normalization_config)
-            
-            # Check if we've achieved target similarity
-            fuzzed_embeddings = embed([fuzzed_phrase])
-            if fuzzed_embeddings:
-                # Calculate similarity to target concept
-                target_embeddings = embed([target_concept])
-                if target_embeddings:
-                    # Simple cosine similarity (assuming normalized embeddings)
-                    similarity = sum(a * b for a, b in zip(fuzzed_embeddings[0], target_embeddings[0]))
-                    
-                    logger.info(f"Iteration {iteration + 1}: similarity = {similarity:.3f}")
-                    
-                    if similarity >= self.config.target_similarity:
-                        logger.info(f"Target similarity achieved: {similarity:.3f}")
-                        transformation_history.append(fuzzed_phrase)
-                        return fuzzed_phrase, similarity, transformation_history, interactions
-                    
-                    current_phrase = fuzzed_phrase
-                    transformation_history.append(fuzzed_phrase)
-                else:
-                    logger.warning("Failed to generate target embedding")
-                    break
-            else:
-                logger.warning("Failed to generate fuzzed phrase embedding")
+
+            fuzzed_embeddings = embed([fuzzed_phrase], emb_model)
+            target_embeddings = embed([target_concept], emb_model)
+            if not fuzzed_embeddings or not target_embeddings:
+                logger.warning("Failed to generate embeddings for similarity check")
                 break
-            
-            # Rate limiting
-            time.sleep(1)
-        
-        # Return the best result we achieved
+
+            similarity = self._cosine(fuzzed_embeddings[0], target_embeddings[0])
+            logger.info(
+                "Iteration %d [%s]: similarity = %.3f",
+                iteration + 1,
+                strategy,
+                similarity,
+            )
+
+            transformation_history.append(fuzzed_phrase)
+            current_phrase = fuzzed_phrase
+
+            if similarity >= self.config.target_similarity:
+                logger.info("Target similarity achieved: %.3f", similarity)
+                return fuzzed_phrase, similarity, transformation_history, interactions
+
+            time.sleep(0.2)
+
         if transformation_history:
             final_phrase = transformation_history[-1]
-            final_embeddings = embed([final_phrase])
-            target_embeddings = embed([target_concept])
-            
+            final_embeddings = embed([final_phrase], emb_model)
+            target_embeddings = embed([target_concept], emb_model)
             if final_embeddings and target_embeddings:
-                final_similarity = sum(a * b for a, b in zip(final_embeddings[0], target_embeddings[0]))
+                final_similarity = self._cosine(final_embeddings[0], target_embeddings[0])
                 return final_phrase, final_similarity, transformation_history, interactions
 
         return original_phrase, 0.0, transformation_history, interactions
-    
+
     def batch_fuzz_phrases(self,
                           phrases: List[str],
                           target_concept: str,
@@ -720,13 +1264,22 @@ class LLMFuzzer:
                 except Exception as e:
                     logger.warning(f"Analysis failed for phrase '{fuzzed_phrase}': {e}")
 
+            localized = self.localize_to_english(fuzzed_phrase)
+            history_report = [self.text_for_report(step) for step in history]
+
             results.append({
                 "original_phrase": phrase,
                 "fuzzed_phrase": fuzzed_phrase,
+                "fuzzed_phrase_english": localized.english,
+                "fuzzed_phrase_original_language": localized.original_language,
+                "fuzzed_phrase_for_report": localized.for_report(),
                 "final_similarity": similarity,
                 "transformation_history": history,
+                "transformation_history_for_report": history_report,
                 "iterations": len(history) - 1,
                 "target_concept": target_concept,
+                "fuzz_mode": self.config.fuzz_mode,
+                "fuzz_strategies": list(self.config.fuzz_strategies),
                 "prompt_response_log": interactions,
                 "analysis": analysis,
             })

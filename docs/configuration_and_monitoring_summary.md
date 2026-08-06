@@ -138,17 +138,21 @@ export MOYO_PIPELINE_MAX_WORKERS=8
 
 # Embedding
 export MOYO_EMBEDDING_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
-export MOYO_EMBEDDING_DEVICE=cuda
+export MOYO_EMBEDDING_DEVICE=auto   # or cuda | cpu
 
 # FAISS
 export MOYO_FAISS_INDEX_TYPE=IVF100
 export MOYO_FAISS_DIMENSION=768
 
-# LLM
-export MOYO_LLM_PROVIDER=openai
+# Default LLM (hot-swappable project-wide)
+export MOYO_LLM_PROVIDER=openai     # openai | anthropic | ollama | custom | echo
 export MOYO_LLM_MODEL=gpt-4o
 export MOYO_LLM_API_KEY=your-api-key
+# export MOYO_LLM_BASE_URL=http://127.0.0.1:11434   # ollama / custom
 ```
+
+See [`docs/embeddings.md`](embeddings.md) for embedding model tier recommendations
+(MiniLM → MPNet/BGE → multilingual → OpenAI) and GPU setup.
 
 ### Persisting configuration with `.env`
 
@@ -163,6 +167,111 @@ MOYO_PROMETHEUS_PORT=8000
 MOYO_EMBEDDING_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
 MOYO_EMBEDDING_DEVICE=cuda
 ```
+
+API keys for hosted LLM providers (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`XAI_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY`,
+`OPENROUTER_API_KEY`, …) also live in `.env`. See `.env.example` for the full
+list. The LLM layer loads `.env` into the process environment so those keys
+are available to `config/retrieval_llms.json` (`$VAR` references).
+
+### Default LLM vs retrieval LLMs
+
+Two related configs:
+
+| Role | Where | Used for |
+|------|--------|----------|
+| **Default LLM** | `MOYO_LLM_*` in `.env` | Prompt rewording and summary synthesis (`moyo-gather explore`) |
+| **Retrieval LLMs** | `config/retrieval_llms.json` (or `MOYO_RETRIEVAL_LLMS`) | Fan-out: each reworded seed is sent to every listed model |
+
+Hot-swap the default by changing `MOYO_LLM_PROVIDER` / `MOYO_LLM_MODEL` /
+`MOYO_LLM_BASE_URL` / `MOYO_LLM_API_KEY`. Copy
+`config/retrieval_llms.example.json` to `config/retrieval_llms.json` and edit
+entries to match the providers you have keys for. Providers without a key (or
+an unreachable Ollama) are recorded as errors in the explore report and do not
+stop the run.
+
+### Local Ollama setup
+
+Ollama is the local generative LLM path (`provider: ollama`). It needs **no API
+key**. moyo talks to it over HTTP at `http://127.0.0.1:11434` by default.
+
+**1. Install inside WSL (recommended if moyo runs in WSL)**
+
+Windows Ollama is not reachable from WSL's `127.0.0.1` under default NAT
+networking. Install the Linux binary in WSL instead:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.1:8b
+```
+
+**2. Keep the server running**
+
+Something must listen on port `11434`. Manual start:
+
+```bash
+ollama serve
+# or backgrounded:
+ollama serve > /tmp/ollama.log 2>&1 &
+```
+
+Verify:
+
+```bash
+curl -sf http://127.0.0.1:11434/api/version
+ollama list
+```
+
+**3. Auto-start on shell login (no systemd required)**
+
+If WSL does not support `[boot] systemd=true` (older WSL prints
+`Unknown key 'boot.systemd'`), add this to `~/.bashrc` so a new shell starts
+Ollama when it is not already up:
+
+```bash
+if ! curl -sf http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+  nohup ollama serve > /tmp/ollama.log 2>&1 &
+fi
+```
+
+Open a new terminal (or `source ~/.bashrc`), then re-check `curl` / `ollama list`.
+
+**4. Wire it into moyo**
+
+`config/retrieval_llms.json` should include an Ollama entry (already present in
+the example):
+
+```json
+{
+  "provider": "ollama",
+  "model": "llama3.1:8b",
+  "base_url": "http://localhost:11434",
+  "label": "Local Ollama (llama3.1:8b)"
+}
+```
+
+Change `model` to any tag from `ollama list`. To make Ollama the **default**
+LLM (rewording + summary), set in `.env`:
+
+```bash
+MOYO_LLM_PROVIDER=ollama
+MOYO_LLM_MODEL=llama3.1:8b
+MOYO_LLM_BASE_URL=http://127.0.0.1:11434
+```
+
+**5. Smoke test**
+
+```bash
+# Client reachability (via moyo-gather / shared LLM layer)
+moyo-gather explore --provider ollama --model llama3.1:8b \
+  --prompt "ping" --seeds 1 --no-summary
+
+# Or through the fuzzer path
+moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
+```
+
+If the API is down, explore still runs other retrieval LLMs; the Ollama section
+in the markdown report will show a retrieval failure for that source only.
 
 ## Metrics Available
 
