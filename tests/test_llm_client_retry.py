@@ -3,6 +3,8 @@
 from moyo.llm.client import (
     LLMClient,
     LLMSpec,
+    _fixed_temperature_for_model,
+    _openai_extra_body_for_model,
     is_retryable_llm_error,
     retry_delay_seconds,
 )
@@ -46,6 +48,14 @@ def test_transient_rate_limit_is_retryable():
 def test_overloaded_and_503_are_retryable():
     assert is_retryable_llm_error(_FakeStatusError("overloaded_error", status_code=529))
     assert is_retryable_llm_error(_FakeStatusError("upstream", status_code=503))
+
+
+def test_kimi_k26_disables_thinking_and_uses_non_thinking_temperature():
+    assert _openai_extra_body_for_model("kimi-k2.6") == {"thinking": {"type": "disabled"}}
+    assert _fixed_temperature_for_model("kimi-k2.6") == 0.6
+    assert _fixed_temperature_for_model("moonshotai/kimi-k2.5") == 0.6
+    assert _openai_extra_body_for_model("gpt-4o") == {}
+    assert _fixed_temperature_for_model("kimi-k3") == 1.0
 
 
 def test_complete_retries_then_succeeds(monkeypatch):

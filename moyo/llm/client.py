@@ -183,10 +183,24 @@ _DEFAULT_MODEL_BY_PROVIDER = {
 }
 
 
+def _is_kimi_k25_or_k26(model: str) -> bool:
+    """True for Moonshot Kimi K2.5 / K2.6 (supports toggling thinking)."""
+    name = (model or "").lower()
+    return (
+        name.startswith("kimi-k2.5")
+        or name.startswith("kimi-k2.6")
+        or "/kimi-k2.5" in name
+        or "/kimi-k2.6" in name
+    )
+
+
 def _fixed_temperature_for_model(model: str) -> Optional[float]:
     """Return a forced temperature for models that reject other values."""
     name = (model or "").lower()
-    # Moonshot Kimi K2.x / K3 only accept temperature=1.
+    # K2.5/K2.6 non-thinking mode (our default) requires temperature=0.6.
+    if _is_kimi_k25_or_k26(name):
+        return 0.6
+    # Other Moonshot Kimi K2.x / K3 only accept temperature=1.
     if (
         name.startswith("kimi-k2")
         or name.startswith("kimi-k3")
@@ -197,9 +211,23 @@ def _fixed_temperature_for_model(model: str) -> Optional[float]:
     return None
 
 
+def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
+    """Provider-specific OpenAI-compatible request fields.
+
+    Kimi K2.5/K2.6 default to thinking mode. Reasoning tokens count against
+    ``max_tokens``, so short caps often return empty ``content``. Disable
+    thinking so retrieval replies land in ``content``.
+    """
+    if _is_kimi_k25_or_k26(model):
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
+
 def _is_fixed_temperature_error(exc: BaseException) -> bool:
     text = str(exc).lower()
-    return "invalid temperature" in text and "only 1" in text
+    if "invalid temperature" not in text:
+        return False
+    return "only 1" in text or "only 0.6" in text or "only 0.60" in text
 
 
 def _default_label(provider: str, model: str) -> str:
@@ -407,14 +435,18 @@ class LLMClient:
                 )
             except Exception as exc:
                 last_exc = exc
-                # Some providers reject non-1 temperatures without it being in the model id.
-                if _is_fixed_temperature_error(exc) and temperature != 1.0:
+                # Some providers reject non-fixed temperatures without it being in the model id.
+                forced = _fixed_temperature_for_model(self.spec.model)
+                if forced is None and _is_fixed_temperature_error(exc):
+                    forced = 1.0
+                if _is_fixed_temperature_error(exc) and forced is not None and temperature != forced:
                     logger.warning(
-                        "%s rejected temperature=%s; retrying with temperature=1",
+                        "%s rejected temperature=%s; retrying with temperature=%s",
                         self.label,
                         temperature,
+                        forced,
                     )
-                    temperature = 1.0
+                    temperature = forced
                     continue
                 if attempt + 1 >= attempts or not is_retryable_llm_error(exc):
                     raise
@@ -450,12 +482,16 @@ class LLMClient:
             if system:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
-            response = self._client.chat.completions.create(
-                model=self.spec.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
+            create_kwargs: Dict[str, Any] = {
+                "model": self.spec.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            }
+            extra_body = _openai_extra_body_for_model(self.spec.model)
+            if extra_body:
+                create_kwargs["extra_body"] = extra_body
+            response = self._client.chat.completions.create(**create_kwargs)
             return (response.choices[0].message.content or "").strip()
 
         if provider == "anthropic":

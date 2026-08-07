@@ -26,20 +26,33 @@ DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
-# basic = paraphrase only; full = the other strategies (no paraphrase).
+# basic = paraphrase only; full = English transforms (no translation);
+# full-multilingual = full transforms plus translation into target languages.
 BASIC_FUZZ_STRATEGIES = ("paraphrase",)
-FULL_FUZZ_STRATEGIES = ("translate", "abstract", "summarize", "typo")
-FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES + FULL_FUZZ_STRATEGIES
-FUZZ_MODES = ("basic", "full")
+FULL_FUZZ_STRATEGIES = ("abstract", "summarize", "typo")
+MULTILINGUAL_FUZZ_STRATEGIES = FULL_FUZZ_STRATEGIES + ("translate",)
+FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES + MULTILINGUAL_FUZZ_STRATEGIES
+FUZZ_MODES = ("basic", "full", "full-multilingual")
+
+# Default target languages for ``full-multilingual`` mode: Spanish, French,
+# and Mainland (Simplified) Chinese. Callers may append additional languages.
+DEFAULT_MULTILINGUAL_LANGUAGES = ("Spanish", "French", "Chinese (Simplified)")
 
 
 def strategies_for_fuzz_mode(mode: str) -> List[str]:
-    """Resolve fuzz strategies for ``basic`` or ``full`` mode."""
+    """Resolve fuzz strategies for a fuzz mode.
+
+    - ``basic`` -> paraphrase only
+    - ``full`` -> abstract / summarize / typo (English only, no translation)
+    - ``full-multilingual`` -> the ``full`` transforms plus translation
+    """
     key = (mode or "basic").strip().lower()
-    if key == "full":
-        return list(FULL_FUZZ_STRATEGIES)
     if key == "basic":
         return list(BASIC_FUZZ_STRATEGIES)
+    if key == "full":
+        return list(FULL_FUZZ_STRATEGIES)
+    if key == "full-multilingual":
+        return list(MULTILINGUAL_FUZZ_STRATEGIES)
     raise ValueError(f"Unknown fuzz mode {mode!r}; expected one of {FUZZ_MODES}")
 
 
@@ -546,10 +559,14 @@ class LLMFuzzerConfig:
     target_similarity: float = 0.95  # Target similarity to achieve
     # MiniLM for similarity / FAISS neighbour lookup (generation stays on Ollama).
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    # ``basic`` = paraphrase only; ``full`` = translate/abstract/summarize/typo.
+    # ``basic`` = paraphrase only; ``full`` = abstract/summarize/typo (English);
+    # ``full-multilingual`` = full plus translation into ``multilingual_languages``.
     fuzz_mode: str = "basic"
     # Explicit override; when empty, derived from ``fuzz_mode``.
     fuzz_strategies: List[str] = field(default_factory=list)
+    # Target languages for ``full-multilingual``; empty -> defaults (Spanish,
+    # French, Mainland/Simplified Chinese).
+    multilingual_languages: List[str] = field(default_factory=list)
     prompt_template: str = """
 You are an expert at semantic text transformation for information retrieval and barrier probing.
 
@@ -574,6 +591,8 @@ Transformed phrase:"""
         if mode not in FUZZ_MODES:
             mode = "basic"
         self.fuzz_mode = mode
+        if mode == "full-multilingual" and not self.multilingual_languages:
+            self.multilingual_languages = list(DEFAULT_MULTILINGUAL_LANGUAGES)
         if not self.fuzz_strategies:
             self.fuzz_strategies = strategies_for_fuzz_mode(self.fuzz_mode)
 
@@ -585,8 +604,8 @@ STRATEGY_INSTRUCTIONS = {
     ),
     "translate": (
         "Translate the phrase into another natural language (prefer Spanish, French, "
-        "German, or Mandarin). Return the foreign-language phrase only — do not "
-        "translate it back to English in this step."
+        "or Mainland/Simplified Chinese). Return the foreign-language phrase only — do "
+        "not translate it back to English in this step."
     ),
     "abstract": (
         "Raise the level of abstraction: replace concrete specifics with more general "
@@ -889,6 +908,7 @@ class LLMFuzzer:
         prompt: str,
         n: int = 5,
         fuzz_mode: Optional[str] = None,
+        languages: Optional[List[str]] = None,
     ) -> List[str]:
         """Black-box reword a naive prompt into ``n`` retrieval query seeds.
 
@@ -897,16 +917,72 @@ class LLMFuzzer:
 
         ``fuzz_mode``:
         - ``basic`` — paraphrase-only rewording (default)
-        - ``full`` — rotate translate / abstract / summarize / typo
+        - ``full`` — rotate abstract / summarize / typo (English only)
+        - ``full-multilingual`` — the ``full`` transforms plus one translated
+          seed per target language (``languages`` or the configured/default
+          Spanish, French, Mainland Chinese)
         """
         mode = (fuzz_mode or self.config.fuzz_mode or "basic").strip().lower()
         if mode not in FUZZ_MODES:
             mode = "basic"
+        if mode == "full-multilingual":
+            langs = [
+                l.strip()
+                for l in (languages or self.config.multilingual_languages
+                          or DEFAULT_MULTILINGUAL_LANGUAGES)
+                if l and l.strip()
+            ]
+            return self._reword_multilingual(prompt, n, langs)
         if mode == "full":
             return self._reword_with_strategies(
                 prompt, n, strategies_for_fuzz_mode("full")
             )
         return self._reword_paraphrase_batch(prompt, n)
+
+    def _reword_multilingual(
+        self, prompt: str, n: int, languages: List[str]
+    ) -> List[str]:
+        """Seeds for ``full-multilingual``: one translation per language + English.
+
+        Guarantees a translated seed for every requested language, then fills the
+        remaining slots with English ``full`` transforms. The effective seed count
+        is ``max(n, len(languages))`` so all requested languages are always covered.
+        """
+        langs = languages or list(DEFAULT_MULTILINGUAL_LANGUAGES)
+        seeds: List[str] = []
+        for lang in langs:
+            translated = self._translate_prompt_to(prompt, lang)
+            if translated:
+                seeds.append(translated)
+
+        target = max(max(1, n), len(seeds))
+        remaining = target - len(seeds)
+        if remaining > 0:
+            seeds.extend(
+                self._reword_with_strategies(
+                    prompt, remaining, list(FULL_FUZZ_STRATEGIES)
+                )
+            )
+        return self._dedupe_and_pad_seeds(prompt, seeds, target)
+
+    def _translate_prompt_to(self, prompt: str, language: str) -> Optional[str]:
+        """Translate the request into ``language`` as a retrieval query."""
+        ask = (
+            f"Translate the following information request into {language}. "
+            f"Return only the {language} translation phrased as a search query, "
+            "with no explanation, notes, or quotes.\n\n"
+            f"Request: {prompt.strip()}"
+        )
+        try:
+            text = self.query_llm(ask, system=REWORD_SYSTEM) or ""
+        except Exception as exc:
+            logger.warning("Translation to %s failed (%s)", language, exc)
+            return None
+        for raw in text.splitlines():
+            cleaned = raw.strip().lstrip("0123456789.-)•* ").strip().strip('"').strip("'")
+            if cleaned:
+                return cleaned
+        return None
 
     def _reword_paraphrase_batch(self, prompt: str, n: int) -> List[str]:
         """Generate ``n`` paraphrase-style retrieval queries in one LLM call."""

@@ -164,12 +164,31 @@ def _augment_seeds(prompt: str, n: int) -> List[str]:
     return LLMFuzzer._augment_reword_seeds(prompt, [], n)[:n]
 
 
+def resolve_multilingual_languages(extra_languages: Optional[List[str]]) -> List[str]:
+    """Combine the default multilingual targets with any user-requested extras.
+
+    Defaults are Spanish, French and Mainland (Simplified) Chinese; ``extra_languages``
+    are appended (de-duplicated, case-insensitive).
+    """
+    from moyo.publicside.barrierprobe.llm_fuzzer import DEFAULT_MULTILINGUAL_LANGUAGES
+
+    languages = list(DEFAULT_MULTILINGUAL_LANGUAGES)
+    seen = {l.lower() for l in languages}
+    for lang in extra_languages or []:
+        cleaned = (lang or "").strip()
+        if cleaned and cleaned.lower() not in seen:
+            languages.append(cleaned)
+            seen.add(cleaned.lower())
+    return languages
+
+
 def reword_prompt(
     prompt: str,
     llm: Optional[LLMClient] = None,
     n: int = 5,
     fuzzer: Optional[Any] = None,
     fuzz_mode: str = "basic",
+    languages: Optional[List[str]] = None,
 ) -> List[str]:
     """Reword a naive ``prompt`` into ``n`` distinct retrieval queries.
 
@@ -177,19 +196,22 @@ def reword_prompt(
     with the locally running Ollama model ``llama3.1:8b``. No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
-    ``fuzz_mode`` ``basic`` paraphrases only; ``full`` rotates translate,
-    abstract, summarize, and typo. ``llm`` is ignored (kept for call-site
-    compatibility). Pass ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer`
-    (e.g. in tests).
+    ``fuzz_mode`` ``basic`` paraphrases only; ``full`` rotates abstract,
+    summarize, and typo (English only); ``full-multilingual`` adds a translated
+    seed per language in ``languages`` (defaults to Spanish, French, Mainland
+    Chinese). ``llm`` is ignored (kept for call-site compatibility). Pass
+    ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer` (e.g. in tests).
     """
     del llm  # explore rewording is local-fuzzer-only
     mode = (fuzz_mode or "basic").strip().lower()
     if fuzzer is None:
         from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer, LLMFuzzerConfig
 
-        fuzzer = LLMFuzzer(LLMFuzzerConfig(fuzz_mode=mode))
+        fuzzer = LLMFuzzer(
+            LLMFuzzerConfig(fuzz_mode=mode, multilingual_languages=list(languages or []))
+        )
     try:
-        return fuzzer.reword_for_retrieval(prompt, n=n, fuzz_mode=mode)
+        return fuzzer.reword_for_retrieval(prompt, n=n, fuzz_mode=mode, languages=languages)
     except Exception as exc:
         logger.warning("Local fuzzer rewording failed (%s); using deterministic seeds", exc)
         return _augment_seeds(prompt, n)
@@ -448,6 +470,7 @@ def render_markdown(
     summary: Optional[str],
     llms: List[LLMClient],
     fuzz_mode: str = "basic",
+    languages: Optional[List[str]] = None,
 ) -> str:
     lines: List[str] = []
     lines.append(f"# Topic exploration: {prompt}")
@@ -455,6 +478,8 @@ def render_markdown(
     lines.append(f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")
     mode = (fuzz_mode or "basic").strip().lower()
     lines.append(f"_Fuzz mode: `{mode}`_")
+    if languages:
+        lines.append(f"_Translation languages: {', '.join(languages)}_")
     lines.append("")
 
     # Configured sources, grouped by kind.
@@ -517,6 +542,7 @@ def explore_topic(
     impact_definition: Optional[str] = None,
     impact_definition_files: Optional[List[str]] = None,
     fuzz_mode: str = "basic",
+    extra_languages: Optional[List[str]] = None,
 ) -> ExploreResult:
     """Run the full naive-prompt exploration and return an :class:`ExploreResult`.
 
@@ -525,8 +551,11 @@ def explore_topic(
     ``workers=1`` to force the old sequential behaviour. Rewording and summary
     synthesis stay serial on the default LLM.
 
-    ``fuzz_mode`` ``basic`` (default) paraphrases the prompt into seeds;
-    ``full`` rotates translate / abstract / summarize / typo.
+    ``fuzz_mode`` ``basic`` (default) paraphrases the prompt into seeds; ``full``
+    rotates abstract / summarize / typo (English only); ``full-multilingual``
+    additionally translates the request into Spanish, French and Mainland Chinese
+    (plus any ``extra_languages``), so retrieval is run against foreign-language
+    phrasings too.
 
     ``impact_definition`` / ``impact_definition_files`` add user-specific
     high-impact criteria on top of :data:`DEFAULT_HIGH_IMPACT_DEFINITION`.
@@ -547,11 +576,17 @@ def explore_topic(
     )
 
     mode = (fuzz_mode or "basic").strip().lower()
+    languages = (
+        resolve_multilingual_languages(extra_languages)
+        if mode == "full-multilingual"
+        else None
+    )
+    lang_note = f", languages={languages}" if languages else ""
     _report(
         f"Rewording prompt into {num_seeds} query seeds via local LLMFuzzer "
-        f"(Ollama llama3.1:8b, black-box, fuzz_mode={mode}) ..."
+        f"(Ollama llama3.1:8b, black-box, fuzz_mode={mode}{lang_note}) ..."
     )
-    seeds = reword_prompt(prompt, n=num_seeds, fuzz_mode=mode)
+    seeds = reword_prompt(prompt, n=num_seeds, fuzz_mode=mode, languages=languages)
     _report(f"Seeds: {seeds}")
 
     jobs = [(seed, llm) for seed in seeds for llm in retrieval_llms]
@@ -611,7 +646,8 @@ def explore_topic(
             claims_summary = localize_text_for_report(claims_summary)
 
     markdown = render_markdown(
-        prompt, seeds, results, summary, retrieval_llms, fuzz_mode=mode
+        prompt, seeds, results, summary, retrieval_llms, fuzz_mode=mode,
+        languages=languages,
     )
     return ExploreResult(
         prompt=prompt,
