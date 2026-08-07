@@ -124,10 +124,11 @@ def cli(verbose: bool, debug: bool):
 @click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
 @click.option(
     '--fuzz-mode',
-    type=click.Choice(['basic', 'full'], case_sensitive=False),
+    type=click.Choice(['basic', 'full', 'full-multilingual'], case_sensitive=False),
     default='basic',
     show_default=True,
-    help='basic = paraphrase only; full = translate, abstract, summarize, typo',
+    help='basic = paraphrase only; full = abstract, summarize, typo (English); '
+         'full-multilingual = full plus translation (Spanish, French, Mainland Chinese)',
 )
 @click.option('--verbose', '-v', is_flag=True, help='Verbose output')
 def fuzz(phrases, phrases_file, target_concept, corpus_index, output, 

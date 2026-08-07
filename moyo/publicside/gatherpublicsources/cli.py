@@ -49,10 +49,19 @@ def crawl_tokens(tokens: str, output: Optional[str]) -> None:
 @click.option("--seeds", type=int, default=5, show_default=True, help="Number of reworded query seeds")
 @click.option(
     "--fuzz-mode",
-    type=click.Choice(["basic", "full"], case_sensitive=False),
+    type=click.Choice(["basic", "full", "full-multilingual"], case_sensitive=False),
     default="basic",
     show_default=True,
-    help="basic = paraphrase seeds only; full = translate / abstract / summarize / typo",
+    help="basic = paraphrase seeds only; full = abstract / summarize / typo (English); "
+         "full-multilingual = full plus translation into Spanish, French, Mainland Chinese",
+)
+@click.option(
+    "--language",
+    "-l",
+    "languages",
+    multiple=True,
+    help="Additional target language(s) for full-multilingual mode (repeatable). "
+         "Added on top of the defaults Spanish, French, Mainland Chinese.",
 )
 @click.option("--workers", type=int, default=None,
               help="Max concurrent retrieval calls (default: one per configured LLM). Use 1 for sequential.")
@@ -79,6 +88,7 @@ def explore(
     output_dir,
     seeds,
     fuzz_mode,
+    languages,
     workers,
     no_summary,
     impact_definition,
@@ -99,9 +109,10 @@ def explore(
     synthesis) via ``MOYO_LLM_*``.
 
     ``--fuzz-mode basic`` (default) paraphrases into seeds; ``full`` rotates
-    translate, abstract, summarize, and typo. Foreign-language retrieval bodies
-    are translated to English with a language annotation before the report is
-    written.
+    abstract, summarize, and typo (English only); ``full-multilingual`` adds a
+    translated seed per language (defaults Spanish, French, Mainland Chinese;
+    extend with ``--language``). Foreign-language retrieval bodies are translated
+    back to English with a language annotation before the report is written.
 
     Claims ranking uses a built-in high-impact definition for classified,
     proprietary, and personal/sensitive information; refine it with
@@ -124,6 +135,7 @@ def explore(
         default_llm=default_llm,
         num_seeds=seeds,
         fuzz_mode=fuzz_mode,
+        extra_languages=list(languages) or None,
         summarize=not no_summary,
         workers=workers,
         impact_definition=impact_definition,

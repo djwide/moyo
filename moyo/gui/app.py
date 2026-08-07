@@ -769,10 +769,12 @@ class GatherPublicSourcesTab(QWidget):
         self.explore_note = QLabel(
             "Explore mode rewords your prompt via the local Ollama fuzzer "
             "(llama3.1:8b, black-box — no target concept). Mode basic paraphrases "
-            "only; full rotates translate / abstract / summarize / typo. Asks every "
+            "only; full rotates abstract / summarize / typo (English only); "
+            "full-multilingual adds a translated query per language (defaults "
+            "Spanish, French, Mainland Chinese — add more below). Asks every "
             "configured retrieval LLM (see config/retrieval_llms.json), then writes "
             "exploration.md plus a corroborated claims summary.md. Foreign-language "
-            "results are translated to English with a language annotation. Optional "
+            "results are translated back to English with a language annotation. Optional "
             "impact criteria below refine what counts as high-impact (base definition "
             "covers classified, proprietary, and personal/sensitive information)."
         )
@@ -783,12 +785,24 @@ class GatherPublicSourcesTab(QWidget):
         self.explore_fuzz_mode_combo = QComboBox()
         self.explore_fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
         self.explore_fuzz_mode_combo.addItem(
-            "full (translate / abstract / summarize / typo)", "full"
+            "full (abstract / summarize / typo, English)", "full"
         )
+        self.explore_fuzz_mode_combo.addItem(
+            "full-multilingual (full + Spanish / French / Chinese)", "full-multilingual"
+        )
+        self.explore_fuzz_mode_combo.currentIndexChanged.connect(
+            self._on_explore_fuzz_mode_changed
+        )
+        self.explore_languages_input = QLineEdit()
+        self.explore_languages_input.setPlaceholderText(
+            "Additional languages (comma-separated) — e.g. German, Japanese, Arabic"
+        )
+        self.explore_languages_input.setEnabled(False)
         self.explore_fuzz_row = QWidget()
         explore_fuzz_layout = QFormLayout(self.explore_fuzz_row)
         explore_fuzz_layout.setContentsMargins(0, 0, 0, 0)
         explore_fuzz_layout.addRow("Fuzz mode:", self.explore_fuzz_mode_combo)
+        explore_fuzz_layout.addRow("Extra languages:", self.explore_languages_input)
         self.explore_fuzz_row.setVisible(False)
         layout.addWidget(self.explore_fuzz_row)
 
@@ -875,6 +889,12 @@ class GatherPublicSourcesTab(QWidget):
         self.explore_fuzz_row.setVisible(is_prompt)
         self.impact_definition_input.setVisible(is_prompt)
         self.run_btn.setText("Explore" if is_prompt else "Start Crawl")
+        self._on_explore_fuzz_mode_changed()
+
+    def _on_explore_fuzz_mode_changed(self, *args):
+        # Extra languages only apply to full-multilingual mode.
+        multilingual = self.explore_fuzz_mode_combo.currentData() == "full-multilingual"
+        self.explore_languages_input.setEnabled(multilingual)
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
@@ -971,6 +991,11 @@ class GatherPublicSourcesTab(QWidget):
         output_dir = self.output_dir_input.text().strip() or "data/public_sources"
         impact_extra = self.impact_definition_input.toPlainText().strip() or None
         fuzz_mode = self.explore_fuzz_mode_combo.currentData() or "basic"
+        extra_languages = (
+            [s.strip() for s in self.explore_languages_input.text().split(",") if s.strip()]
+            if fuzz_mode == "full-multilingual"
+            else None
+        )
 
         def job():
             return explore_and_save(
@@ -978,6 +1003,7 @@ class GatherPublicSourcesTab(QWidget):
                 output_directory=output_dir,
                 impact_definition=impact_extra,
                 fuzz_mode=fuzz_mode,
+                extra_languages=extra_languages or None,
                 progress=print,
             )
 
@@ -1665,8 +1691,9 @@ class FuzzerTab(QWidget):
         desc = QLabel(
             "Use an LLM (default: local Ollama llama3.1:8b) to iteratively transform input "
             "phrases toward a target concept. Mode basic paraphrases only; full rotates "
-            "translate, abstract, summarize, and typo. Foreign-language outputs are "
-            "translated to English with a language annotation in saved reports."
+            "abstract, summarize, and typo (English only); full-multilingual adds "
+            "translation (Spanish, French, Mainland Chinese). Foreign-language outputs are "
+            "translated back to English with a language annotation in saved reports."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -1758,7 +1785,10 @@ class FuzzerTab(QWidget):
         self.fuzz_mode_combo = QComboBox()
         self.fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
         self.fuzz_mode_combo.addItem(
-            "full (translate / abstract / summarize / typo)", "full"
+            "full (abstract / summarize / typo, English)", "full"
+        )
+        self.fuzz_mode_combo.addItem(
+            "full-multilingual (full + translation)", "full-multilingual"
         )
         fuzz_layout.addRow("Fuzz mode:", self.fuzz_mode_combo)
 
