@@ -10,11 +10,13 @@ import os
 import pathlib
 from typing import Any, Dict, List, Optional
 
-# Default data directory (respects SENTE_DATA_DIR if set)
-DATA_DIR = pathlib.Path(os.environ.get("SENTE_DATA_DIR", "data"))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+# Repo root (shared_utils/..) and project config directory.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+CONFIG_DIR = pathlib.Path(os.environ.get("MOYO_CONFIG_DIR", _REPO_ROOT / "config"))
+CONFIG_FILE = CONFIG_DIR / "model_config.json"
 
-CONFIG_FILE = DATA_DIR / "model_config.json"
+# Legacy alias — some callers still import DATA_DIR for corpus paths.
+DATA_DIR = pathlib.Path(os.environ.get("SENTE_DATA_DIR", "data"))
 
 # Full catalog: key → metadata. GUI and CLI should prefer this over hard-coded lists.
 # ``backend``: "local" uses sentence-transformers; "openai" uses the OpenAI API.
@@ -151,6 +153,7 @@ def get_model_config() -> dict:
 
 
 def write_model_config(config: dict) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 

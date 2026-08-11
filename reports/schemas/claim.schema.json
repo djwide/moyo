@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moyo.local/schemas/claim.schema.json",
+  "title": "ExplorationClaim",
+  "type": "object",
+  "required": [
+    "claim_id",
+    "claim",
+    "source_model",
+    "query_id",
+    "category",
+    "sensitivity",
+    "specificity",
+    "novelty",
+    "confidence",
+    "corroboration",
+    "interestingness",
+    "status",
+    "raw_excerpt",
+    "raw_start_line",
+    "raw_end_line"
+  ],
+  "properties": {
+    "claim_id": { "type": "string", "pattern": "^C\\d+$" },
+    "claim": { "type": "string", "minLength": 1 },
+    "source_model": { "type": "string", "minLength": 1 },
+    "query_id": { "type": "string", "pattern": "^Q\\d+$" },
+    "category": {
+      "type": "string",
+      "description": "e.g. proprietary_adjacent, public_fact, contested_history"
+    },
+    "sensitivity": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "specificity": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "novelty": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "confidence": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "corroboration": { "type": "integer", "minimum": 0 },
+    "interestingness": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "CORROBORATED",
+        "CONTESTED",
+        "OUTLIER",
+        "UNVERIFIED",
+        "MODEL-SPECIFIC"
+      ]
+    },
+    "raw_excerpt": { "type": "string", "minLength": 1 },
+    "raw_start_line": { "type": "integer", "minimum": 1 },
+    "raw_end_line": { "type": "integer", "minimum": 1 },
+    "language": { "type": ["string", "null"] },
+    "citations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

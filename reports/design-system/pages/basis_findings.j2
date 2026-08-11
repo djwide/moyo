@@ -1,0 +1,27 @@
+{% from "components/macros.j2" import severity_badge, confidence, evidence_box, citation_line %}
+<section class="page page--basis-findings">
+  <h2>Full Findings With Evidence</h2>
+  <p class="basis-lede">
+    Each finding with its severity, rationale, confidence, and the verbatim
+    source excerpt (with line offsets back into the exploration transcript).
+  </p>
+  {% for f in content.basis.findings_full %}
+  <article class="basis-finding{% if f.severity == 'high' %} basis-finding--high{% endif %}">
+    <div class="basis-finding__head">
+      <span class="basis-finding__id">{{ f.claim_id }}</span>
+      {{ severity_badge(f.status) }}
+      {{ severity_badge(f.severity) }}
+    </div>
+    <p class="basis-finding__claim">{{ f.claim }}</p>
+    <p class="basis-finding__rationale">{{ f.rationale }}</p>
+    <div class="basis-finding__meta">
+      <span>Source {{ f.source_cite or f.source_model }}</span>
+      <span>Confidence {{ confidence(f.confidence) }}</span>
+    </div>
+    {{ citation_line(f.citations_display) }}
+    {% if f.raw_excerpt %}
+      {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>

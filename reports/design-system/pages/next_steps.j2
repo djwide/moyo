@@ -1,0 +1,16 @@
+{# Expects ``section`` = content.next_steps.snapshot | content.next_steps.basis #}
+<section class="page page--next-steps">
+  <h2>{{ section.title or "Next Steps" }}</h2>
+  {% if section.lede %}
+  <p class="section-lede">{{ section.lede }}</p>
+  {% endif %}
+
+  <ol class="next-steps-list">
+    {% for item in section['items'] or [] %}
+    <li class="next-step">
+      <h3 class="next-step__title">{{ item.title }}</h3>
+      <p class="next-step__body">{{ item.body }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+</section>

@@ -1,0 +1,249 @@
+@import url("tokens.css");
+@import url("components.css");
+@import url("pages.css");
+
+/* —— Basis Report specifics —— */
+
+.basis-lede {
+  font-family: var(--font-serif);
+  font-size: 1.02rem;
+  color: var(--moyo-ink);
+  max-width: 66ch;
+  margin: 0 0 var(--space-4);
+}
+
+/* Prioritized exposure inventory: five fixed columns inside the 182mm
+   printable width, with the claim taking the space the scores used to. */
+.inventory-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+}
+.inventory-table col.col-id { width: 14mm; }
+.inventory-table col.col-claim { width: 92mm; }
+.inventory-table col.col-category { width: 24mm; }
+.inventory-table col.col-corrob { width: 18mm; }
+.inventory-table col.col-source { width: 34mm; }
+.inventory-table th,
+.inventory-table td {
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--moyo-border);
+  vertical-align: top;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.inventory-table th {
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--moyo-muted);
+}
+.inventory-table th.num { text-align: center; white-space: nowrap; letter-spacing: 0; }
+.inventory-table thead { display: table-header-group; }
+.inventory-table tr { break-inside: avoid; }
+.inventory-table td.num { text-align: center; }
+.inventory-table .claim-cell {
+  font-family: var(--font-serif);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+.inventory-table .category-cell {
+  font-size: 0.68rem;
+  color: var(--moyo-muted);
+}
+.inventory-table .source-cell .source-cite { white-space: normal; }
+.inventory-table .source-cell .source-refs { display: block; }
+
+/* Full finding blocks: severity + rationale + confidence */
+.basis-finding {
+  border: 1px solid var(--moyo-border);
+  border-left: 4px solid var(--moyo-teal);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--moyo-white);
+  break-inside: avoid;
+}
+.basis-finding--high { border-left-color: var(--moyo-high); }
+.basis-finding__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: var(--space-2);
+}
+.basis-finding__id {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--moyo-muted);
+}
+.basis-finding__claim {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  margin: 0 0 var(--space-2);
+  color: var(--moyo-ink);
+}
+.basis-finding__rationale {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--moyo-muted);
+  margin: 0 0 var(--space-2);
+}
+.basis-finding__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--moyo-muted);
+  align-items: center;
+}
+
+/* Exposure chain detail blocks */
+.chain-block {
+  border: 1px solid var(--moyo-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  break-inside: avoid;
+}
+.chain-block__title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin: 0 0 var(--space-2);
+  color: var(--moyo-ink);
+  border: 0;
+  padding: 0;
+}
+.chain-block__meta {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--moyo-muted);
+  margin: 0 0 var(--space-3);
+}
+.chain-subhead {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--moyo-teal-deep);
+  margin: var(--space-3) 0 var(--space-2);
+}
+.chain-recovered {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  color: var(--moyo-ink);
+  margin: 0 0 var(--space-2);
+}
+.chain-steps {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--moyo-ink);
+}
+.chain-steps li { margin: 0.2rem 0; }
+.chain-implication {
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
+  color: var(--moyo-ink);
+  background: var(--moyo-cream);
+  border-left: 3px solid var(--moyo-teal);
+  padding: var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.corroboration-item {
+  border-top: 1px solid var(--moyo-border);
+  padding: var(--space-2) 0;
+}
+.corroboration-item__source {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--moyo-ink);
+}
+.corroboration-item__claim {
+  font-family: var(--font-serif);
+  font-size: 0.86rem;
+  color: var(--moyo-ink);
+  margin: 0.15rem 0;
+}
+.corroboration-item__excerpt {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--moyo-muted);
+  white-space: pre-wrap;
+}
+
+/* Remediation (ISVF) */
+.remediation-family {
+  margin-bottom: var(--space-5);
+  break-inside: avoid;
+}
+.remediation-family__head {
+  border-bottom: 1px solid var(--moyo-border);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.remediation-family__name {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  color: var(--moyo-ink);
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.remediation-family__code {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--moyo-teal-deep);
+}
+.remediation-family__why {
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
+  color: var(--moyo-muted);
+  margin: var(--space-2) 0 0;
+}
+.remediation-control {
+  border-left: 3px solid var(--moyo-teal);
+  padding-left: var(--space-4);
+  margin: 0 0 var(--space-4);
+  break-inside: avoid;
+}
+.remediation-control__title {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--moyo-ink);
+  margin: 0 0 0.2rem;
+}
+.remediation-control__code {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--moyo-muted);
+}
+.remediation-control__statement {
+  font-family: var(--font-serif);
+  font-size: 0.86rem;
+  color: var(--moyo-ink);
+  margin: 0.3rem 0;
+}
+.remediation-steps {
+  margin: 0.2rem 0 0;
+  padding-left: 1.2rem;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--moyo-ink);
+}
+.remediation-steps li { margin: 0.15rem 0; }
+.remediation-source {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--moyo-muted);
+  margin-top: var(--space-4);
+}

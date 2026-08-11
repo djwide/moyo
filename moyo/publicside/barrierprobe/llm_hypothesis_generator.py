@@ -29,24 +29,7 @@ class LocalHypothesisGenerator:
     
     def _load_transformation_patterns(self) -> Dict[str, List[str]]:
         """Load common text transformation patterns for hypothesis generation."""
-        # Load synonym map directly from data directory
-        shared_synonyms = {}
-        try:
-            import json
-            from pathlib import Path
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    shared_synonyms = json.load(f)
-                logger.info(f"Loaded {len(shared_synonyms)} synonym groups from {synonym_file}")
-            else:
-                logger.warning(f"Synonym map file not found at {synonym_file}")
-        except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
-            shared_synonyms = {}
-        
-        # Merge with built-in patterns
-        built_in_synonyms = {
+        merged_synonyms = {
             "data": ["information", "content", "material", "details"],
             "breach": ["violation", "compromise", "incident", "failure"],
             "security": ["protection", "safety", "defense", "safeguard"],
@@ -58,10 +41,7 @@ class LocalHypothesisGenerator:
             "disclosure": ["exposure", "leak", "release", "publication"],
             "incident": ["event", "occurrence", "situation", "case"]
         }
-        
-        # Merge shared synonyms with built-in patterns
-        merged_synonyms = {**shared_synonyms, **built_in_synonyms}
-        
+
         return {
             "synonyms": merged_synonyms,
             "intensifiers": {

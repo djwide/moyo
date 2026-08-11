@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · {{ content.meta.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body>
+  {% include "pages/cover.j2" %}
+  {% include "pages/executive_summary.j2" %}
+  {% include "pages/risk_overview.j2" %}
+  {% include "pages/findings.j2" %}
+  {% include "pages/evidence.j2" %}
+  {% include "pages/model_comparison.j2" %}
+  {% include "pages/appendix.j2" %}
+  {% if content.next_steps and content.next_steps.snapshot %}
+  {% with section = content.next_steps.snapshot %}
+  {% include "pages/next_steps.j2" %}
+  {% endwith %}
+  {% endif %}
+  {% include "pages/sources.j2" %}
+  {% include "pages/glossary.j2" %}
+</body>
+</html>

@@ -1,0 +1,94 @@
+@import url("base.css");
+
+@page { size: A4 landscape; margin: 12mm; }
+
+.onepage {
+  width: 100%;
+  min-height: 180mm;
+  border: 1px solid var(--moyo-border);
+  background: #fff;
+}
+
+.onepage .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--moyo-teal);
+  margin: 0.75rem 1.25rem 0.25rem;
+}
+
+.onepage h1.headline {
+  font-size: 1.45rem;
+  margin: 0 1.25rem 1rem;
+  max-width: 38rem;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--moyo-border);
+  border-bottom: 1px solid var(--moyo-border);
+}
+
+.metrics .metric {
+  padding: 1rem 1.25rem;
+  text-align: center;
+  border-right: 1px solid var(--moyo-border);
+}
+
+.metrics .metric:last-child { border-right: none; }
+
+.metrics .value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--moyo-ink);
+  line-height: 1;
+}
+
+.metrics .label {
+  margin-top: 0.35rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--moyo-muted);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  border-bottom: 1px solid var(--moyo-border);
+}
+
+.panel {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.panel + .panel { border-left: 1px solid var(--moyo-border); }
+
+.panel h2 {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--moyo-muted);
+  margin: 0 0 0.65rem;
+}
+
+.chain {
+  padding: 1rem 1.25rem 1.25rem;
+  border-bottom: 1px solid var(--moyo-border);
+}
+
+.chain ol {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.chain li { margin: 0.35rem 0; }
+
+.cta {
+  margin-top: 0.75rem;
+  font-weight: 700;
+  color: var(--moyo-teal);
+  text-decoration: none;
+}

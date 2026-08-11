@@ -1,0 +1,50 @@
+@import url("base.css");
+
+@page { size: A4 portrait; margin: 16mm; }
+
+.report {
+  max-width: 48rem;
+  margin: 0 auto;
+  background: #fff;
+  padding: 1.5rem 1.75rem 3rem;
+}
+
+.report h1 { font-size: 1.75rem; margin-top: 0.5rem; }
+
+.report section {
+  margin: 1.75rem 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--moyo-border);
+}
+
+.report .graphic {
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.report .graphic img,
+.report .graphic svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.findings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.findings-table th,
+.findings-table td {
+  border-bottom: 1px solid var(--moyo-border);
+  text-align: left;
+  padding: 0.45rem 0.35rem;
+  vertical-align: top;
+}
+
+.findings-table th {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--moyo-muted);
+}

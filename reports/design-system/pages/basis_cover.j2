@@ -1,0 +1,77 @@
+{% from "components/macros.j2" import severity_badge %}
+<section class="page page--cover">
+  <header class="cover-header">
+    <div class="cover-header__slot cover-header__slot--left">
+      {% if logo_uri %}
+      <img class="cover-header__logo cover-header__logo--moyo" src="{{ logo_uri }}" alt="MOYO" />
+      {% endif %}
+    </div>
+    <div class="cover-header__slot cover-header__slot--right">
+      {% if partner_logo_uri %}
+      <img class="cover-header__logo cover-header__logo--partner" src="{{ partner_logo_uri }}" alt="SenTeGuard" />
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="cover-body">
+    <p class="cover-kicker">MOYO Basis Report</p>
+
+    <div class="cover-lead">
+      <p class="cover-prompt-label">Prompt</p>
+      <p class="cover-prompt">
+        {% if content.meta.prompts and content.meta.prompts|length > 1 %}
+          {% for p in content.meta.prompts %}
+            “{{ p }}”{% if not loop.last %}<br />{% endif %}
+          {% endfor %}
+        {% else %}
+          “{{ (content.meta.prompts[0] if content.meta.prompts else content.meta.topic) }}”
+        {% endif %}
+      </p>
+      <p class="cover-date">{{ content.meta.report_date }}</p>
+    </div>
+
+    <h1 class="cover-title">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
+    <p class="basis-lede">
+      Complete exposure basis: full findings with evidence, prioritized
+      inventory, derivation of how MOYO reached each conclusion, corroborating
+      model outputs, cited real-world sources, and exploitation
+      implications{% if content.meta.include_remediation %},
+      plus ISVF-aligned remediation{% endif %}.
+    </p>
+
+    <div class="cover-meta">
+      <section class="cover-meta__block">
+        <h2 class="cover-meta__title">Models Tested</h2>
+        <ul class="cover-meta__list">
+          {% for m in content.meta.models_tested %}
+          <li>{{ m }}</li>
+          {% else %}
+          <li>{{ content.meta.counts.llms_tested }} models</li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="cover-meta__block">
+        <h2 class="cover-meta__title">Techniques</h2>
+        <ul class="cover-meta__list">
+          {% for s in content.meta.strategies %}
+          <li>{{ s|capitalize }}</li>
+          {% endfor %}
+        </ul>
+        {% if content.meta.fuzz_mode %}
+        <p class="cover-meta__note">Fuzz Mode: {{ content.meta.fuzz_mode|capitalize }}</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <footer class="cover-footer">
+    <div class="cover-footer__stats">
+      <span><strong>{{ content.meta.counts.findings }}</strong> Findings</span>
+      <span><strong>{{ content.meta.counts.llms_tested }}</strong> Models Tested</span>
+      {% if content.meta.counts.high_sensitivity %}
+      <span><strong>{{ content.meta.counts.high_sensitivity }}</strong> High-Sensitivity</span>
+      {% endif %}
+      <span><strong>{{ content.meta.counts.chains }}</strong> Exposure Chains</span>
+    </div>
+  </footer>
+</section>

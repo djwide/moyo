@@ -1,0 +1,234 @@
+{%- macro badge(label) -%}
+{%- set key = (label or 'info')|string|lower|replace('_','-') -%}
+<span class="badge badge--{{ key }}">{{ label }}</span>
+{%- endmacro -%}
+{%- macro conf(score) -%}
+<span class="conf-dots">{% for i in range(1,6) %}<span class="conf-dot{% if i <= (score or 0)|int %} conf-dot--on{% endif %}"></span>{% endfor %}</span>
+{%- endmacro -%}
+{%- macro cited(citations) -%}
+{%- if citations -%}
+<div class="cited"><span class="cited__label">Cited</span>{% for c in citations %}<span class="cited__item"><span class="cited__ref">{{ c.ref }}</span> {{ c.label }}</span>{% if not loop.last %}<span class="cited__sep">·</span>{% endif %}{% endfor %}</div>
+{%- endif -%}
+{%- endmacro -%}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MOYO Exposure Snapshot · {{ content.meta.topic }}</title>
+  <style>{{ css_text | safe }}</style>
+</head>
+<body>
+
+<section class="page cover">
+  <header class="cover-header">
+    <span>{% if logo_uri %}<img class="cover-header__logo cover-header__logo--moyo" src="{{ logo_uri }}" alt="MOYO" />{% endif %}</span>
+    <span>{% if partner_logo_uri %}<img class="cover-header__logo cover-header__logo--partner" src="{{ partner_logo_uri }}" alt="SenTeGuard" />{% endif %}</span>
+  </header>
+  <p class="cover-kicker">MOYO Exposure Assessment</p>
+  <div class="cover-lead">
+    <p class="cover-lead__label">Prompt</p>
+    <p class="cover-lead__prompt">
+      {% if content.meta.prompts and content.meta.prompts|length > 1 %}
+        {% for p in content.meta.prompts %}&ldquo;{{ p }}&rdquo;{% if not loop.last %}<br />{% endif %}{% endfor %}
+      {% else %}&ldquo;{{ content.meta.prompts[0] if content.meta.prompts else content.meta.topic }}&rdquo;{% endif %}
+    </p>
+    <p class="cover-lead__date">{{ content.meta.report_date }}</p>
+  </div>
+  <h1 class="cover-title">{{ content.meta.headline }}</h1>
+  <div class="cover-meta">
+    <section>
+      <h2 class="cover-meta__title">Models Tested</h2>
+      <ul class="cover-meta__list">
+        {% for m in content.meta.models_tested %}<li>{{ m }}</li>{% else %}<li>{{ content.meta.counts.llms_tested }} models</li>{% endfor %}
+      </ul>
+    </section>
+    <section>
+      <h2 class="cover-meta__title">Techniques</h2>
+      <ul class="cover-meta__list">
+        {% for s in content.meta.strategies %}<li>{{ s|capitalize }}</li>{% endfor %}
+      </ul>
+      {% if content.meta.fuzz_mode %}<p class="cover-meta__note">Fuzz Mode: {{ content.meta.fuzz_mode|capitalize }}</p>{% endif %}
+    </section>
+  </div>
+  <footer class="cover-footer">
+    <span><strong>{{ content.meta.counts.findings }}</strong> Findings</span>
+    <span><strong>{{ content.meta.counts.llms_tested }}</strong> Models Tested</span>
+    {% if content.meta.counts.high_sensitivity %}<span><strong>{{ content.meta.counts.high_sensitivity }}</strong> High-Sensitivity</span>{% endif %}
+    <span><strong>{{ content.meta.counts.chains }}</strong> Exposure Chains</span>
+  </footer>
+</section>
+
+<section class="page">
+  <h2>Executive Summary</h2>
+  <p class="lede">{{ content.exec.body }}</p>
+  {% if content.exec.pull_quote %}<p class="pull-quote">{{ content.exec.pull_quote }}</p>{% endif %}
+  <div class="metrics-row">
+    <div class="metric"><div class="metric__value">{{ content.meta.counts.findings }}</div><div class="metric__label">Findings</div></div>
+    <div class="metric"><div class="metric__value">{{ content.meta.counts.llms_tested }}</div><div class="metric__label">Models</div></div>
+    <div class="metric"><div class="metric__value">{{ content.meta.counts.high_sensitivity }}</div><div class="metric__label">High Sens.</div></div>
+    <div class="metric"><div class="metric__value">{{ content.meta.counts.chains }}</div><div class="metric__label">Chains</div></div>
+  </div>
+  {% if content.exec.public_sources %}
+  <p class="exec-block"><strong>Public Sources.</strong> {{ content.exec.public_sources | join('; ') }}.</p>
+  {% endif %}
+  {% if content.exec.inference_chain %}
+  <p class="exec-block"><strong>Evidence-Backed Inference Chain.</strong> {{ content.exec.inference_chain | join(' ') }}</p>
+  {% endif %}
+  {% if content.exec.confidence_label %}
+  <p class="exec-block"><strong>Confidence Rating.</strong> {{ content.exec.confidence_label }}{% if content.exec.confidence_score %} ({{ content.exec.confidence_score }}/5){% endif %}. {{ content.exec.confidence_rationale }}</p>
+  {% endif %}
+  {% if content.exec.why_it_matters %}
+  <p class="exec-block"><strong>Why It Matters.</strong> {{ content.exec.why_it_matters }}</p>
+  {% endif %}
+  {% if content.exec.defensive_action %}
+  <p class="exec-block"><strong>Recommended Defensive Action.</strong> {{ content.exec.defensive_action }}</p>
+  {% endif %}
+  {% if content.exec.exposure_teaser %}
+  <p class="exec-block"><strong>Exposure Chain Teaser.</strong> {{ content.exec.exposure_teaser }}</p>
+  {% endif %}
+</section>
+
+<section class="page">
+  <h2>Risk Overview</h2>
+  <div class="chart-grid">
+    <div class="chart">{{ content.charts.severity_donut | safe }}</div>
+    <div class="chart">{{ content.charts.dimension_bars | safe }}</div>
+  </div>
+</section>
+
+<section class="page">
+  <h2>Abridged Findings</h2>
+  {% for f in content.abridged_findings %}
+  <article class="finding{% if f.severity == 'high' %} finding--high{% endif %}">
+    <div class="finding__head">
+      <span class="finding__id">{{ f.claim_id }}</span>
+      {{ badge(f.status) }}{{ badge(f.severity) }}
+    </div>
+    <p class="finding__claim">{{ f.claim }}</p>
+    <div class="finding__meta">
+      <span>Source {{ f.source_cite or f.source_model }}</span>
+      <span>Confidence {{ conf(f.confidence) }}</span>
+    </div>
+    {{ cited(f.citations_display) }}
+    {% if f.raw_excerpt %}
+    <div class="evidence">
+      <div class="evidence__label">Evidence</div>
+      <div class="evidence__excerpt">{{ f.raw_excerpt | md }}</div>
+      <div class="evidence__cite">{{ f.source_cite or f.source_model }}{% if f.raw_start_line %} · lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}{% endif %}</div>
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+
+<section class="page">
+  <h2>Abridged Evidence</h2>
+  {% for f in content.abridged_findings %}
+    {% if f.raw_excerpt %}
+    <h3 class="mono">{{ f.claim_id }}</h3>
+    <div class="evidence">
+      <div class="evidence__label">Evidence</div>
+      <div class="evidence__excerpt">{{ f.raw_excerpt | md }}</div>
+      <div class="evidence__cite">{{ f.source_cite or f.source_model }}{% if f.raw_start_line %} · lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}{% endif %}</div>
+    </div>
+    {{ cited(f.citations_display) }}
+    {% endif %}
+  {% endfor %}
+</section>
+
+<section class="page">
+  <h2>Model Comparison</h2>
+  <div class="chart chart--wide">{{ content.charts.model_bars | safe }}</div>
+  <ul class="model-list">
+    {% for m in content.model_exposure %}
+    <li><span>{{ m.model }}</span><span class="dots">{{ "●" * m.dots }}{{ "○" * (5 - m.dots) }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="page">
+  <h2>Appendix</h2>
+  <h3>Abridged Claims</h3>
+  <table class="claims-table">
+    <thead>
+      <tr><th>ID</th><th>Claim</th><th>Status</th><th>Sev</th><th>Source</th></tr>
+    </thead>
+    <tbody>
+      {% for f in content.abridged_findings %}
+      <tr>
+        <td class="mono">{{ f.claim_id }}</td>
+        <td>{{ f.claim }}</td>
+        <td>{{ badge(f.status) }}</td>
+        <td class="num">{{ f.sensitivity }}</td>
+        <td>
+          {{ f.source_cite or f.source_model }}
+          {% if f.source_refs %}<span class="cited__ref">{{ f.source_refs | join(' ') }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if content.followups %}
+  <h3>Recommended Follow-Ups</h3>
+  {% for item in content.followups %}
+  <div class="followup">
+    <div class="followup__method">{{ item.method }}</div>
+    <div class="followup__action">{{ item.action }}</div>
+    {% if item.claim_ids %}<div class="followup__ids">{{ item.claim_ids | join(', ') }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+
+<section class="page">
+  <h2>Sources and Citations</h2>
+  {% if content.sources %}
+  <p class="lede">
+    Real-world sources the model answers cited, numbered once for the whole run.
+    Findings reference them as S1, S2, and so on.
+  </p>
+  <table class="claims-table">
+    <thead>
+      <tr><th>Ref</th><th>Source</th><th>Findings</th></tr>
+    </thead>
+    <tbody>
+      {% for s in content.sources %}
+      <tr>
+        <td class="mono">{{ s.ref }}</td>
+        <td>
+          <span class="source-label">{{ s.label }}</span>
+          {% if s.url %}<span class="source-url">{{ s.url }}</span>{% endif %}
+        </td>
+        <td class="num">{{ s.cited_by }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="lede">
+    No model answer in this run cited an external source, so findings are
+    attributed to the model that produced them.
+  </p>
+  {% endif %}
+</section>
+
+<section class="page">
+  <h2>Glossary</h2>
+  <p class="lede">Terms, identifiers, and score dimensions used in this report.</p>
+  {% for group in content.glossary %}
+  <div class="glossary-group">
+    <h3>{{ group.title }}</h3>
+    <dl class="glossary-terms">
+      {% for entry in group.terms %}
+      <div class="glossary-term">
+        <dt>{{ entry.term }}</dt>
+        <dd>{{ entry.definition }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </div>
+  {% endfor %}
+</section>
+
+</body>
+</html>

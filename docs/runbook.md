@@ -69,16 +69,20 @@ moyo info
 
 ### Step 3: Configuration
 
-Create configuration files as needed:
-
 ```bash
 # Check current configuration
 moyo info
 
-# Set up environment variables (if using LLM features)
-export OPENAI_API_KEY="your-api-key"
-export ANTHROPIC_API_KEY="your-api-key"
+# Persistent keys + default LLM (recommended)
+cp .env.example .env
+# Edit .env: OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, … and MOYO_LLM_*
+
+# Explore fan-out targets
+cp config/retrieval_llms.example.json config/retrieval_llms.json
+# Edit entries for providers you have keys for
 ```
+
+See [`docs/configuration_and_monitoring_summary.md`](configuration_and_monitoring_summary.md).
 
 ## Core Operations
 
@@ -98,13 +102,16 @@ After setup, the following structure should exist:
 
 ```
 moyo/
-├── indexes/
-│   ├── private/         # Private corpus indexes
-│   └── public/          # Public corpus indexes
+├── indexes/             # FAISS indexes only (named per corpus, not index.faiss)
+│   ├── private/
+│   └── public/
+├── config/              # retrieval_llms.json, model_config.json, …
 ├── data/
-│   ├── private/         # Private data storage
-│   └── public/          # Public data storage
-└── logs/                # System logs
+│   ├── private/
+│   ├── public/
+│   └── public_sources/  # explore reports + crawl outputs
+├── .env                 # API keys + MOYO_LLM_* (from .env.example)
+└── logs/
 ```
 
 ## Private Side Operations
@@ -138,8 +145,12 @@ moyo-datainput process --files file1.txt --files file2.txt --files file3.txt
 moyo-datainput process --file document.txt --name my_corpus
 ```
 
-Indexes are always written under `indexes/private/<name>/<name>.faiss` (one
-subdirectory per corpus, and never a shared `index.faiss`).
+Indexes are always written under `indexes/` and named after the corpus
+(e.g. `indexes/private/<name>/<name>.faiss`). There is no shared `index.faiss`.
+The CLI defaults to the most recently built index or lets you choose.
+
+Chunking uses multi-granularity splitting (sections, sentences, list/bullet
+items) so long prose does not dilute embeddings; see `shared_utils/chunking.py`.
 
 #### Advanced Processing
 
@@ -225,7 +236,48 @@ else:
 
 ## Public Side Operations
 
-### Public Source Gathering
+### Naive-prompt exploration (multi-LLM)
+
+`moyo-gather explore` rewords a plain-language prompt (local Ollama fuzzer),
+fans out each seed to every retrieval LLM in `config/retrieval_llms.json`,
+compiles/labels/translates responses, then writes `exploration.md` only.
+
+```bash
+# basic (default): English seeds; default strategies paraphrase/translate/summarize
+moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic
+# Multiple prompts: repeat --prompt and/or use --prompts-file (one per line)
+moyo-gather explore -p "What is the recipe for Coca-Cola?" -p "Who killed JFK?"
+
+# A la carte strategies (-S overrides the mode's default set; mode still
+# controls language fan-out). Include typo explicitly when wanted:
+moyo-gather explore -p "..." --fuzz-mode basic -S paraphrase -S summarize -S typo
+
+# multilingual: EN + ES / FR / Mandarin Chinese (extend with -l)
+moyo-gather explore --prompt "..." --fuzz-mode multilingual --seeds 3 -l German
+
+# Preflight prints name/status/reason for each retrieval LLM at scan start
+```
+
+Fuzz modes: **basic** (default) | **multilingual** (legacy aliases `full` /
+`full-multilingual` still normalize). Strategies are a la carte via repeatable
+``--strategy`` / ``-S`` (`paraphrase`, `translate`, `summarize`, `typo`,
+`abstract`). Mode defaults omit ``typo``; the GUI shows the same default
+(`basic`) and strategy checkboxes pre-checked to the mode’s set.
+
+**Claim-friendly explore (for cheaper report extraction):** ask for dated /
+numbered public-record facts, not “where would I look?” meta-prompts; prefer
+``--fuzz-mode basic`` unless you need multilingual coverage; drop low-value
+strategies with ``-S``; if answers truncate mid-bullet, raise retrieval
+``max_tokens`` on the LLM spec. The report extractor skips refusals / tiny
+stubs and can limit languages via ``reports/config.yaml`` ``chunk.*``.
+
+Rewording, foreign-response translation, and claims/narrative summary synthesis
+are local (Ollama `llama3.1:8b` by default; see `MOYO_SUMMARY_*`). Retrieval
+fan-out still uses `config/retrieval_llms.json`. ``--workers`` caps concurrent
+retrieval *and* foreign-response translation (default: one per configured
+retrieval LLM). Full pipeline details: [`docs/crawler.md`](crawler.md).
+
+### Public source crawling
 
 Use the `moyo-gather` CLI or the `PublicSourcesCrawler` Python API:
 
@@ -718,16 +770,23 @@ config = CorpusConfig(
 from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzerConfig
 
 config = LLMFuzzerConfig(
-    llm_provider="openai",   # openai | anthropic | ollama | local
-    model_name="gpt-4o",
-    api_key="your-api-key",  # unused for ollama/local
-    base_url=None,           # Ollama endpoint, e.g. http://localhost:11434
+    llm_provider="ollama",   # openai | anthropic | ollama | custom | local
+    model_name="llama3.1:8b",
+    api_key=None,            # unused for ollama/local
+    base_url="http://localhost:11434",
+    fuzz_mode="basic",       # basic | multilingual
     max_iterations=5,
     target_similarity=0.95,
     search_k=10,
-    similarity_threshold=0.8
+    similarity_threshold=0.8,
 )
 ```
+
+Project-wide defaults:
+
+- Embedding selection: `config/model_config.json` (via `shared_utils.model_config`)
+- Default generative LLM: `MOYO_LLM_*` in `.env`
+- Explore fan-out: `config/retrieval_llms.json`
 
 ### Command Reference
 
@@ -740,16 +799,36 @@ moyo info            # System information
 moyo setup           # Initial setup
 
 # Data input commands
-moyo-datainput process [text|--file|--files]  # Process data
+moyo-datainput process [text|--file|--files]  # Process data (indexes under indexes/)
 
 # Barrier probe commands
-moyo-probe fuzz      # LLM-assisted fuzzing
-moyo-probe search    # Corpus search
+moyo-probe fuzz      # LLM-assisted fuzzing (--fuzz-mode basic|multilingual)
+moyo-probe search    # Corpus search (text preview + source from metadata)
 moyo-probe test-llm  # Test LLM configuration
 
 # Public source gathering
 moyo-gather crawl --topic <topic>
 moyo-gather crawl-tokens --tokens <comma-separated-tokens>
+moyo-gather explore --prompt "..." --fuzz-mode basic|multilingual
+moyo-gather check-llms          # retrieval LLM preflight only (no explore)
+moyo-gather summarize --dir <explore-dir>   # exploration.md -> summary.md only
+moyo-gather deliverable --dir <explore-dir> # summary+exploration -> deliverable.md (Grok)
+
+# Exploration processor (claims → report PDFs). Two products via --report:
+#   snapshot (default) = Exposure Snapshot (one-page.pdf + report.pdf)
+#   basis              = Basis Report (comprehensive)
+#   both
+# Remediations off by default; add --include-remediation to opt in.
+# See docs/exploration_processor.md for knobs and human QA steps.
+python reports/build_report.py \
+  --exploration data/public_sources/<slug>/exploration.md \
+  --run-id <slug> --report snapshot
+# Comprehensive Basis Report:
+python reports/build_report.py -e data/public_sources/<slug>/exploration.md --report basis
+# With mitigations / remediations:
+python reports/build_report.py -e data/public_sources/<slug>/exploration.md \
+  --report both --include-remediation
+# Offline / no Ollama: add --dry-run. GUI: moyo-gui → "Build Report" tab.
 ```
 
 #### Common Options
@@ -783,6 +862,6 @@ moyo-gather crawl-tokens --tokens <comma-separated-tokens>
 
 ---
 
-**Last Updated**: July 2026  
-**Version**: 1.1  
+**Last Updated**: August 2026  
+**Version**: 1.2  
 **Maintainer**: moyo Operations Team

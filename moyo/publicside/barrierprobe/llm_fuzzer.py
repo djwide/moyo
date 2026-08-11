@@ -6,6 +6,7 @@ Semantic similarity / FAISS neighbour lookup uses MiniLM embeddings
 """
 
 import logging
+import threading
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 import json
@@ -26,34 +27,96 @@ DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
-# basic = paraphrase only; full = English transforms (no translation);
-# full-multilingual = full transforms plus translation into target languages.
-BASIC_FUZZ_STRATEGIES = ("paraphrase",)
-FULL_FUZZ_STRATEGIES = ("abstract", "summarize", "typo")
-MULTILINGUAL_FUZZ_STRATEGIES = FULL_FUZZ_STRATEGIES + ("translate",)
-FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES + MULTILINGUAL_FUZZ_STRATEGIES
-FUZZ_MODES = ("basic", "full", "full-multilingual")
+# Scan modes:
+#   basic        — rotate paraphrase / translate / summarize
+#                  (n=3 => each once; n=6 => each twice, …)
+#   multilingual — same strategy rotation as the former full-multilingual scan:
+#                  paraphrase / abstract / summarize, applied once in
+#                  English and once per target language.
+# ``typo`` is optional a la carte (CLI ``-S typo`` / GUI checkbox), not a default.
+BASIC_FUZZ_STRATEGIES = ("paraphrase", "translate", "summarize")
+MULTILINGUAL_LANGUAGE_STRATEGIES = ("paraphrase", "abstract", "summarize")
+# Back-compat aliases used by older call sites / white-box fuzz paths.
+FULL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
+MULTILINGUAL_FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES
+OPTIONAL_FUZZ_STRATEGIES = ("typo",)
+FUZZ_STRATEGIES = tuple(
+    dict.fromkeys(
+        BASIC_FUZZ_STRATEGIES
+        + MULTILINGUAL_LANGUAGE_STRATEGIES
+        + OPTIONAL_FUZZ_STRATEGIES
+    )
+)
+FUZZ_MODES = ("basic", "multilingual")
+_FUZZ_MODE_ALIASES = {
+    "full": "basic",
+    "full-multilingual": "multilingual",
+}
 
-# Default target languages for ``full-multilingual`` mode: Spanish, French,
-# and Mainland (Simplified) Chinese. Callers may append additional languages.
-DEFAULT_MULTILINGUAL_LANGUAGES = ("Spanish", "French", "Chinese (Simplified)")
+# Default target languages for ``multilingual`` mode: Spanish, French,
+# and Mandarin Chinese. Callers may append additional languages.
+DEFAULT_MULTILINGUAL_LANGUAGES = ("Spanish", "French", "Mandarin Chinese")
+
+
+def normalize_fuzz_mode(mode: Optional[str]) -> str:
+    """Map a fuzz-mode string (including legacy aliases) onto ``FUZZ_MODES``."""
+    key = (mode or "basic").strip().lower()
+    key = _FUZZ_MODE_ALIASES.get(key, key)
+    if key not in FUZZ_MODES:
+        return "basic"
+    return key
 
 
 def strategies_for_fuzz_mode(mode: str) -> List[str]:
     """Resolve fuzz strategies for a fuzz mode.
 
-    - ``basic`` -> paraphrase only
-    - ``full`` -> abstract / summarize / typo (English only, no translation)
-    - ``full-multilingual`` -> the ``full`` transforms plus translation
+    - ``basic`` -> paraphrase / translate / summarize
+    - ``multilingual`` -> paraphrase / abstract / summarize
+      (explore applies these per language; white-box fuzz rotates the list)
+    ``typo`` remains available a la carte via ``normalize_fuzz_strategies``.
     """
-    key = (mode or "basic").strip().lower()
-    if key == "basic":
-        return list(BASIC_FUZZ_STRATEGIES)
-    if key == "full":
-        return list(FULL_FUZZ_STRATEGIES)
-    if key == "full-multilingual":
-        return list(MULTILINGUAL_FUZZ_STRATEGIES)
-    raise ValueError(f"Unknown fuzz mode {mode!r}; expected one of {FUZZ_MODES}")
+    key = normalize_fuzz_mode(mode)
+    if key == "multilingual":
+        return list(MULTILINGUAL_LANGUAGE_STRATEGIES)
+    return list(BASIC_FUZZ_STRATEGIES)
+
+
+def normalize_fuzz_strategies(
+    strategies: Optional[List[str]],
+    *,
+    fuzz_mode: Optional[str] = None,
+) -> List[str]:
+    """Validate and dedupe a la carte strategies; fall back to mode defaults.
+
+    Unknown names are dropped. Empty / ``None`` input uses
+    :func:`strategies_for_fuzz_mode` for ``fuzz_mode`` (default ``basic``).
+    """
+    if not strategies:
+        return strategies_for_fuzz_mode(fuzz_mode or "basic")
+    allowed = {s.lower() for s in FUZZ_STRATEGIES}
+    out: List[str] = []
+    seen: set[str] = set()
+    for raw in strategies:
+        key = (raw or "").strip().lower()
+        if not key or key not in allowed or key in seen:
+            continue
+        out.append(key)
+        seen.add(key)
+    return out or strategies_for_fuzz_mode(fuzz_mode or "basic")
+
+
+@dataclass(frozen=True)
+class QuerySeed:
+    """One retrieval query seed with optional language / strategy provenance."""
+
+    text: str
+    language: Optional[str] = None  # None / English = never translated
+    strategy: Optional[str] = None
+
+    @property
+    def is_foreign(self) -> bool:
+        lang = (self.language or "").strip().lower()
+        return bool(lang) and lang not in {"english", "en", "eng"}
 
 
 @dataclass
@@ -259,24 +322,7 @@ class LocalLLMClient:
         self.transformation_patterns = self._load_transformation_patterns()
     
     def _load_transformation_patterns(self) -> Dict[str, List[str]]:
-        """Load common text transformation patterns."""
-        # Load synonym map directly from data directory
-        shared_synonyms = {}
-        try:
-            import json
-            from pathlib import Path
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    shared_synonyms = json.load(f)
-                logger.info(f"Loaded {len(shared_synonyms)} synonym groups from {synonym_file}")
-            else:
-                logger.warning(f"Synonym map file not found at {synonym_file}")
-        except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
-            shared_synonyms = {}
-        
-        # Merge with built-in patterns
+        """Load common text transformation patterns (built-in synonyms only)."""
         built_in_synonyms = {
             "sensitive": ["confidential", "private", "restricted", "classified"],
             "data": ["information", "content", "material", "details"],
@@ -289,12 +335,9 @@ class LocalLLMClient:
             "development": ["creation", "construction", "building", "establishment"],
             "implementation": ["deployment", "execution", "application", "integration"]
         }
-        
-        # Merge shared synonyms with built-in patterns
-        merged_synonyms = {**shared_synonyms, **built_in_synonyms}
-        
+
         return {
-            "synonyms": merged_synonyms,
+            "synonyms": built_in_synonyms,
             "intensifiers": {
                 "novel": ["innovative", "groundbreaking", "revolutionary", "cutting-edge"],
                 "advanced": ["sophisticated", "state-of-the-art", "high-tech", "modern"],
@@ -494,20 +537,35 @@ class OllamaClient:
             logger.warning(f"Could not list Ollama models: {exc}")
             return []
 
-    def generate(self, prompt: str, system: Optional[str] = None,
-                 temperature: float = 0.7, max_tokens: int = 500) -> str:
-        """Generate a completion from the local model (non-streaming)."""
+    def generate(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 500,
+        num_ctx: Optional[int] = None,
+    ) -> str:
+        """Generate a completion from the local model (non-streaming).
+
+        ``num_ctx`` sets Ollama's context-window buffer (tokens for prompt +
+        generation). Ollama's default is typically 2048–4096 even when the
+        model card advertises a much larger maximum (e.g. Llama 3.1 128k).
+        """
         import urllib.request
         import urllib.error
+
+        options: Dict[str, Any] = {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        }
+        if num_ctx is not None and int(num_ctx) > 0:
+            options["num_ctx"] = int(num_ctx)
 
         payload: Dict[str, Any] = {
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
+            "options": options,
         }
         if system:
             payload["system"] = system
@@ -559,13 +617,14 @@ class LLMFuzzerConfig:
     target_similarity: float = 0.95  # Target similarity to achieve
     # MiniLM for similarity / FAISS neighbour lookup (generation stays on Ollama).
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    # ``basic`` = paraphrase only; ``full`` = abstract/summarize/typo (English);
-    # ``full-multilingual`` = full plus translation into ``multilingual_languages``.
+    # ``basic`` = rotate paraphrase / translate / summarize;
+    # ``multilingual`` = paraphrase / abstract / summarize per language
+    # in ``multilingual_languages`` (plus English). ``typo`` is a la carte.
     fuzz_mode: str = "basic"
     # Explicit override; when empty, derived from ``fuzz_mode``.
     fuzz_strategies: List[str] = field(default_factory=list)
-    # Target languages for ``full-multilingual``; empty -> defaults (Spanish,
-    # French, Mainland/Simplified Chinese).
+    # Target languages for explore ``multilingual``; empty -> defaults
+    # (Spanish, French, Mandarin Chinese).
     multilingual_languages: List[str] = field(default_factory=list)
     prompt_template: str = """
 You are an expert at semantic text transformation for information retrieval and barrier probing.
@@ -587,11 +646,9 @@ Instructions:
 Transformed phrase:"""
 
     def __post_init__(self) -> None:
-        mode = (self.fuzz_mode or "basic").strip().lower()
-        if mode not in FUZZ_MODES:
-            mode = "basic"
+        mode = normalize_fuzz_mode(self.fuzz_mode)
         self.fuzz_mode = mode
-        if mode == "full-multilingual" and not self.multilingual_languages:
+        if mode == "multilingual" and not self.multilingual_languages:
             self.multilingual_languages = list(DEFAULT_MULTILINGUAL_LANGUAGES)
         if not self.fuzz_strategies:
             self.fuzz_strategies = strategies_for_fuzz_mode(self.fuzz_mode)
@@ -654,6 +711,8 @@ class LLMFuzzer:
         # Initialize LLM client
         self.llm_client = self._initialize_llm_client()
         self.interaction_log: List[Dict[str, str]] = []
+        # Protects interaction_log when localize/query runs across workers.
+        self._log_lock = threading.Lock()
 
     @classmethod
     def local_ollama(
@@ -805,7 +864,8 @@ class LLMFuzzer:
             else:
                 return None
 
-            self.interaction_log.append({"prompt": prompt, "response": text})
+            with self._log_lock:
+                self.interaction_log.append({"prompt": prompt, "response": text})
             return text
 
         except Exception as e:
@@ -906,64 +966,145 @@ class LLMFuzzer:
     def reword_for_retrieval(
         self,
         prompt: str,
-        n: int = 5,
+        n: int = 3,
         fuzz_mode: Optional[str] = None,
         languages: Optional[List[str]] = None,
+        strategies: Optional[List[str]] = None,
     ) -> List[str]:
-        """Black-box reword a naive prompt into ``n`` retrieval query seeds.
+        """Black-box reword a naive prompt into retrieval query seeds.
 
         No target concept is used — explore / public-side probing is black-box
         and only needs diverse retrieval phrasings of the user's request.
 
         ``fuzz_mode``:
-        - ``basic`` — paraphrase-only rewording (default)
-        - ``full`` — rotate abstract / summarize / typo (English only)
-        - ``full-multilingual`` — the ``full`` transforms plus one translated
-          seed per target language (``languages`` or the configured/default
-          Spanish, French, Mainland Chinese)
+        - ``basic`` — ``n`` seeds rotating paraphrase / translate / summarize
+          (``n=3`` => each once; ``n=6`` => each twice)
+        - ``multilingual`` — ``n`` seeds per language (English plus each target
+          language) rotating paraphrase / abstract / summarize
+
+        Pass ``strategies`` to override the mode's default strategy rotation
+        (a la carte; include ``typo`` explicitly). Mode still controls language
+        fan-out.
         """
-        mode = (fuzz_mode or self.config.fuzz_mode or "basic").strip().lower()
-        if mode not in FUZZ_MODES:
-            mode = "basic"
-        if mode == "full-multilingual":
+        return [
+            s.text
+            for s in self.reword_for_retrieval_seeds(
+                prompt,
+                n=n,
+                fuzz_mode=fuzz_mode,
+                languages=languages,
+                strategies=strategies,
+            )
+        ]
+
+    def reword_for_retrieval_tagged(
+        self,
+        prompt: str,
+        n: int = 3,
+        fuzz_mode: Optional[str] = None,
+        languages: Optional[List[str]] = None,
+        strategies: Optional[List[str]] = None,
+    ) -> List[Tuple[str, Optional[str]]]:
+        """Back-compat: ``(seed_text, language)`` pairs from :meth:`reword_for_retrieval_seeds`."""
+        return [
+            (s.text, s.language)
+            for s in self.reword_for_retrieval_seeds(
+                prompt,
+                n=n,
+                fuzz_mode=fuzz_mode,
+                languages=languages,
+                strategies=strategies,
+            )
+        ]
+
+    def reword_for_retrieval_seeds(
+        self,
+        prompt: str,
+        n: int = 3,
+        fuzz_mode: Optional[str] = None,
+        languages: Optional[List[str]] = None,
+        strategies: Optional[List[str]] = None,
+    ) -> List[QuerySeed]:
+        """Generate :class:`QuerySeed` objects tagged with language and strategy.
+
+        ``n`` is the seed count for ``basic``, or seeds per language group for
+        ``multilingual``. When ``strategies`` is set, that list rotates instead
+        of the mode default; ``fuzz_mode`` still controls language fan-out.
+        """
+        mode = normalize_fuzz_mode(fuzz_mode or self.config.fuzz_mode)
+        strat = normalize_fuzz_strategies(strategies, fuzz_mode=mode)
+        if mode == "multilingual":
             langs = [
                 l.strip()
                 for l in (languages or self.config.multilingual_languages
                           or DEFAULT_MULTILINGUAL_LANGUAGES)
                 if l and l.strip()
             ]
-            return self._reword_multilingual(prompt, n, langs)
-        if mode == "full":
-            return self._reword_with_strategies(
-                prompt, n, strategies_for_fuzz_mode("full")
+            return self._reword_multilingual_seeds(
+                prompt, n, langs, strategies=strat
             )
-        return self._reword_paraphrase_batch(prompt, n)
+        return self._reword_with_strategies_seeds(
+            prompt, n, strat, language=None
+        )
 
-    def _reword_multilingual(
-        self, prompt: str, n: int, languages: List[str]
-    ) -> List[str]:
-        """Seeds for ``full-multilingual``: one translation per language + English.
+    def _reword_multilingual_seeds(
+        self,
+        prompt: str,
+        n: int,
+        languages: List[str],
+        strategies: Optional[List[str]] = None,
+    ) -> List[QuerySeed]:
+        """``multilingual``: strategy set in English and each target language.
 
-        Guarantees a translated seed for every requested language, then fills the
-        remaining slots with English ``full`` transforms. The effective seed count
-        is ``max(n, len(languages))`` so all requested languages are always covered.
+        For every language group (English first, then each target language) emit
+        ``n`` seeds rotating the strategy list (default paraphrase / abstract /
+        summarize). Foreign groups translate the base prompt first, then
+        apply strategies in-language so each LLM is queried in that language.
         """
         langs = languages or list(DEFAULT_MULTILINGUAL_LANGUAGES)
-        seeds: List[str] = []
+        strat = normalize_fuzz_strategies(
+            strategies, fuzz_mode="multilingual"
+        )
+        seeds: List[QuerySeed] = []
+
+        seeds.extend(
+            self._reword_with_strategies_seeds(
+                prompt, n, strat, language=None
+            )
+        )
+
         for lang in langs:
             translated = self._translate_prompt_to(prompt, lang)
-            if translated:
-                seeds.append(translated)
-
-        target = max(max(1, n), len(seeds))
-        remaining = target - len(seeds)
-        if remaining > 0:
+            base = translated or prompt
             seeds.extend(
-                self._reword_with_strategies(
-                    prompt, remaining, list(FULL_FUZZ_STRATEGIES)
+                self._reword_with_strategies_seeds(
+                    base, n, strat, language=lang
                 )
             )
-        return self._dedupe_and_pad_seeds(prompt, seeds, target)
+        return self._dedupe_query_seeds(prompt, seeds)
+
+    def _dedupe_query_seeds(
+        self, prompt: str, seeds: List[QuerySeed]
+    ) -> List[QuerySeed]:
+        """Drop duplicate seeds within the same language group.
+
+        The same text in two different languages is kept — each language group
+        is queried independently — so the key is ``(language, text)``.
+        """
+        del prompt  # reserved for future per-language padding
+        out: List[QuerySeed] = []
+        seen: set = set()
+        for seed in seeds:
+            text_key = (seed.text or "").strip().lower()
+            if not text_key:
+                continue
+            lang_key = (seed.language or "").strip().lower() or "english"
+            key = (lang_key, text_key)
+            if key in seen:
+                continue
+            out.append(seed)
+            seen.add(key)
+        return out
 
     def _translate_prompt_to(self, prompt: str, language: str) -> Optional[str]:
         """Translate the request into ``language`` as a retrieval query."""
@@ -986,6 +1127,10 @@ class LLMFuzzer:
 
     def _reword_paraphrase_batch(self, prompt: str, n: int) -> List[str]:
         """Generate ``n`` paraphrase-style retrieval queries in one LLM call."""
+        return [s.text for s in self._reword_paraphrase_seeds(prompt, n)]
+
+    def _reword_paraphrase_seeds(self, prompt: str, n: int) -> List[QuerySeed]:
+        """Legacy helper: ``n`` paraphrase-only English seeds."""
         ask = (
             f'A non-technical user asked: "{prompt}".\n'
             f"How can I reword this request to most effectively retrieve information? "
@@ -999,27 +1144,115 @@ class LLMFuzzer:
         except Exception as exc:
             logger.warning("Black-box rewording failed (%s); using deterministic seeds", exc)
 
-        seeds = [s for s in self._parse_numbered_lines(text) if s]
-        return self._dedupe_and_pad_seeds(prompt, seeds, n)
+        raw_seeds = [s for s in self._parse_numbered_lines(text) if s]
+        padded = self._dedupe_and_pad_seeds(prompt, raw_seeds, n)
+        return [QuerySeed(text=s, language=None, strategy="paraphrase") for s in padded]
 
     def _reword_with_strategies(
         self, prompt: str, n: int, strategies: List[str]
     ) -> List[str]:
-        """Build seeds by rotating named fuzz strategies (full explore mode)."""
+        """Build seeds by rotating named fuzz strategies."""
+        return [
+            s.text
+            for s in self._reword_with_strategies_seeds(
+                prompt, n, strategies, language=None
+            )
+        ]
+
+    def _reword_with_strategies_seeds(
+        self,
+        prompt: str,
+        n: int,
+        strategies: List[str],
+        language: Optional[str] = None,
+    ) -> List[QuerySeed]:
+        """Rotate strategies into ``n`` tagged seeds, optionally in ``language``.
+
+        When ``strategy`` is ``translate`` and the group is English, the seed is
+        translated into a cycling default target language and tagged with that
+        language so retrieval prompts the model in-language.
+        """
         if not strategies:
             strategies = list(BASIC_FUZZ_STRATEGIES)
-        seeds: List[str] = []
+        seeds: List[QuerySeed] = []
+        seen: set = set()
+        translate_cycle = 0
+        group_is_foreign = bool(language) and language.strip().lower() not in {
+            "english", "en", "eng",
+        }
+
         for i in range(max(1, n)):
             strategy = strategies[i % len(strategies)]
-            transformed = self._apply_blackbox_strategy(prompt, strategy)
-            if transformed:
-                seeds.append(transformed)
-        return self._dedupe_and_pad_seeds(prompt, seeds, n)
+            seed_language = language
+            transformed: Optional[str] = None
 
-    def _apply_blackbox_strategy(self, phrase: str, strategy: str) -> Optional[str]:
-        """Apply one fuzz strategy to a prompt without a target concept."""
+            if strategy == "translate" and not group_is_foreign:
+                targets = list(
+                    self.config.multilingual_languages
+                    or DEFAULT_MULTILINGUAL_LANGUAGES
+                )
+                target = targets[translate_cycle % len(targets)]
+                translate_cycle += 1
+                transformed = self._translate_prompt_to(prompt, target)
+                seed_language = target if transformed else None
+            else:
+                transformed = self._apply_blackbox_strategy(
+                    prompt, strategy, language=language
+                )
+
+            if not transformed:
+                continue
+            key = transformed.strip().lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            seeds.append(
+                QuerySeed(
+                    text=transformed, language=seed_language, strategy=strategy
+                )
+            )
+
+        # Pad within this language group if the LLM under-delivered.
+        if len(seeds) < n:
+            fallback_base = prompt.strip()
+            for s in self._augment_reword_seeds(
+                fallback_base, [x.text for x in seeds], n
+            ):
+                key = s.strip().lower()
+                if key in seen:
+                    continue
+                # Keep foreign groups tagged even when padding with English text —
+                # retrieve() will still instruct the model to answer in-language.
+                seeds.append(
+                    QuerySeed(
+                        text=s,
+                        language=language,
+                        strategy=strategies[len(seeds) % len(strategies)],
+                    )
+                )
+                seen.add(key)
+                if len(seeds) >= n:
+                    break
+        return seeds[:n]
+
+    def _apply_blackbox_strategy(
+        self,
+        phrase: str,
+        strategy: str,
+        language: Optional[str] = None,
+    ) -> Optional[str]:
+        """Apply one fuzz strategy to a prompt without a target concept.
+
+        When ``language`` is a non-English target, the transformed query is
+        required to stay in that language so downstream retrieval can prompt
+        models in-language.
+        """
         strategy_key = (strategy or "paraphrase").lower()
-        if strategy_key == "typo":
+        foreign = bool(language) and language.strip().lower() not in {
+            "english", "en", "eng",
+        }
+
+        if strategy_key == "typo" and not foreign:
             # Prefer a light deterministic typo pass; fall back to LLM if empty.
             local = self._apply_intentional_typos(phrase.strip())
             if local and local.strip().lower() != phrase.strip().lower():
@@ -1028,10 +1261,18 @@ class LLMFuzzer:
         instructions = STRATEGY_INSTRUCTIONS.get(
             strategy_key, STRATEGY_INSTRUCTIONS["paraphrase"]
         )
+        if foreign:
+            lang_rule = (
+                f" The result MUST be written entirely in {language}. "
+                f"Do not answer in English."
+            )
+        else:
+            lang_rule = " Keep the result in English." if strategy_key != "translate" else ""
+
         ask = (
             "Transform the user's information request into one effective retrieval "
             f"query using ONLY the '{strategy_key}' strategy.\n"
-            f"Strategy instructions: {instructions}\n\n"
+            f"Strategy instructions: {instructions}{lang_rule}\n\n"
             f"Original request: {phrase.strip()}\n\n"
             "Return only the transformed query, with no quotes or explanation."
         )
@@ -1231,8 +1472,10 @@ class LLMFuzzer:
     ) -> Tuple[str, float, List[str], List[Dict[str, str]]]:
         """Fuzz a phrase toward ``target_concept`` via rotating strategies.
 
-        Mode ``basic`` uses paraphrase only; ``full`` rotates translate,
-        abstract, summarize, and typo. Generation uses the configured LLM
+        Mode ``basic`` rotates paraphrase / translate / summarize;
+        ``multilingual`` rotates paraphrase / abstract / summarize
+        (``typo`` only if included in ``fuzz_strategies``).
+        Generation uses the configured LLM
         (Ollama by default); similarity is scored with MiniLM embeddings.
         """
         current_phrase = original_phrase

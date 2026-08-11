@@ -170,25 +170,38 @@ MOYO_EMBEDDING_DEVICE=cuda
 
 API keys for hosted LLM providers (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `XAI_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY`,
-`OPENROUTER_API_KEY`, …) also live in `.env`. See `.env.example` for the full
-list. The LLM layer loads `.env` into the process environment so those keys
+`PERPLEXITY_API_KEY`, `OPENROUTER_API_KEY`, …) also live in `.env`. See
+`.env.example` for the full list. The LLM layer loads `.env` into the process environment so those keys
 are available to `config/retrieval_llms.json` (`$VAR` references).
 
-### Default LLM vs retrieval LLMs
+### Default LLM vs retrieval LLMs vs local fuzzer
 
-Two related configs:
+Three related configs for `moyo-gather explore`:
 
 | Role | Where | Used for |
 |------|--------|----------|
-| **Default LLM** | `MOYO_LLM_*` in `.env` | Prompt rewording and summary synthesis (`moyo-gather explore`) |
-| **Retrieval LLMs** | `config/retrieval_llms.json` (or `MOYO_RETRIEVAL_LLMS`) | Fan-out: each reworded seed is sent to every listed model |
+| **Local fuzzer** | Ollama (`llama3.1:8b` @ `127.0.0.1:11434`) | Seed rewording + translating foreign answers while compiling the report |
+| **Summary LLM** | Ollama via `MOYO_SUMMARY_*` (default `llama3.1:8b`, `num_ctx=32768`) | Narrative summary + claims brief (`summary.md`); prefers points of precision |
+| **Deliverable LLM** | Grok / xAI via `MOYO_DELIVERABLE_*` (default `grok-4.5`, key `XAI_API_KEY`) | Formal `deliverable.md` (exposure, evidence graph, findings, mitigation) |
+| **Default LLM** | `MOYO_LLM_*` in `.env` | Other moyo paths; explore retrieval override via CLI `--provider` |
+| **Retrieval LLMs** | `config/retrieval_llms.json` (or `MOYO_RETRIEVAL_LLMS`) | Fan-out: each seed is sent to every listed model |
 
-Hot-swap the default by changing `MOYO_LLM_PROVIDER` / `MOYO_LLM_MODEL` /
-`MOYO_LLM_BASE_URL` / `MOYO_LLM_API_KEY`. Copy
-`config/retrieval_llms.example.json` to `config/retrieval_llms.json` and edit
-entries to match the providers you have keys for. Providers without a key (or
-an unreachable Ollama) are recorded as errors in the explore report and do not
-stop the run.
+Ollama’s default context window is typically **2048–4096 tokens** even when a
+model (e.g. Llama 3.1) supports up to **128k**. Summarisation raises this with
+`MOYO_SUMMARY_NUM_CTX` (default `32768`); larger values use more RAM/VRAM.
+Copy `config/retrieval_llms.example.json` to `config/retrieval_llms.json` and
+edit entries to match the providers you have keys for. Explore prints a
+preflight `name / status / reason` table at scan start; providers without a key
+(or an unreachable Ollama) fail that source only and do not stop the run.
+
+**Fuzz modes:** `basic` (paraphrase / translate / summarize) or
+`multilingual` (paraphrase / abstract / summarize per language; defaults
+Spanish, French, Mandarin Chinese). ``typo`` is optional a la carte. See
+[`docs/crawler.md`](crawler.md).
+
+**Embedding model selection** persists in `config/model_config.json` (not under
+`data/`). The shared synonym JSON map has been removed; local transformers use
+built-in synonym tables.
 
 ### Local Ollama setup
 
@@ -262,16 +275,15 @@ MOYO_LLM_BASE_URL=http://127.0.0.1:11434
 **5. Smoke test**
 
 ```bash
-# Client reachability (via moyo-gather / shared LLM layer)
-moyo-gather explore --provider ollama --model llama3.1:8b \
-  --prompt "ping" --seeds 1 --no-summary
+# Retrieval LLM preflight only (config/retrieval_llms.json; no explore)
+moyo-gather check-llms
 
-# Or through the fuzzer path
+# Or through the fuzzer / default-LLM path
 moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
 ```
 
-If the API is down, explore still runs other retrieval LLMs; the Ollama section
-in the markdown report will show a retrieval failure for that source only.
+If the API is down, explore still runs other retrieval LLMs; preflight marks
+Ollama `fail`, and that source’s sections in `exploration.md` record the error.
 
 ## Metrics Available
 

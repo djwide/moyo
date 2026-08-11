@@ -733,7 +733,7 @@ class GatherPublicSourcesTab(QWidget):
         self._mode_buttons = QButtonGroup(self)
         self.topic_radio = QRadioButton("Single topic")
         self.tokens_radio = QRadioButton("Token list")
-        self.prompt_radio = QRadioButton("Naive prompt (AI explore)")
+        self.prompt_radio = QRadioButton("Naive prompts (AI explore)")
         self.topic_radio.setChecked(True)
         self._mode_buttons.addButton(self.topic_radio)
         self._mode_buttons.addButton(self.tokens_radio)
@@ -753,43 +753,45 @@ class GatherPublicSourcesTab(QWidget):
         self.tokens_input = QLineEdit()
         self.tokens_input.setPlaceholderText("Comma-separated: neural networks, transformers, LLM")
         self.tokens_input.setEnabled(False)
-        self.prompt_input = QTextEdit()
+        self.prompt_input = QPlainTextEdit()
         self.prompt_input.setPlaceholderText(
-            "Ask in plain language, e.g. 'give me all the info you can on the recipe for Coca-Cola'"
+            "One naive prompt per line, e.g.\n"
+            "What is the recipe for Coca-Cola?\n"
+            "Who killed JFK?"
         )
-        self.prompt_input.setFixedHeight(60)
+        self.prompt_input.setFixedHeight(90)
         self.prompt_input.setEnabled(False)
 
         topic_row = QFormLayout()
         topic_row.addRow("Topic:", self.topic_input)
         topic_row.addRow("Tokens:", self.tokens_input)
-        topic_row.addRow("Naive prompt:", self.prompt_input)
+        topic_row.addRow("Naive prompts:", self.prompt_input)
         layout.addLayout(topic_row)
 
         self.explore_note = QLabel(
-            "Explore mode rewords your prompt via the local Ollama fuzzer "
-            "(llama3.1:8b, black-box — no target concept). Mode basic paraphrases "
-            "only; full rotates abstract / summarize / typo (English only); "
-            "full-multilingual adds a translated query per language (defaults "
-            "Spanish, French, Mainland Chinese — add more below). Asks every "
-            "configured retrieval LLM (see config/retrieval_llms.json), then writes "
-            "exploration.md plus a corroborated claims summary.md. Foreign-language "
-            "results are translated back to English with a language annotation. Optional "
-            "impact criteria below refine what counts as high-impact (base definition "
-            "covers classified, proprietary, and personal/sensitive information)."
+            "Explore mode accepts one or more prompts (one per line). Each "
+            "prompt is reworded via the local Ollama fuzzer (llama3.1:8b, "
+            "black-box — no target concept) and gets its own output folder. "
+            "Default fuzz mode is basic (English seeds). Multilingual fans "
+            "out English plus Spanish / French / Mandarin Chinese (add more "
+            "below). Strategies are a la carte — checkboxes default to the "
+            "mode's set; uncheck to lean the run. Every seed is sent to every "
+            "configured retrieval LLM (config/retrieval_llms.json). Writes "
+            "exploration.md only (grouped by language → query → model). "
+            "Non-English responses are translated back to English."
         )
         self.explore_note.setWordWrap(True)
         self.explore_note.setVisible(False)
         layout.addWidget(self.explore_note)
 
         self.explore_fuzz_mode_combo = QComboBox()
-        self.explore_fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
         self.explore_fuzz_mode_combo.addItem(
-            "full (abstract / summarize / typo, English)", "full"
+            "basic (default) — EN strategies", "basic"
         )
         self.explore_fuzz_mode_combo.addItem(
-            "full-multilingual (full + Spanish / French / Chinese)", "full-multilingual"
+            "multilingual — EN + ES / FR / ZH", "multilingual"
         )
+        self.explore_fuzz_mode_combo.setCurrentIndex(0)
         self.explore_fuzz_mode_combo.currentIndexChanged.connect(
             self._on_explore_fuzz_mode_changed
         )
@@ -798,17 +800,34 @@ class GatherPublicSourcesTab(QWidget):
             "Additional languages (comma-separated) — e.g. German, Japanese, Arabic"
         )
         self.explore_languages_input.setEnabled(False)
+        self._explore_strategy_checks: dict[str, QCheckBox] = {}
+        strategy_row = QWidget()
+        strategy_layout = QHBoxLayout(strategy_row)
+        strategy_layout.setContentsMargins(0, 0, 0, 0)
+        for name in (
+            "paraphrase",
+            "translate",
+            "summarize",
+            "typo",
+            "abstract",
+        ):
+            cb = QCheckBox(name)
+            self._explore_strategy_checks[name] = cb
+            strategy_layout.addWidget(cb)
+        strategy_layout.addStretch(1)
         self.explore_fuzz_row = QWidget()
         explore_fuzz_layout = QFormLayout(self.explore_fuzz_row)
         explore_fuzz_layout.setContentsMargins(0, 0, 0, 0)
         explore_fuzz_layout.addRow("Fuzz mode:", self.explore_fuzz_mode_combo)
+        explore_fuzz_layout.addRow("Strategies:", strategy_row)
         explore_fuzz_layout.addRow("Extra languages:", self.explore_languages_input)
         self.explore_fuzz_row.setVisible(False)
         layout.addWidget(self.explore_fuzz_row)
+        self._sync_explore_strategy_checks()
 
         self.impact_definition_input = QTextEdit()
         self.impact_definition_input.setPlaceholderText(
-            "Optional: additional high-impact criteria for summary.md "
+            "Optional: additional high-impact criteria (for summarize command) "
             "(appended to the built-in definition)"
         )
         self.impact_definition_input.setFixedHeight(50)
@@ -891,10 +910,28 @@ class GatherPublicSourcesTab(QWidget):
         self.run_btn.setText("Explore" if is_prompt else "Start Crawl")
         self._on_explore_fuzz_mode_changed()
 
+    def _sync_explore_strategy_checks(self) -> None:
+        """Reset strategy checkboxes to the selected fuzz mode's defaults."""
+        from moyo.publicside.barrierprobe.llm_fuzzer import strategies_for_fuzz_mode
+
+        mode = self.explore_fuzz_mode_combo.currentData() or "basic"
+        defaults = set(strategies_for_fuzz_mode(mode))
+        for name, cb in self._explore_strategy_checks.items():
+            cb.setChecked(name in defaults)
+
+    def _selected_explore_strategies(self) -> list[str]:
+        selected = [
+            name
+            for name, cb in self._explore_strategy_checks.items()
+            if cb.isChecked()
+        ]
+        return selected
+
     def _on_explore_fuzz_mode_changed(self, *args):
-        # Extra languages only apply to full-multilingual mode.
-        multilingual = self.explore_fuzz_mode_combo.currentData() == "full-multilingual"
+        # Extra languages only apply to multilingual mode.
+        multilingual = self.explore_fuzz_mode_combo.currentData() == "multilingual"
         self.explore_languages_input.setEnabled(multilingual)
+        self._sync_explore_strategy_checks()
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
@@ -977,13 +1014,24 @@ class GatherPublicSourcesTab(QWidget):
         self._worker.start()
 
     def _start_explore(self):
-        prompt = self.prompt_input.toPlainText().strip()
-        if not prompt:
-            QMessageBox.warning(self, "Missing input", "Enter a naive prompt to explore.")
+        prompts = [
+            line.strip()
+            for line in self.prompt_input.toPlainText().splitlines()
+            if line.strip()
+        ]
+        if not prompts:
+            QMessageBox.warning(
+                self,
+                "Missing input",
+                "Enter one or more naive prompts (one per line).",
+            )
             return
 
         try:
-            from moyo.publicside.gatherpublicsources.explorer import explore_and_save
+            from moyo.publicside.gatherpublicsources.explorer import (
+                explore_and_save,
+                explore_and_save_many,
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Import error", str(exc))
             return
@@ -991,29 +1039,56 @@ class GatherPublicSourcesTab(QWidget):
         output_dir = self.output_dir_input.text().strip() or "data/public_sources"
         impact_extra = self.impact_definition_input.toPlainText().strip() or None
         fuzz_mode = self.explore_fuzz_mode_combo.currentData() or "basic"
+        strategies = self._selected_explore_strategies()
+        if not strategies:
+            QMessageBox.warning(
+                self,
+                "Missing strategies",
+                "Select at least one fuzz strategy.",
+            )
+            return
         extra_languages = (
             [s.strip() for s in self.explore_languages_input.text().split(",") if s.strip()]
-            if fuzz_mode == "full-multilingual"
+            if fuzz_mode == "multilingual"
             else None
         )
 
+        holder = {"worker": None}
+
         def job():
-            return explore_and_save(
-                prompt,
+            def progress(msg: str) -> None:
+                worker = holder["worker"]
+                if worker is not None:
+                    worker.log.emit(msg)
+                else:
+                    print(msg)
+
+            kwargs = dict(
                 output_directory=output_dir,
                 impact_definition=impact_extra,
                 fuzz_mode=fuzz_mode,
+                strategies=strategies,
                 extra_languages=extra_languages or None,
-                progress=print,
+                summarize=False,
+                progress=progress,
             )
+            if len(prompts) == 1:
+                return explore_and_save(prompts[0], **kwargs)
+            return explore_and_save_many(prompts, **kwargs)
 
         self._last_output_dir = Path(output_dir)
         self.log.clear()
-        self.log.append(f"Exploring prompt across configured LLMs (fuzz_mode={fuzz_mode})…")
+        label = "prompt" if len(prompts) == 1 else f"{len(prompts)} prompts"
+        strat_label = "/".join(strategies)
+        self.log.append(
+            f"Exploring {label} across configured LLMs "
+            f"(fuzz_mode={fuzz_mode}, strategies={strat_label})…"
+        )
         self.progress_bar.setVisible(True)
         _busy(self.run_btn, True, "Explore")
 
         self._worker = BackgroundWorker(job)
+        holder["worker"] = self._worker
         self._worker.log.connect(self.log.append)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
@@ -1021,24 +1096,33 @@ class GatherPublicSourcesTab(QWidget):
 
     def _on_done(self, result):
         try:
+            # Multi-prompt explore returns a list of ExploreResult.
+            if isinstance(result, list) and result and hasattr(result[0], "seeds"):
+                self.log.append(f"✅ Done. explored {len(result)} prompts.")
+                for item in result:
+                    ok = sum(1 for r in item.results if getattr(r, "ok", False))
+                    self.log.append(
+                        f"  • {item.prompt}: seeds={len(item.seeds)} "
+                        f"llms={len(item.llm_labels)} "
+                        f"successful={ok}/{len(item.results)}"
+                    )
+                    if item.output_path:
+                        self.log.append(f"    Report: {item.output_path}")
+                        self._last_output_dir = Path(item.output_path)
+                        self.open_results_btn.setEnabled(True)
+                return
+
             # Explore result (naive-prompt mode) vs crawl result.
             if hasattr(result, "seeds") and hasattr(result, "markdown"):
-                from moyo.publicside.gatherpublicsources.explorer import (
-                    format_retrieval_table,
-                )
-
                 ok = sum(1 for r in result.results if getattr(r, "ok", False))
                 self.log.append(
                     f"✅ Done. seeds={len(result.seeds)} "
                     f"llms={len(result.llm_labels)} successful={ok}/{len(result.results)}"
                 )
-                self.log.append(format_retrieval_table(result))
                 if result.output_path:
                     self.log.append(f"Report: {result.output_path}")
                     self._last_output_dir = Path(result.output_path)
                     self.open_results_btn.setEnabled(True)
-                if getattr(result, "summary_path", None):
-                    self.log.append(f"Summary: {result.summary_path}")
                 return
 
             sources_found = getattr(result, "sources_found", 0)
@@ -1690,10 +1774,11 @@ class FuzzerTab(QWidget):
 
         desc = QLabel(
             "Use an LLM (default: local Ollama llama3.1:8b) to iteratively transform input "
-            "phrases toward a target concept. Mode basic paraphrases only; full rotates "
-            "abstract, summarize, and typo (English only); full-multilingual adds "
-            "translation (Spanish, French, Mainland Chinese). Foreign-language outputs are "
-            "translated back to English with a language annotation in saved reports."
+            "phrases toward a target concept. Mode basic rotates paraphrase / translate / "
+            "summarize; multilingual rotates paraphrase / abstract / summarize "
+            "(typo available when configured). "
+            "Foreign-language outputs are translated back to English with a language "
+            "annotation in saved reports."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -1783,12 +1868,11 @@ class FuzzerTab(QWidget):
         fuzz_layout.addRow("Temperature:", self.temperature_spin)
 
         self.fuzz_mode_combo = QComboBox()
-        self.fuzz_mode_combo.addItem("basic (paraphrase only)", "basic")
         self.fuzz_mode_combo.addItem(
-            "full (abstract / summarize / typo, English)", "full"
+            "basic (paraphrase / translate / summarize)", "basic"
         )
         self.fuzz_mode_combo.addItem(
-            "full-multilingual (full + translation)", "full-multilingual"
+            "multilingual (paraphrase / abstract / summarize)", "multilingual"
         )
         fuzz_layout.addRow("Fuzz mode:", self.fuzz_mode_combo)
 
@@ -2528,6 +2612,176 @@ class VisualizationTab(QWidget):
             QMessageBox.critical(self, "Save failed", str(exc))
 
 
+class BuildReportTab(QWidget):
+    """Turn an exploration.md into MOYO report products.
+
+    Two products share the same pipeline (parse → extract → cluster → score →
+    synthesize → graphics → render):
+
+    - **Exposure Snapshot** — one-pager + report PDFs (the default output).
+    - **Basis Report** — comprehensive PDF: full findings with evidence,
+      prioritized exposure inventory, derivation, corroborating model outputs,
+      full exposure chain, and exploitation implications. Mitigations /
+      remediations are optional (off by default).
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._worker: Optional[BackgroundWorker] = None
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        title = QLabel("Build Report")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "Render MOYO report products from an exploration.md. The Exposure "
+            "Snapshot is the one-pager + report; the Basis Report is the "
+            "comprehensive assessment with full findings, derivation, exposure "
+            "chain, and exploitation implications. Mitigations/remediations "
+            "are off by default — enable the checkbox below to include them."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        form = QFormLayout()
+
+        expl_row = QHBoxLayout()
+        self.expl_input = QLineEdit()
+        self.expl_input.setPlaceholderText(
+            "Path to exploration.md (e.g. data/public_sources/<slug>/exploration.md)"
+        )
+        browse_btn = QPushButton("Browse…")
+        browse_btn.clicked.connect(self._browse_exploration)
+        expl_row.addWidget(self.expl_input)
+        expl_row.addWidget(browse_btn)
+        expl_widget = QWidget()
+        expl_widget.setLayout(expl_row)
+        form.addRow("Exploration:", expl_widget)
+
+        self.runid_input = QLineEdit()
+        self.runid_input.setPlaceholderText(
+            "Optional run id (default: exploration folder name)"
+        )
+        form.addRow("Run id:", self.runid_input)
+
+        self.report_combo = QComboBox()
+        self.report_combo.addItem("Exposure Snapshot (one-page + report)", "snapshot")
+        self.report_combo.addItem("Basis Report (comprehensive)", "basis")
+        self.report_combo.addItem("Both", "both")
+        form.addRow("Report type:", self.report_combo)
+
+        self.stage_combo = QComboBox()
+        for stage in ("parse", "extract", "cluster", "score", "synthesize", "graphics", "render"):
+            self.stage_combo.addItem(stage, stage)
+        form.addRow("From stage:", self.stage_combo)
+
+        layout.addLayout(form)
+
+        self.dry_run_cb = QCheckBox(
+            "Dry run (heuristic extraction, no LLM calls)"
+        )
+        layout.addWidget(self.dry_run_cb)
+        self.keep_graphics_cb = QCheckBox(
+            "Keep existing charts (reuse assets/*.svg, do not regenerate)"
+        )
+        layout.addWidget(self.keep_graphics_cb)
+        self.include_remediation_cb = QCheckBox(
+            "Include mitigations / remediations (ISVF + follow-up playbook)"
+        )
+        self.include_remediation_cb.setChecked(False)
+        layout.addWidget(self.include_remediation_cb)
+
+        self.run_btn = QPushButton("Build Report")
+        self.run_btn.clicked.connect(self._build)
+        layout.addWidget(self.run_btn)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)  # indeterminate
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
+        self.log = _make_log_pane(min_height=220)
+        layout.addWidget(self.log)
+
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+    def _browse_exploration(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select exploration.md", "", "Markdown (*.md);;All files (*)"
+        )
+        if path:
+            self.expl_input.setText(path)
+
+    def _build(self):
+        exploration = self.expl_input.text().strip()
+        if not exploration:
+            QMessageBox.warning(
+                self, "Missing input", "Choose an exploration.md to build from."
+            )
+            return
+        if not Path(exploration).exists():
+            QMessageBox.warning(
+                self, "Not found", f"exploration.md not found:\n{exploration}"
+            )
+            return
+
+        report_type = self.report_combo.currentData() or "snapshot"
+        argv = [
+            "--exploration", exploration,
+            "--report", report_type,
+            "--from-stage", self.stage_combo.currentData() or "parse",
+        ]
+        run_id = self.runid_input.text().strip()
+        if run_id:
+            argv += ["--run-id", run_id]
+        if self.dry_run_cb.isChecked():
+            argv.append("--dry-run")
+        if self.keep_graphics_cb.isChecked():
+            argv.append("--keep-graphics")
+        if self.include_remediation_cb.isChecked():
+            argv.append("--include-remediation")
+        else:
+            argv.append("--no-include-remediation")
+
+        run_label = run_id or Path(exploration).parent.name
+
+        def job():
+            import sys as _sys
+            reports_root = Path(__file__).resolve().parents[2] / "reports"
+            if str(reports_root) not in _sys.path:
+                _sys.path.insert(0, str(reports_root))
+            import build_report
+            return build_report.main(argv)
+
+        self.log.clear()
+        self.log.append(
+            f"Building {self.report_combo.currentText()} for '{run_label}'…"
+        )
+        self.progress_bar.setVisible(True)
+        _busy(self.run_btn, True, "Build Report")
+
+        self._worker = BackgroundWorker(job)
+        self._worker.log.connect(self.log.append)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
+    def _on_done(self, _result):
+        self.progress_bar.setVisible(False)
+        _busy(self.run_btn, False, "Build Report")
+        self.log.append("Done. PDFs are under reports/build/<run-id>/output/.")
+
+    def _on_failed(self, message: str):
+        self.progress_bar.setVisible(False)
+        _busy(self.run_btn, False, "Build Report")
+        self.log.append(f"Failed: {message}")
+
+
 class MoyoGUI(QMainWindow):
     """Main moyo GUI application."""
 
@@ -2550,6 +2804,7 @@ class MoyoGUI(QMainWindow):
         self.tab_widget.addTab(FAISSIndexTab(), "Create Private Index")
         self.tab_widget.addTab(GatherPublicSourcesTab(), "Gather Public Sources")
         self.tab_widget.addTab(BuildPublicCorpusTab(), "Build Public Corpus")
+        self.tab_widget.addTab(BuildReportTab(), "Build Report")
         self.tab_widget.addTab(BarrierProbeTab(), "Barrier Probe")
         self.tab_widget.addTab(FuzzerTab(), "LLM Fuzzer")
         self.tab_widget.addTab(VisualizationTab(), "Visualize Indices")

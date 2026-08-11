@@ -1,0 +1,33 @@
+{% from "components/macros.j2" import remediation_box, severity_badge, source_refs %}
+<section class="page page--appendix">
+  <h2>Appendix</h2>
+  {% if content.meta.include_remediation %}
+  <h3>Remediation Playbook</h3>
+  {% for item in content.followups %}
+    {{ remediation_box(item) }}
+  {% endfor %}
+  {% endif %}
+
+  <h3>Abridged Claims</h3>
+  <table class="findings-index">
+    <thead>
+      <tr>
+        <th>ID</th><th>Claim</th><th>Status</th><th>Sens</th><th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in content.abridged_findings[:5] %}
+      <tr>
+        <td class="mono">{{ f.claim_id }}</td>
+        <td>{{ f.claim }}</td>
+        <td>{{ severity_badge(f.status) }}</td>
+        <td>{{ f.sensitivity }}</td>
+        <td>
+          <span class="source-cite">{{ f.source_cite or f.source_model }}</span>
+          {{ source_refs(f.source_refs) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

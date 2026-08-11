@@ -6,11 +6,11 @@ The GUI Bridge provides a clean interface for GUI applications to process text a
 
 The `GUIBridge` class is the main interface for processing data and building indexes. It handles:
 
-- Text validation and chunking
+- Text validation and multi-granularity chunking (sections, sentences, list items)
 - File loading and processing
 - Embedding generation
-- FAISS index creation and management
-- Search functionality
+- FAISS index creation under `indexes/` with per-corpus filenames (not a shared `index.faiss`)
+- Search functionality (text preview and source from chunk metadata)
 - Progress tracking and statistics
 
 ## Quick Start
@@ -81,21 +81,31 @@ The `ProcessingConfig` class controls how data is processed:
 
 ```python
 config = ProcessingConfig(
-    chunk_size=512,              # Size of text chunks
+    chunk_size=512,              # Soft target for larger section chunks
     chunk_overlap=50,            # Overlap between chunks
     embedding_model="all-MiniLM-L6-v2",  # Embedding model
     batch_size=32,               # Batch size for embeddings
     index_type="flat",           # FAISS index type: "flat", "ivf", "hnsw"
     save_index=True,             # Whether to save index to disk
-    output_dir="indexes/private" # Output directory
+    output_dir="indexes/private" # Indexes root; corpus name selects the file
 )
 ```
+
+Chunking also emits finer vectors for list items and short subsentence ideas
+via `shared_utils.chunking.chunk_text_multi_granularity`, which improves
+retrieval on long human-readable corpora.
 
 ### Index Types
 
 - **flat**: Simple exact search, fastest for small datasets
 - **ivf**: Inverted file index, good for large datasets
 - **hnsw**: Hierarchical navigable small world, good balance of speed/accuracy
+
+### Index naming
+
+Saved indexes are named after the corpus (e.g. `indexes/private/my_doc/my_doc.faiss`
+or the path returned in `result.index_path`). Prefer `--name` on the CLI when
+you want a stable label; otherwise the file stem / slug is used.
 
 ## Supported File Types
 

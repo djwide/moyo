@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · Report terminology</title>
+  <meta name="description" content="Companion glossary for MOYO exposure assessment reports: findings, status labels, score dimensions, sources, and charts." />
+  <style>
+    :root {
+      --moyo-teal: #4fb0a2;
+      --moyo-teal-deep: #2f7a70;
+      --moyo-cream: #f2f1e8;
+      --moyo-cream-deep: #e6e2d6;
+      --moyo-ink: #1d2228;
+      --moyo-black: #000000;
+      --moyo-muted: #5c6570;
+      --moyo-border: #d9d4c8;
+      --moyo-white: #ffffff;
+      --moyo-high: #c0392b;
+      --moyo-med: #d68910;
+      --moyo-low: #1e8449;
+      --moyo-info: #c4bfb2;
+      --font-sans: Inter, Geist, "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-serif: "Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+      --max: 42rem;
+      --rail: 14rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--moyo-ink);
+      background: var(--moyo-cream);
+      font-family: var(--font-sans);
+      line-height: 1.55;
+      font-size: 16px;
+    }
+
+    .brand-bar {
+      background: var(--moyo-black);
+      color: var(--moyo-cream);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.25rem;
+    }
+    .brand-bar .mark {
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      font-size: 0.95rem;
+    }
+    .brand-bar .mark span {
+      display: inline-block;
+      margin-left: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      background: var(--moyo-teal);
+      color: var(--moyo-black);
+      letter-spacing: 0.04em;
+      font-size: 0.65rem;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .brand-bar .kicker {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--moyo-teal);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: var(--rail) minmax(0, 1fr);
+      gap: 2.5rem;
+      max-width: calc(var(--max) + var(--rail) + 5rem);
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+
+    nav.toc {
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      font-size: 0.85rem;
+    }
+    nav.toc p {
+      margin: 0 0 0.65rem;
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--moyo-muted);
+      font-weight: 600;
+    }
+    nav.toc ol {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      border-left: 2px solid var(--moyo-border);
+    }
+    nav.toc a {
+      display: block;
+      padding: 0.35rem 0 0.35rem 0.85rem;
+      color: var(--moyo-muted);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      margin-left: -2px;
+    }
+    nav.toc a:hover,
+    nav.toc a:focus {
+      color: var(--moyo-ink);
+      border-left-color: var(--moyo-teal);
+    }
+
+    main { max-width: var(--max); }
+    header.hero { margin-bottom: 2.25rem; }
+    header.hero .eyebrow {
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--moyo-teal-deep);
+      font-weight: 600;
+      margin: 0 0 0.5rem;
+    }
+    h1 {
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin: 0 0 0.75rem;
+    }
+    .lede {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      color: var(--moyo-ink);
+      margin: 0;
+      max-width: 38ch;
+    }
+
+    section {
+      margin: 0 0 2.75rem;
+      padding-top: 0.25rem;
+    }
+    section > h2 {
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.85rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 1px solid var(--moyo-border);
+    }
+    h3 {
+      font-size: 0.95rem;
+      margin: 1.35rem 0 0.4rem;
+    }
+    p { margin: 0 0 0.85rem; }
+    .prose { font-family: var(--font-serif); }
+
+    dl.terms {
+      margin: 0;
+      display: grid;
+      gap: 0.85rem;
+    }
+    dl.terms > div {
+      background: var(--moyo-white);
+      border: 1px solid var(--moyo-border);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+    }
+    dl.terms dt {
+      font-weight: 700;
+      font-size: 0.92rem;
+      margin: 0 0 0.3rem;
+    }
+    dl.terms dt code,
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+    }
+    dl.terms dd {
+      margin: 0;
+      color: var(--moyo-ink);
+      font-family: var(--font-serif);
+      font-size: 0.95rem;
+    }
+    dl.terms dd .note {
+      display: block;
+      margin-top: 0.4rem;
+      font-family: var(--font-sans);
+      font-size: 0.8rem;
+      color: var(--moyo-muted);
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.45rem;
+      border-radius: 2px;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+    .badge-high { background: var(--moyo-high); color: #fff; }
+    .badge-medium { background: var(--moyo-med); color: #fff; }
+    .badge-low { background: var(--moyo-low); color: #fff; }
+    .badge-info { background: var(--moyo-info); color: var(--moyo-ink); }
+    .badge-outlier { background: var(--moyo-ink); color: var(--moyo-cream); }
+    .badge-contested { background: var(--moyo-med); color: #fff; }
+    .badge-model-specific { background: var(--moyo-ink); color: var(--moyo-teal); }
+    .badge-unverified { background: var(--moyo-muted); color: #fff; }
+    .badge-corroborated { background: var(--moyo-low); color: #fff; }
+    .badge-specific { background: var(--moyo-teal); color: var(--moyo-black); }
+
+    .scale {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.35rem;
+      margin: 0.75rem 0 1rem;
+    }
+    .scale div {
+      text-align: center;
+      padding: 0.55rem 0.25rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: var(--moyo-white);
+      border: 1px solid var(--moyo-border);
+    }
+    .scale .s1 { background: #d8ebe7; }
+    .scale .s2 { background: #a8d4cb; }
+    .scale .s3 { background: var(--moyo-teal); color: var(--moyo-black); }
+    .scale .s4 { background: var(--moyo-teal-deep); color: #fff; }
+    .scale .s5 { background: var(--moyo-ink); color: #fff; }
+
+    .callout {
+      background: var(--moyo-white);
+      border-left: 4px solid var(--moyo-teal);
+      border-radius: 0 8px 8px 0;
+      padding: 0.9rem 1rem;
+      margin: 1rem 0;
+      font-family: var(--font-serif);
+    }
+    .callout strong { font-family: var(--font-sans); }
+
+    table.ref {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      background: var(--moyo-white);
+      border: 1px solid var(--moyo-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    table.ref th,
+    table.ref td {
+      text-align: left;
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--moyo-border);
+      vertical-align: top;
+    }
+    table.ref th {
+      font-size: 0.68rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--moyo-muted);
+      background: var(--moyo-cream-deep);
+    }
+    table.ref tr:last-child td { border-bottom: 0; }
+
+    footer.foot {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--moyo-border);
+      font-size: 0.8rem;
+      color: var(--moyo-muted);
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+      nav.toc {
+        position: static;
+      }
+      nav.toc ol {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem 0.75rem;
+        border: 0;
+      }
+      nav.toc a {
+        border: 0;
+        margin: 0;
+        padding: 0.2rem 0;
+      }
+    }
+
+    @media print {
+      nav.toc { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      body { background: #fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="brand-bar">
+    <div class="mark">MOYO <span>GLOSSARY</span></div>
+    <div class="kicker">Report terminology</div>
+  </div>
+
+  <div class="layout">
+    <nav class="toc" aria-label="On this page">
+      <p>Contents</p>
+      <ol>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#findings">Findings &amp; IDs</a></li>
+        <li><a href="#status">Status labels</a></li>
+        <li><a href="#scores">Score dimensions</a></li>
+        <li><a href="#severity">Severity bands</a></li>
+        <li><a href="#sources">Sources &amp; citations</a></li>
+        <li><a href="#graphics">Charts &amp; graphics</a></li>
+        <li><a href="#exposure">Exposure metrics</a></li>
+        <li><a href="#process">Assessment process</a></li>
+      </ol>
+    </nav>
+
+    <main id="moyo-report-terminology">
+      <header class="hero">
+        <p class="eyebrow">Companion document</p>
+        <h1>How to read a MOYO exposure report</h1>
+        <p class="lede">
+          A shared glossary for findings, scores, status labels, sources, and charts
+          used across MOYO one-pagers and full assessments.
+        </p>
+      </header>
+
+      <section id="overview">
+        <h2>Overview</h2>
+        <p class="prose">
+          MOYO reports measure what large language models disclose when probed on a
+          topic — trade secrets, sensitive history, proprietary-adjacent detail, and
+          other high-stakes content. The unit of analysis is a <strong>finding</strong>
+          (also called a <strong>claim</strong>): an atomic statement extracted from a
+          model response, scored, classified, and linked back to evidence in the source
+          exploration.
+        </p>
+        <div class="callout">
+          <strong>Hard rule.</strong> Unusual, disputed, sensitive, or single-model
+          findings are never dropped solely for being inconvenient. They are classified
+          (for example as <span class="badge badge-outlier">Outlier</span> or
+          <span class="badge badge-contested">Contested</span>) so reviewers can still see them.
+        </div>
+      </section>
+
+      <section id="findings">
+        <h2>Findings &amp; IDs</h2>
+        <dl class="terms">
+          <div>
+            <dt>Finding / claim</dt>
+            <dd>
+              An atomic factual statement taken from a model answer. Each finding has
+              scores, a status, a source model, and a raw evidence excerpt.
+            </dd>
+          </div>
+          <div>
+            <dt><code>C####</code> — Claim ID</dt>
+            <dd>
+              Stable identifier for a finding (e.g. <span class="mono">C0082</span>).
+              Used in tables, evidence graphs, and remediation lists.
+            </dd>
+          </div>
+          <div>
+            <dt><code>Q##</code> — Query ID</dt>
+            <dd>
+              The exploration prompt that elicited the answer (e.g. <span class="mono">Q18</span>).
+            </dd>
+          </div>
+          <div>
+            <dt><code>CL###</code> — Cluster ID</dt>
+            <dd>
+              Group of paraphrased findings that express the same atomic fact across
+              models or languages. Clustering updates corroboration counts.
+            </dd>
+          </div>
+          <div>
+            <dt><code>CH###</code> — Chain ID</dt>
+            <dd>
+              An exposure chain: a short narrative path linking related findings
+              (for example official line → revision → contested motive).
+            </dd>
+          </div>
+          <div>
+            <dt>Category</dt>
+            <dd>
+              Thematic bucket for the claim (e.g. proprietary-adjacent, public fact,
+              contested history). Helps group findings without changing their scores.
+            </dd>
+          </div>
+          <div>
+            <dt>Raw excerpt / evidence</dt>
+            <dd>
+              Exact text copied from the exploration, with approximate start and end
+              line numbers. Every finding should retain an evidence span for auditability.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="status">
+        <h2>Status labels</h2>
+        <p class="prose">
+          Status describes how a finding sits relative to other sources — not whether
+          it is “true” in the outside world.
+        </p>
+        <table class="ref">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge-corroborated">Corroborated</span></td>
+              <td>At least two distinct models (or language-tagged instances treated as sources) agree on the same atomic fact.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-contested">Contested</span></td>
+              <td>Sources disagree on a material point (not just wording).</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-outlier">Outlier</span></td>
+              <td>Diverges sharply from consensus, or is unusually specific / extreme.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-unverified">Unverified</span></td>
+              <td>Plausible but weakly grounded; limited support in the exploration.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-model-specific">Model-specific</span></td>
+              <td>Distinctive to one model family (or one language-tagged run of that family).</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="scores">
+        <h2>Score dimensions</h2>
+        <p class="prose">
+          Unless noted, dimensions are integers from <strong>1</strong> (low) to
+          <strong>5</strong> (high). They are analyst / extractor judgments used for
+          ranking and charts — not probability percentages.
+        </p>
+        <div class="scale" aria-hidden="true">
+          <div class="s1">1</div>
+          <div class="s2">2</div>
+          <div class="s3">3</div>
+          <div class="s4">4</div>
+          <div class="s5">5</div>
+        </div>
+        <dl class="terms">
+          <div>
+            <dt>Sensitivity</dt>
+            <dd>
+              How sensitive or high-stakes the disclosure is (policy risk, brand harm,
+              privacy, safety, proprietary exposure).
+              <span class="note">Findings with sensitivity ≥ 4 typically count as “high-sensitivity” in report totals.</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Specificity</dt>
+            <dd>
+              How concrete and actionable the detail is (names, formulas, quantities,
+              procedures) versus vague allusion.
+            </dd>
+          </div>
+          <div>
+            <dt>Novelty</dt>
+            <dd>
+              How surprising the claim is relative to the expected public consensus for
+              the topic.
+            </dd>
+          </div>
+          <div>
+            <dt>Interestingness</dt>
+            <dd>
+              Editorial priority for the snapshot: salience for a human reader reviewing
+              exposure, not scientific importance alone.
+            </dd>
+          </div>
+          <div>
+            <dt>Confidence</dt>
+            <dd>
+              How clearly the evidence supports that this finding was actually stated
+              (extraction / grounding confidence), shown as filled dots in finding cards.
+            </dd>
+          </div>
+          <div>
+            <dt>Corroboration</dt>
+            <dd>
+              Count of distinct sources supporting the same clustered fact. Often starts
+              at 1 at extraction time and is updated after clustering.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="severity">
+        <h2>Severity bands</h2>
+        <p class="prose">
+          For distribution charts and badges, sensitivity is often rolled into four bands:
+        </p>
+        <table class="ref">
+          <thead>
+            <tr>
+              <th>Band</th>
+              <th>Typical sensitivity</th>
+              <th>Role in the report</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge-high">High</span></td>
+              <td>4–5</td>
+              <td>Primary exposure concern; drives “high-sensitivity” counts and highlights.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-medium">Medium</span></td>
+              <td>3</td>
+              <td>Material detail worth review; not the top severity tier.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-low">Low</span></td>
+              <td>2</td>
+              <td>Limited sensitivity; still retained for completeness.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-info">Info</span></td>
+              <td>1 (informational)</td>
+              <td>Context or low-stakes public fact; kept for the audit trail.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="prose">
+          Snapshot badges such as <span class="badge badge-high">High</span> and
+          <span class="badge badge-specific">Specific</span> flag top findings that
+          clear configured thresholds (commonly sensitivity ≥ 4 and specificity ≥ 4).
+        </p>
+      </section>
+
+      <section id="sources">
+        <h2>Sources &amp; citations</h2>
+        <dl class="terms">
+          <div>
+            <dt>Source model</dt>
+            <dd>
+              The model (and sometimes language tag) that produced the answer, e.g.
+              <span class="mono">Kimi (Moonshot kimi-k2.6) (French)</span>.
+            </dd>
+          </div>
+          <div>
+            <dt>Source citation (short form)</dt>
+            <dd>
+              Display form used in reports: a short model alias plus optional peer count.
+              <span class="note">
+                Examples: <strong>Kimi</strong> (only this source) ·
+                <strong>GPT + 2</strong> (primary model plus two other distinct models
+                in the same cluster) · <strong>Grok + 5</strong> (primary + five peers).
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Model alias</dt>
+            <dd>
+              Short label for charts and citations (GPT, Claude, Grok, Kimi, Llama70, …)
+              mapped from the full source string.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="graphics">
+        <h2>Charts &amp; graphics</h2>
+        <dl class="terms">
+          <div>
+            <dt>Exposure radar</dt>
+            <dd>
+              Pentagon chart of average scores across specificity, sensitivity,
+              corroboration, novelty, and confidence (scale 1–5).
+            </dd>
+          </div>
+          <div>
+            <dt>Sensitivity distribution</dt>
+            <dd>
+              Bar chart of finding counts in the high / medium / low / informational bands.
+            </dd>
+          </div>
+          <div>
+            <dt>Model heatmap</dt>
+            <dd>
+              Matrix of findings × models. Cell color and numeral show sensitivity where
+              that model produced the finding; empty cells mean no claim from that model
+              in the displayed set.
+            </dd>
+          </div>
+          <div>
+            <dt>Evidence graph</dt>
+            <dd>
+              Flow from <strong>models → claims → chains</strong>, showing which systems
+              feed which findings and how findings assemble into exposure chains.
+            </dd>
+          </div>
+          <div>
+            <dt>Model exposure dots</dt>
+            <dd>
+              Relative rank of models by weighted disclosure (often sensitivity ×
+              specificity). More filled dots means higher relative exposure in this run —
+              not an absolute safety score.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="exposure">
+        <h2>Exposure metrics</h2>
+        <dl class="terms">
+          <div>
+            <dt>Findings count</dt>
+            <dd>Total extracted claims retained after processing (nothing dropped for being odd).</dd>
+          </div>
+          <div>
+            <dt>LLMs tested</dt>
+            <dd>Number of distinct model sources that contributed answers in the exploration.</dd>
+          </div>
+          <div>
+            <dt>High-sensitivity count</dt>
+            <dd>Findings with sensitivity at or above the configured high threshold (default 4).</dd>
+          </div>
+          <div>
+            <dt>Exposure chain</dt>
+            <dd>
+              Ordered story of how disclosure escalates or branches for the topic
+              (official narrative → revisions → outliers).
+            </dd>
+          </div>
+          <div>
+            <dt>Remediation / follow-up</dt>
+            <dd>
+              Suggested next actions (e.g. white-box retest, policy filter work) tied to
+              specific claim IDs.
+            </dd>
+          </div>
+          <div>
+            <dt>One-pager vs full report</dt>
+            <dd>
+              The <strong>exposure snapshot</strong> (one-pager) highlights metrics and
+              the lead finding. The <strong>full report</strong> adds findings, evidence,
+              model comparison, methodology, and appendix.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="process">
+        <h2>Assessment process</h2>
+        <p class="prose">
+          Reports are produced from a multi-model <strong>exploration</strong> (raw Q&amp;A
+          log) through a fixed pipeline. Knowing the stages helps interpret what is
+          automated versus editorial.
+        </p>
+        <table class="ref">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Parse</td>
+              <td>Split exploration into language / query / model chunks; keep line offsets.</td>
+            </tr>
+            <tr>
+              <td>Extract</td>
+              <td>Pull atomic claims with mandatory raw excerpts.</td>
+            </tr>
+            <tr>
+              <td>Cluster</td>
+              <td>Merge paraphrases; refresh corroboration and status.</td>
+            </tr>
+            <tr>
+              <td>Score</td>
+              <td>Rank findings; compute model exposure, bins, and chains.</td>
+            </tr>
+            <tr>
+              <td>Synthesize</td>
+              <td>Write executive summary and remediation follow-ups.</td>
+            </tr>
+            <tr>
+              <td>Graphics</td>
+              <td>Emit brand SVG figures (radar, bars, heatmap, evidence graph).</td>
+            </tr>
+            <tr>
+              <td>Render</td>
+              <td>Fill the MOYO design-system templates and produce PDFs.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout">
+          <strong>Content vs presentation.</strong> Narrative and structured fields live
+          in the run’s <span class="mono">report.md</span> / <span class="mono">report.yaml</span>.
+          Layout, badges, and typography come from the shared design system — templates
+          do not invent findings.
+        </div>
+      </section>
+
+      <footer class="foot">
+        MOYO Report Design System · Terminology companion · Suitable for embedding or linking from product pages.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

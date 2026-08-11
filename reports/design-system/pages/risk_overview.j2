@@ -1,0 +1,12 @@
+{% from "components/macros.j2" import svg_asset %}
+<section class="page page--risk-overview">
+  <h2>Risk Overview</h2>
+  <div class="chart-stack">
+    <div class="chart-frame">
+      {{ svg_asset(content.assets.sensitivity_distribution, graphics.get('sensitivity_distribution'), 'compact') }}
+    </div>
+    <div class="chart-frame">
+      {{ svg_asset(content.assets.exposure_radar, graphics.get('exposure_radar'), 'compact') }}
+    </div>
+  </div>
+</section>

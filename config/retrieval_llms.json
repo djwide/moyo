@@ -23,10 +23,10 @@
     },
     {
       "provider": "custom",
-      "model": "gemini-pro-latest",
+      "model": "gemini-3.1-pro-preview",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "api_key": "$GEMINI_API_KEY",
-      "label": "Gemini (Google gemini-pro-latest)"
+      "label": "Gemini (Google gemini-3.1-pro-preview)"
     },
     {
       "provider": "custom",
@@ -41,6 +41,13 @@
       "base_url": "https://api.moonshot.ai/v1",
       "api_key": "$MOONSHOT_API_KEY",
       "label": "Kimi (Moonshot kimi-k2.6)"
+    },
+    {
+      "provider": "custom",
+      "model": "sonar-pro",
+      "base_url": "https://api.perplexity.ai",
+      "api_key": "$PERPLEXITY_API_KEY",
+      "label": "Perplexity (sonar-pro)"
     },
     {
       "provider": "custom",

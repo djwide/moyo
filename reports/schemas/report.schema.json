@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moyo.local/schemas/report.schema.json",
+  "title": "ExplorationReportData",
+  "type": "object",
+  "required": [
+    "run_id",
+    "topic",
+    "generated_at",
+    "counts",
+    "top_finding",
+    "model_exposure",
+    "exposure_chain",
+    "findings",
+    "chains"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "topic": { "type": "string" },
+    "headline": { "type": "string" },
+    "generated_at": { "type": "string" },
+    "counts": {
+      "type": "object",
+      "required": ["findings", "llms_tested", "high_sensitivity"],
+      "properties": {
+        "findings": { "type": "integer", "minimum": 0 },
+        "llms_tested": { "type": "integer", "minimum": 0 },
+        "high_sensitivity": { "type": "integer", "minimum": 0 },
+        "contested": { "type": "integer", "minimum": 0 },
+        "outliers": { "type": "integer", "minimum": 0 },
+        "model_specific": { "type": "integer", "minimum": 0 },
+        "chains": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "top_finding": {
+      "type": "object",
+      "properties": {
+        "claim_id": { "type": "string" },
+        "text": { "type": "string" },
+        "badges": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "model_exposure": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["model", "score", "dots"],
+        "properties": {
+          "model": { "type": "string" },
+          "score": { "type": "number" },
+          "dots": { "type": "integer", "minimum": 0, "maximum": 5 }
+        }
+      }
+    },
+    "exposure_chain": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "what_else": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": { "type": "array" },
+    "chains": { "type": "array" },
+    "graphics": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,9 @@
+<section class="page page--methodology">
+  <h2>Methodology</h2>
+  <p class="section-lede">{{ content.pages.methodology.body }}</p>
+  <ol class="methodology-list">
+    {% for step in content.pages.methodology.steps %}
+    <li>{{ step }}</li>
+    {% endfor %}
+  </ol>
+</section>

@@ -18,32 +18,24 @@ except ImportError:
     AHOCORASICK_AVAILABLE = False
     logger.warning("pyahocorasick not available, falling back to regex-only matching")
 
-# Load synonym map from external file
 def load_synonym_map(synonym_file: Optional[Path] = None) -> Dict[str, List[str]]:
-    """Load synonym map from JSON file.
-    
-    Args:
-        synonym_file: Path to synonym map JSON file
-        
-    Returns:
-        Dictionary mapping words to their synonyms
+    """Load an optional synonym map for regex expansion.
+
+    The shared ``data/synonym_map.json`` file has been removed. Callers that
+    need synonyms should supply them inline or pass ``synonym_file`` explicitly.
+    With no file, returns an empty map (token regexes fall back to the token
+    itself).
     """
     if synonym_file is None:
-        # Default to data directory relative to shared_utils
-        # Look for data/synonym_map.json relative to shared_utils package
-        shared_utils_dir = Path(__file__).parent
-        repo_root = shared_utils_dir.parent.parent  # Go up to monorepo root
-        synonym_file = repo_root / "data" / "synonym_map.json"
-    
+        return {}
     try:
         if synonym_file.exists():
-            with open(synonym_file, 'r', encoding='utf-8') as f:
+            with open(synonym_file, "r", encoding="utf-8") as f:
                 return json.load(f)
-        else:
-            logger.warning(f"Synonym map file not found: {synonym_file}")
-            return {}
+        logger.warning("Synonym map file not found: %s", synonym_file)
+        return {}
     except Exception as e:
-        logger.error(f"Error loading synonym map from {synonym_file}: {e}")
+        logger.error("Error loading synonym map from %s: %s", synonym_file, e)
         return {}
 
 # Load synonym map lazily to avoid import issues

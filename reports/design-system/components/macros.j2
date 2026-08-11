@@ -1,0 +1,115 @@
+{# MOYO design-system component macros — presentation only #}
+
+{% macro severity_badge(level) -%}
+  {%- set key = (level or 'info')|string|lower|replace('_', '-') -%}
+  <span class="severity-badge severity-badge--{{ key }}">{{ level }}</span>
+{%- endmacro %}
+
+{% macro confidence(score, max=5) -%}
+  {%- set n = (score or 0)|int -%}
+  <span class="confidence" title="Confidence {{ n }}/{{ max }}" aria-label="Confidence {{ n }} of {{ max }}">
+    {%- for i in range(1, max + 1) -%}
+      <span class="confidence__dot{% if i <= n %} confidence__dot--on{% endif %}"></span>
+    {%- endfor -%}
+  </span>
+{%- endmacro %}
+
+{% macro metric_card(value, label) -%}
+  <div class="metric-card">
+    <div class="metric-card__value">{{ value }}</div>
+    <div class="metric-card__label">{{ label }}</div>
+  </div>
+{%- endmacro %}
+
+{% macro source_cite(f) -%}
+  {%- set label = f.source_cite if f.source_cite is defined and f.source_cite else f.source_model -%}
+  <span class="source-cite">{{ label }}</span>
+{%- endmacro %}
+
+{# Compact pointers (S1, S4) into the report's Sources and Citations section. #}
+{% macro source_refs(refs) -%}
+  {%- if refs -%}
+  <span class="source-refs">{{ refs | join(' ') }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# Real-world citations carried by the model answer, with resolved labels. #}
+{% macro citation_line(citations) -%}
+  {%- if citations -%}
+  <div class="citation-line">
+    <span class="citation-line__label">Cited</span>
+    {%- for c in citations %}
+    <span class="citation-line__item">
+      <span class="source-refs">{{ c.ref }}</span>
+      {{ c.label }}
+    </span>{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
+    {%- endfor %}
+  </div>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro finding_card(f) -%}
+  {%- set sens = (f.sensitivity or 0)|int -%}
+  {%- set sev = 'high' if sens >= 4 else ('medium' if sens == 3 else ('low' if sens == 2 else 'info')) -%}
+  <article class="finding-card{% if sev == 'high' %} finding-card--high{% endif %}">
+    <div>
+      <span class="finding-card__id">{{ f.claim_id }}</span>
+      {{ severity_badge(f.status) }}
+      {{ severity_badge(sev) }}
+    </div>
+    <p class="finding-card__claim">{{ f.claim }}</p>
+    <div class="finding-card__meta">
+      <span>Source {{ source_cite(f) }}</span>
+      <span>Sens {{ f.sensitivity }} · Spec {{ f.specificity }}</span>
+      <span>Confidence {{ confidence(f.confidence) }}</span>
+    </div>
+    {{ citation_line(f.citations_display) }}
+    {% if f.raw_excerpt %}
+      {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
+    {% endif %}
+  </article>
+{%- endmacro %}
+
+{% macro evidence_box(excerpt, start_line=None, end_line=None, source=None) -%}
+  <aside class="evidence-box">
+    <div class="evidence-box__label">Evidence</div>
+    {# Verbatim model output: markdown is rendered as formatting, never printed. #}
+    <div class="evidence-box__excerpt">{{ excerpt | md }}</div>
+    {% if start_line or source %}
+    <div class="evidence-box__cite">
+      {% if source %}<span class="source-cite">{{ source }}</span>{% endif %}
+      {% if start_line %} · lines {{ start_line }}–{{ end_line or start_line }}{% endif %}
+    </div>
+    {% endif %}
+  </aside>
+{%- endmacro %}
+
+{% macro quote_box(text) -%}
+  <blockquote class="quote-box">{{ text }}</blockquote>
+{%- endmacro %}
+
+{% macro remediation_box(item) -%}
+  <aside class="remediation-box">
+    <div class="remediation-box__method">{{ item.method }}</div>
+    <div class="remediation-box__action">{{ item.action }}</div>
+    {% if item.claim_ids %}
+    <div class="remediation-box__claims">{{ item.claim_ids|join(', ') }}</div>
+    {% endif %}
+  </aside>
+{%- endmacro %}
+
+{% macro svg_asset(path, inline=None, variant='') -%}
+  <div class="graphic{% if variant %} graphic--{{ variant }}{% endif %}">
+    {% if inline %}
+      {{ inline | safe }}
+    {% elif path %}
+      <img src="{{ path }}" alt="" />
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro chart_caption(text) -%}
+  {% if text %}
+  <p class="chart-caption">{{ text }}</p>
+  {% endif %}
+{%- endmacro %}

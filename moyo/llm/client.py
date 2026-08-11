@@ -17,7 +17,7 @@ import textwrap
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,17 @@ def _fixed_temperature_for_model(model: str) -> Optional[float]:
     return None
 
 
+# Some OpenAI-compatible providers reject tiny completion caps (e.g. Perplexity
+# requires max_tokens >= 16).
+MIN_COMPLETION_TOKENS = 16
+
+
+def _is_gemini_model(model: str, base_url: Optional[str] = None) -> bool:
+    name = (model or "").lower()
+    url = (base_url or "").lower()
+    return "gemini" in name or "generativelanguage.googleapis.com" in url
+
+
 def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
     """Provider-specific OpenAI-compatible request fields.
 
@@ -221,6 +232,63 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
     if _is_kimi_k25_or_k26(model):
         return {"thinking": {"type": "disabled"}}
     return {}
+
+
+def _openai_create_extras(
+    model: str, base_url: Optional[str] = None
+) -> Dict[str, Any]:
+    """Extra kwargs for ``chat.completions.create`` beyond messages/tokens."""
+    extras: Dict[str, Any] = {}
+    extra_body = _openai_extra_body_for_model(model)
+    if extra_body:
+        extras["extra_body"] = extra_body
+    # gemini-3.1-pro-preview (and other Gemini thinking models) spend max_tokens on
+    # internal reasoning first; low reasoning effort keeps short replies usable.
+    # ``none`` is rejected by Pro-class aliases that require thinking mode.
+    if _is_gemini_model(model, base_url):
+        extras["reasoning_effort"] = "low"
+    return extras
+
+
+def _citations_from_response(response: Any) -> List[str]:
+    """Pull citation URLs from OpenAI-compatible responses (e.g. Perplexity)."""
+    raw = getattr(response, "citations", None)
+    if raw is None:
+        extra = getattr(response, "model_extra", None) or {}
+        if isinstance(extra, dict):
+            raw = extra.get("citations")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, str):
+            url = item.strip()
+        elif isinstance(item, dict):
+            url = str(item.get("url") or item.get("href") or "").strip()
+        else:
+            url = ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(url)
+    return out
+
+
+def _with_provider_citations(content: str, response: Any) -> str:
+    """Append a Sources list when the provider returns structured citations."""
+    citations = _citations_from_response(response)
+    if not citations:
+        return content
+    # Avoid duplicating URLs already present in the answer body.
+    missing = [c for c in citations if c not in content]
+    if not missing:
+        return content
+    lines = "\n".join(f"- {c}" for c in missing)
+    body = (content or "").rstrip()
+    if body:
+        return f"{body}\n\nSources:\n{lines}"
+    return f"Sources:\n{lines}"
 
 
 def _is_fixed_temperature_error(exc: BaseException) -> bool:
@@ -267,6 +335,9 @@ class LLMSpec:
     max_tokens: int = 1000
     timeout: int = 120
     max_retries: int = 3
+    # Ollama context-window allocation (tokens). None = server/model default
+    # (commonly 2048–4096). Raise for long summarise prompts.
+    num_ctx: Optional[int] = None
 
     def __post_init__(self) -> None:
         ensure_env_loaded()
@@ -277,6 +348,8 @@ class LLMSpec:
             self.api_key = os.environ.get(_ENV_KEY_BY_PROVIDER[self.provider])
         if not self.label:
             self.label = _default_label(self.provider, self.model)
+        if self.num_ctx is not None:
+            self.num_ctx = int(self.num_ctx)
 
     @property
     def kind(self) -> str:
@@ -294,6 +367,7 @@ class LLMSpec:
         api_key = data.get("api_key")
         if isinstance(api_key, str) and api_key.startswith("$"):
             api_key = os.environ.get(api_key[1:])
+        num_ctx = data.get("num_ctx")
         return cls(
             provider=data.get("provider", "echo"),
             model=data.get("model", "") or "",
@@ -304,6 +378,7 @@ class LLMSpec:
             max_tokens=int(data.get("max_tokens", 1000)),
             timeout=int(data.get("timeout", 120)),
             max_retries=int(data.get("max_retries", 3)),
+            num_ctx=int(num_ctx) if num_ctx is not None else None,
         )
 
 
@@ -402,12 +477,16 @@ class LLMClient:
         system: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        retries: Optional[int] = None,
     ) -> str:
         """Generate a completion for ``prompt``.
 
         Transient rate-limit / overload / network errors are retried with
         backoff (honouring provider "retry in Ns" hints when present). Hard
         failures such as exhausted credits or invalid API keys are not retried.
+
+        ``retries`` overrides ``spec.max_retries`` for this call (use ``0`` for
+        a single-shot preflight probe).
 
         Raises ``RuntimeError`` if the client could not be initialized (e.g. a
         missing API key or unreachable endpoint) so callers can record the
@@ -418,6 +497,11 @@ class LLMClient:
         if fixed is not None:
             temperature = fixed
         max_tokens = self.spec.max_tokens if max_tokens is None else max_tokens
+        max_tokens = max(MIN_COMPLETION_TOKENS, int(max_tokens))
+        # Gemini thinking models count reasoning toward max_tokens; tiny caps
+        # often return empty content with finish_reason=length.
+        if _is_gemini_model(self.spec.model, self.spec.base_url) and max_tokens < 256:
+            max_tokens = 256
         provider = self.spec.provider
 
         if provider == "echo":
@@ -426,7 +510,8 @@ class LLMClient:
         if self._client is None:
             raise RuntimeError(self._init_error or f"LLM provider '{provider}' unavailable")
 
-        attempts = max(1, int(self.spec.max_retries) + 1)
+        max_retries = self.spec.max_retries if retries is None else max(0, int(retries))
+        attempts = max(1, int(max_retries) + 1)
         last_exc: Optional[BaseException] = None
         for attempt in range(attempts):
             try:
@@ -474,7 +559,11 @@ class LLMClient:
 
         if provider == "ollama":
             return self._client.generate(
-                prompt, system=system, temperature=temperature, max_tokens=max_tokens
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                num_ctx=self.spec.num_ctx,
             )
 
         if provider in ("openai", "custom"):
@@ -488,11 +577,12 @@ class LLMClient:
                 "max_tokens": max_tokens,
                 "temperature": temperature,
             }
-            extra_body = _openai_extra_body_for_model(self.spec.model)
-            if extra_body:
-                create_kwargs["extra_body"] = extra_body
+            create_kwargs.update(
+                _openai_create_extras(self.spec.model, self.spec.base_url)
+            )
             response = self._client.chat.completions.create(**create_kwargs)
-            return (response.choices[0].message.content or "").strip()
+            content = (response.choices[0].message.content or "").strip()
+            return _with_provider_citations(content, response)
 
         if provider == "anthropic":
             kwargs: Dict[str, Any] = {}

@@ -1,0 +1,13 @@
+{% from "components/macros.j2" import svg_asset, evidence_box %}
+<section class="page page--evidence">
+  <h2>Abridged Evidence</h2>
+  {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide') }}
+  {% set ns = namespace(n=0) %}
+  {% for f in content.abridged_findings[:5] %}
+    {% if f.raw_excerpt and ns.n < 5 %}
+      <h3 class="mono">{{ f.claim_id }}</h3>
+      {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
+      {% set ns.n = ns.n + 1 %}
+    {% endif %}
+  {% endfor %}
+</section>

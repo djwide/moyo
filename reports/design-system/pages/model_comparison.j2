@@ -1,0 +1,13 @@
+{% from "components/macros.j2" import svg_asset %}
+<section class="page page--model-comparison">
+  <h2>Model Comparison</h2>
+  {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
+  <ul class="model-exposure-list">
+    {% for m in content.model_exposure %}
+    <li>
+      <span>{{ m.model }}</span>
+      <span class="dots">{{ m.dots }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>

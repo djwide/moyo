@@ -1,0 +1,64 @@
+{% from "components/macros.j2" import metric_card, quote_box %}
+<section class="page page--executive-summary">
+  <h2>Executive Summary</h2>
+  <p class="section-lede">{{ content.pages.executive_summary.body }}</p>
+  {% if content.pages.executive_summary.pull_quote %}
+    {{ quote_box(content.pages.executive_summary.pull_quote) }}
+  {% endif %}
+  <div class="metrics-row">
+    {{ metric_card(content.meta.counts.findings, "Findings") }}
+    {{ metric_card(content.meta.counts.llms_tested, "Models") }}
+    {{ metric_card(content.meta.counts.high_sensitivity, "High Sens.") }}
+    {{ metric_card(content.meta.counts.chains, "Chains") }}
+  </div>
+
+  {% if content.pages.executive_summary.public_sources %}
+  <p class="exec-prose">
+    <strong>Public Sources.</strong>
+    {{ content.pages.executive_summary.public_sources | join('; ') }}.
+  </p>
+  {% endif %}
+
+  <div class="exec-prose-block">
+    {% if content.pages.executive_summary.inference_chain %}
+    <p class="exec-prose">
+      <strong>Evidence-Backed Inference Chain.</strong>
+      {{ content.pages.executive_summary.inference_chain | join(' ') }}
+    </p>
+    {% endif %}
+
+    {% if content.pages.executive_summary.confidence_label or content.pages.executive_summary.confidence_rationale %}
+    <p class="exec-prose">
+      <strong>Confidence Rating.</strong>
+      {{ content.pages.executive_summary.confidence_label or "Unrated" }}
+      {% if content.pages.executive_summary.confidence_score %}
+        ({{ content.pages.executive_summary.confidence_score }}/5)
+      {% endif %}
+      {% if content.pages.executive_summary.confidence_rationale %}
+        {{ content.pages.executive_summary.confidence_rationale }}
+      {% endif %}
+    </p>
+    {% endif %}
+
+    {% if content.pages.executive_summary.why_it_matters %}
+    <p class="exec-prose">
+      <strong>Why It Matters.</strong>
+      {{ content.pages.executive_summary.why_it_matters }}
+    </p>
+    {% endif %}
+
+    {% if content.pages.executive_summary.defensive_action %}
+    <p class="exec-prose">
+      <strong>Recommended Defensive Action.</strong>
+      {{ content.pages.executive_summary.defensive_action }}
+    </p>
+    {% endif %}
+
+    {% if content.pages.executive_summary.exposure_teaser %}
+    <p class="exec-prose">
+      <strong>Exposure Chain Teaser.</strong>
+      {{ content.pages.executive_summary.exposure_teaser }}
+    </p>
+    {% endif %}
+  </div>
+</section>

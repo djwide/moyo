@@ -56,13 +56,19 @@ private indices must use the same model.
 
 ### Gather Public Sources
 
-Crawl public corpora (patents, press releases, git commits, conferences,
-leaks) by topic *or* token list. Output JSON files can be fed directly into
-the next tab. Parameters: max per source, max total, request delay,
-source-type filters, output directory.
+Two modes:
 
-> **Note:** the bundled source adapters ship with placeholder endpoints and
-> return no results until pointed at real services. See `docs/crawler.md`.
+1. **Crawl** — topic or token list → `sources.json` for the public corpus builder.
+   Parameters: max per source, max total, request delay, source-type filters,
+   output directory. Bundled adapters may need real endpoints; see
+   [`docs/crawler.md`](crawler.md).
+
+2. **Naive prompt (AI explore)** — one or more plain-language prompts (one per line) → multi-LLM fan-out per prompt
+   report. Pick fuzz mode **basic** or **multilingual** (extra languages when
+   multilingual). Writes `exploration.md` under
+   `data/public_sources/<slug>/`. Uses local Ollama for rewording/translation
+   and `config/retrieval_llms.json` for fan-out. Preflight LLM status streams
+   into the log at scan start.
 
 ### Build Public Corpus
 
@@ -84,18 +90,24 @@ on both sides.
 ### LLM Fuzzer
 
 Iteratively rewrites input phrases toward a target concept and probes how
-close they land to corpus content. Supports four providers:
+close they land to corpus content. Fuzz modes: **basic** (paraphrase /
+translate / summarize) or **multilingual** (paraphrase / abstract /
+summarize, plus a translate step in white-box fuzz). ``typo`` remains
+available a la carte. Supports:
 
 - `local` — embedding-only synonym shuffler (no API key, no server)
 - `ollama` — a **real local LLM** served by [Ollama](https://ollama.com);
   defaults to `llama3.1:8b`; set **Base URL** if not on
-  `http://localhost:11434`. No API key required. See "Local LLM setup" below.
+  `http://localhost:11434`. No API key required. See "Local LLM setup" below
+  and [`configuration_and_monitoring_summary.md`](configuration_and_monitoring_summary.md)
+  for WSL auto-start tips.
 - `openai` — defaults to `gpt-4o`; reads `OPENAI_API_KEY`
 - `anthropic` — defaults to `claude-sonnet-4-6`; reads `ANTHROPIC_API_KEY`
+- `custom` — any OpenAI-compatible endpoint (base URL + key)
 
 A **Test LLM Connection** button verifies the provider before a full run.
 Parameters: max iterations, target similarity, search-K, similarity
-threshold, temperature.
+threshold, temperature, fuzz mode.
 
 #### Local LLM setup (Ollama)
 

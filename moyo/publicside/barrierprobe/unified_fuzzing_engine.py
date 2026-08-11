@@ -136,24 +136,7 @@ class UnifiedTransformationEngine:
         self.transformation_patterns = self._load_transformation_patterns()
     
     def _load_transformation_patterns(self) -> Dict[str, List[str]]:
-        """Load comprehensive transformation patterns."""
-        # Load synonym map directly from data directory
-        synonyms = {}
-        try:
-            import json
-            from pathlib import Path
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    synonyms = json.load(f)
-                logger.info(f"Loaded {len(synonyms)} synonym groups from {synonym_file}")
-            else:
-                logger.warning(f"Synonym map file not found at {synonym_file}")
-        except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
-            synonyms = {}
-        
-        # Merge with our built-in patterns
+        """Load comprehensive transformation patterns (built-in synonyms only)."""
         built_in_synonyms = {
             "sensitive": ["confidential", "private", "restricted", "classified", "proprietary"],
             "data": ["information", "content", "material", "details", "records"],
@@ -174,12 +157,9 @@ class UnifiedTransformationEngine:
             "attack": ["assault", "strike", "offensive", "raid", "intrusion"],
             "defense": ["protection", "safeguard", "shield", "barrier", "fortification"]
         }
-        
-        # Merge shared synonyms with built-in patterns
-        merged_synonyms = {**synonyms, **built_in_synonyms}
-        
+
         built_in_patterns = {
-            "synonyms": merged_synonyms,
+            "synonyms": built_in_synonyms,
             "intensifiers": {
                 "major": ["significant", "substantial", "considerable", "notable", "important"],
                 "critical": ["essential", "vital", "crucial", "important", "key"],
@@ -210,7 +190,8 @@ class UnifiedTransformationEngine:
                 "intentional": ["deliberate", "purposeful", "planned", "calculated", "conscious"]
             }
         }
-    
+        return built_in_patterns
+
     def transform_text(self, text: str, target_concept: str, fuzzing_level: float, 
                       context_documents: Optional[List[DocumentNode]] = None) -> str:
         """Transform text towards target concept with specified fuzzing level.

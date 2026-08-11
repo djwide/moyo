@@ -1,0 +1,7 @@
+{% from "components/macros.j2" import finding_card %}
+<section class="page page--findings">
+  <h2>Abridged Findings</h2>
+  {% for f in content.abridged_findings[:5] %}
+    {{ finding_card(f) }}
+  {% endfor %}
+</section>

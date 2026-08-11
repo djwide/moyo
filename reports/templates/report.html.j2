@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · Full Report · {{ data.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body>
+  <article class="report">
+    <header class="brand-bar">
+      <img class="logo" src="{{ logo_uri }}" alt="MOYO" />
+      <div class="date">{{ report_date }}</div>
+    </header>
+
+    <h1>{{ data.headline or data.topic }}</h1>
+    <p>Run <code>{{ data.run_id }}</code> · {{ data.generated_at }}</p>
+
+    <section>
+      <h2>§ 1 Executive exposure summary</h2>
+      <p>{{ data.executive_summary or data.top_finding.text }}</p>
+      {% if graphics.exposure_radar %}
+      <div class="graphic">{{ graphics.exposure_radar | safe }}</div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>§ 2 Evidence graph</h2>
+      {% if graphics.evidence_graph %}
+      <div class="graphic">{{ graphics.evidence_graph | safe }}</div>
+      {% endif %}
+      {% if graphics.model_heatmap %}
+      <div class="graphic">{{ graphics.model_heatmap | safe }}</div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>§ 3 Findings &amp; basis chains</h2>
+      {% if graphics.sensitivity_distribution %}
+      <div class="graphic">{{ graphics.sensitivity_distribution | safe }}</div>
+      {% endif %}
+      <table class="findings-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Claim</th><th>Status</th><th>Sens</th><th>Spec</th><th>Sources</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in data.findings %}
+          <tr>
+            <td>{{ f.claim_id }}</td>
+            <td>{{ f.claim }}</td>
+            <td>{{ f.status }}</td>
+            <td>{{ f.sensitivity }}</td>
+            <td>{{ f.specificity }}</td>
+            <td>{{ f.source_cite or f.source_model }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>§ 4 Mitigation playbook</h2>
+      <ul>
+        {% for a in data.followups or [] %}
+        <li><strong>{{ a.method }}</strong> — {{ a.action }} ({{ a.claim_ids|join(', ') }})</li>
+        {% else %}
+        <li>Follow-ups not yet synthesized — run synthesize stage.</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {% include "appendix.html.j2" ignore missing %}
+  </article>
+</body>
+</html>

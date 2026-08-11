@@ -10,22 +10,24 @@ moyo is an experimental tool for corpus mapping and information-barrier analysis
 .                               ← repo root
 ├── moyo/                       ← Python package
 │   ├── cli.py                  # Main CLI entry point
-│   ├── config/                 # Configuration management
+│   ├── llm/                    # Shared LLMClient + default/retrieval registry
 │   ├── privateside/
 │   │   ├── datainput/          # GUI bridge and file/text input
 │   │   └── mapcorpus/          # Corpus building and centroids
 │   ├── publicside/
-│   │   ├── gatherpublicsources/  # Crawler orchestrator and adapters
+│   │   ├── gatherpublicsources/  # Crawler + naive-prompt explorer
 │   │   └── barrierprobe/       # Barrier analysis and LLM search
 │   ├── redteam/                # LLM red-teaming (whitebox + blackbox)
 │   ├── gui/                    # PyQt5 desktop GUI (moyo-gui → gui/app.py)
-│   ├── config/                 # Pydantic settings + config loading
-│   ├── metrics.py / metrics_server.py / cli_metrics.py  # Prometheus monitoring
-│   └── logging.py              # Structured logging
+│   ├── config/                 # Pydantic settings (MOYO_* env)
+│   ├── metrics.py / metrics_server.py / cli_metrics.py
+│   └── logging.py
+├── config/                     # retrieval_llms.json, model_config.json
+├── indexes/                    # FAISS indexes only (per-corpus names)
 ├── shared_utils/               # Vendored shared utilities
-│   ├── embeddings.py, faiss_index.py, chunking.py, text_processing.py, ...
+│   ├── embeddings.py, faiss_index.py, chunking.py, model_config.py, ...
 │   └── models/                 # miniLM_fp32.onnx, miniLM_int8.onnx
-├── examples/
+├── .env.example
 └── docs/
 ```
 
@@ -38,38 +40,44 @@ Receives data from GUI applications (text or files), validates and preprocesses 
 
 #### Corpus Builder (`mapcorpus/builder.py`)
 - Text normalisation and deduplication
-- Sentence-aware chunking with overlap
+- Multi-granularity chunking (sections, sentences, list/bullet items) via
+  `shared_utils.chunking`
 - Embedding generation (sentence-transformers)
-- FAISS index creation and persistence
+- FAISS index creation under `indexes/` with per-corpus filenames
 
 #### Centroids (`mapcorpus/centroids.py`)
 Derives topic tokens from the private corpus for use as crawl seeds on the public side.
 
 ### Public Side (`publicside/`)
 
-#### Crawler (`gatherpublicsources/crawler.py`)
-Orchestrator with two modes:
-- `crawl(topics)` – search by topic string
-- `crawl_with_tokens(tokens)` – token-driven crawling seeded from private-corpus centroids
+#### Gather (`gatherpublicsources/`)
+- `crawler.py` — topic / token crawl into `sources.json`
+- `explorer.py` — naive-prompt multi-LLM explore → `exploration.md`
+  (preflight → reword → parallel retrieve → compile/localize → analyze → render)
+- CLI: `moyo-gather crawl`, `crawl-tokens`, `explore`, `summarize`, `deliverable`, `check-llms`
 
 Source adapters: patents, press releases, git commits, conference talks, arXiv/PubMed, generic web search.
-
-Parsers and enrichers handle HTML/PDF extraction, classification, and deduplication.
 
 #### Barrier Probe (`barrierprobe/`)
 Analyses information barriers between private and public FAISS indexes:
 - `barrier_analyzer.py` – cosine distance and Sobolev norm analysis
-- `llm_fuzzer.py` – LLM-assisted phrase fuzzing (OpenAI, Anthropic, local Ollama, and an embedding-only `local` transformer)
+- `llm_fuzzer.py` – LLM-assisted fuzzing; explore rewording; fuzz modes
+  `basic` / `multilingual` (local Ollama default for generation)
 - `iterative_llm_search.py` – iterative refinement of closest matches
 - `two_layer_fuzzer.py` – two-layer architecture (real document graph + hypothesis graph)
 - `unified_fuzzing_engine.py` – unified entry point
 - `advanced_fuzzing_techniques.py` – grammar/mutational/random-walk/differential/authority fuzzers
-- `public_index_builder.py` – builds the public FAISS index from crawled sources
+- `public_index_builder.py` – public FAISS index with multi-granular chunks + metadata
 
 The main CLI is `moyo-probe` (`cli.py`: `fuzz`, `search`, `analyze`,
 `test-llm`, `analyze-corpus`). The advanced and two-layer fuzzers have their
 own standalone Click groups (`cli_advanced_fuzzing.py`,
 `cli_two_layer_fuzzer.py`) invoked with `python -m`.
+
+### Shared LLM layer (`moyo/llm/`)
+Provider-agnostic `LLMClient` / `LLMSpec` (OpenAI, Anthropic, Ollama, custom
+OpenAI-compatible, echo). Registry resolves the default LLM from `MOYO_LLM_*`
+and retrieval LLMs from `config/retrieval_llms.json`.
 
 ### Red Team (`redteam/`)
 Probes a *target* LLM for proprietary-information leakage, exposed as
@@ -94,6 +102,12 @@ Input (text / file) → GUI Bridge → Chunking → Embeddings → Private FAISS
 Private centroids → Token-driven crawler → Source adapters → Parsers/enrichers → Public FAISS Index
 ```
 
+### Naive-prompt exploration
+```
+Prompt → Local fuzzer seeds → Retrieval LLMs (parallel)
+      → Compile / label / translate → Summary (default LLM) → exploration.md
+```
+
 ### Barrier Analysis
 ```
 Private Index + Public Index → Cosine distance → Sobolev norms → Risk assessment
@@ -105,10 +119,10 @@ Closest matches → Text fuzzing → LLM queries → Semantic search → Refined
 ```
 
 ## Key Technologies
-- Python 3.10+, Click
+- Python 3.10+, Click, PyQt5
 - FAISS (CPU and GPU), sentence-transformers
-- OpenAI and Anthropic SDKs, plus optional local models via Ollama (for LLM fuzzing)
-- Pydantic for schemas and configuration
+- OpenAI / Anthropic / xAI / Gemini / Qwen / Kimi / OpenRouter (OpenAI-compatible) + local Ollama
+- Pydantic settings (`MOYO_*`), project `config/` + `.env`
 - Prometheus for metrics (`metrics.py`, `metrics_server.py`, `cli_metrics.py`)
 
 ## Development

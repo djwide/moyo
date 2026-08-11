@@ -1,0 +1,112 @@
+{% from "components/macros.j2" import severity_badge %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · Snapshot · {{ content.meta.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body>
+  {# PDF snapshot: no hyperlinks — CTAs are plain text only. #}
+  <article class="onepage">
+    <header class="brand-bar">
+      <div class="brand-bar__slot brand-bar__slot--left">
+        {% if logo_uri %}
+        <img class="logo" src="{{ logo_uri }}" alt="MOYO" />
+        {% endif %}
+      </div>
+      <div class="brand-bar__slot brand-bar__slot--right">
+        {% if partner_logo_uri %}
+        <img class="logo logo--partner" src="{{ partner_logo_uri }}" alt="SenTeGuard" />
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="eyebrow">Exposure Snapshot</div>
+    <p class="prompt-line">
+      Prompt:
+      {% if content.meta.prompts and content.meta.prompts|length > 1 %}
+        {% for p in content.meta.prompts %}
+          “{{ p }}”{% if not loop.last %}; {% endif %}
+        {% endfor %}
+      {% else %}
+        “{{ (content.meta.prompts[0] if content.meta.prompts else content.meta.topic) }}”
+      {% endif %}
+    </p>
+    <p class="date-line">{{ content.meta.report_date }}</p>
+    <h1 class="headline">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="value">{{ content.meta.counts.findings }}</div>
+        <div class="label">Findings</div>
+      </div>
+      <div class="metric">
+        <div class="value">{{ content.meta.counts.llms_tested }}</div>
+        <div class="label">LLMs tested</div>
+      </div>
+      <div class="metric">
+        <div class="value">{{ content.meta.counts.high_sensitivity }}</div>
+        <div class="label">High-sensitivity</div>
+      </div>
+    </div>
+
+    <section class="panel panel--lead">
+      <h2>Most significant finding</h2>
+      <p class="lead-finding">{{ content.top_finding.text }}</p>
+      <p class="badges">
+        {% for b in content.top_finding.badges or [] %}
+          {{ severity_badge(b) }}
+        {% endfor %}
+      </p>
+    </section>
+
+    <div class="grid-2 lower">
+      <section class="panel panel--specific">
+        <h2>Specific</h2>
+        <p class="panel-note">High-specificity disclosures (concrete detail)</p>
+        <ul class="specific-list">
+          {% for f in content.specific_findings[:2] %}
+          <li>
+            <span class="mono">{{ f.claim_id }}</span>
+            {{ severity_badge('SPECIFIC') }}
+            {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
+            <span class="specific-claim">{{ f.claim }}</span>
+            {% if f.source_cite %}
+            <span class="specific-source">{{ f.source_cite }}</span>
+            {% endif %}
+            {% if f.citations_display %}
+            <span class="specific-cited">Cited: {{ f.citations_display | map(attribute='short') | join('; ') }}</span>
+            {% endif %}
+          </li>
+          {% else %}
+          <li class="empty">No high-specificity findings in this run.</li>
+          {% endfor %}
+        </ul>
+        {% if content.pages.executive_summary.public_sources %}
+        <p class="panel-sources">
+          Public sources: {{ content.pages.executive_summary.public_sources | join('; ') }}
+        </p>
+        {% endif %}
+      </section>
+      <section class="panel panel--teaser">
+        <h2>Full assessment</h2>
+        <p>
+          {{ content.meta.counts.findings }} findings ·
+          {{ content.meta.counts.chains }} evidence chains ·
+          {{ content.meta.counts.llms_tested }} models
+        </p>
+        <ul class="teaser-list">
+          <li>Complete finding index with evidence excerpts</li>
+          <li>Model heatmap and exposure chains</li>
+          {% if content.meta.include_remediation %}
+          <li>Remediation playbook</li>
+          {% endif %}
+        </ul>
+      </section>
+    </div>
+  </article>
+</body>
+</html>

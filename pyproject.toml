@@ -41,6 +41,10 @@ gui = [
     "matplotlib",
     "scikit-learn",
 ]
+reports = [
+    "jinja2>=3.1",
+    "weasyprint>=60",
+]
 
 [project.scripts]
 moyo = "moyo.cli:cli"

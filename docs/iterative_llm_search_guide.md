@@ -119,10 +119,13 @@ for iteration in result['iteration_results']:
 ## Text Fuzzing Techniques
 
 ### Synonym Replacement
-Fuzzing uses the shared master synonym map loaded via `shared_utils.regex_utils.load_synonym_map()`, ensuring consistency with static regex generation.
+Fuzzing uses built-in synonym tables in the local transformer clients. The
+shared `data/synonym_map.json` file has been removed. An optional synonym JSON
+can still be passed to `shared_utils.regex_utils.load_synonym_map(path)` when
+expanding static regex patterns.
 
-- See: `shared_utils/shared_utils/regex_utils.py` (synonym map loader)
-- See: `moyo/publicside/barrierprobe/iterative_llm_search.py` (fuzzing pulls synonyms from shared map)
+- See: `shared_utils/regex_utils.py` (optional synonym map loader)
+- See: `moyo/publicside/barrierprobe/llm_fuzzer.py` / `iterative_llm_search.py`
 
 ### Fuzz Level Control
 ```python

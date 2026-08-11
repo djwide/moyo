@@ -197,7 +197,7 @@ def get_regex_rules_path(component: str = "sente") -> pathlib.Path:
     if component not in ["sente", "moyo"]:
         raise ValueError(f"Component must be 'sente' or 'moyo', got: {component}")
     
-    return SENTE_DATA_DIR / "static_hits" / "regex_rules_master.json"
+    return SENTE_DATA_DIR / "regex_rules_master.json"
 
 
 def get_corpus_path(component: str = "sente", model_name: str = "all-MiniLM-L6-v2", corpus_type: str = "combined") -> pathlib.Path:
@@ -278,32 +278,74 @@ def get_allowlist_path() -> pathlib.Path:
     return SENTE_DATA_DIR / "allowlist.txt"
 
 
+def _project_model_config_path() -> pathlib.Path:
+    """Path to the shared embedding model config under ``config/``."""
+    return pathlib.Path(__file__).resolve().parent.parent / "config" / "model_config.json"
+
+
 def get_current_model_name() -> str:
-    """Get the current default model name."""
-    # Check if there's a model config file
-    config_file = SENTE_DATA_DIR.parent / "model_config.json"
+    """Get the current default model name from ``config/model_config.json``."""
+    try:
+        from shared_utils.model_config import get_current_model_name as _shared_get
+
+        return _shared_get()
+    except Exception:
+        pass
+
+    config_file = _project_model_config_path()
     if config_file.exists():
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config = json.load(f)
-            return config.get("default_model", "all-MiniLM-L6-v2")
+            return config.get("model_name") or config.get(
+                "default_model", "all-MiniLM-L6-v2"
+            )
         except Exception:
             pass
-    
+
     return "all-MiniLM-L6-v2"
 
 
 def set_current_model_name(model_name: str) -> None:
-    """Set the current default model name."""
-    config_file = SENTE_DATA_DIR.parent / "model_config.json"
-    
-    config = {
-        "default_model": model_name,
-        "model_configs": MODEL_CONFIGS
-    }
-    
-    with open(config_file, 'w') as f:
-        json.dump(config, f, indent=2)
+    """Set the current default model name in ``config/model_config.json``."""
+    try:
+        from shared_utils.model_config import (
+            EMBEDDING_MODELS,
+            get_model_key_for_name,
+            set_model,
+            write_model_config,
+        )
+
+        try:
+            set_model(get_model_key_for_name(model_name))
+            return
+        except ValueError:
+            # Unknown catalog key/name — write a raw override.
+            write_model_config(
+                {
+                    "model_key": "custom",
+                    "model_name": model_name,
+                    "last_updated": None,
+                    "model_configs": MODEL_CONFIGS,
+                }
+            )
+            return
+    except Exception:
+        pass
+
+    config_file = _project_model_config_path()
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_file, "w") as f:
+        json.dump(
+            {
+                "model_key": "custom",
+                "model_name": model_name,
+                "default_model": model_name,
+                "model_configs": MODEL_CONFIGS,
+            },
+            f,
+            indent=2,
+        )
 
 
 def get_most_recently_used_model(component: str = "sente") -> str:
@@ -557,7 +599,7 @@ def initialize_data_directories() -> None:
         print("ℹ️ No existing indexes found to migrate")
     
     # Set default model if not already set
-    if not (SENTE_DATA_DIR.parent / "model_config.json").exists():
+    if not _project_model_config_path().exists():
         set_current_model_name("all-MiniLM-L6-v2")
         print("✅ Set default model to all-MiniLM-L6-v2")
 
@@ -565,9 +607,10 @@ def initialize_data_directories() -> None:
 def ensure_data_directory() -> None:
     """Ensure the data directory exists and has required subdirectories."""
     SENTE_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Create common subdirectories
-    subdirs = ["static_hits", "semantic_hits", "semantic_misses", "stress", "gui_data", "synthetic_cases"]
+
+    # Keep only directories that are actively used. The former static_hits /
+    # semantic_hits / semantic_misses folders were unused scaffolding.
+    subdirs = ["stress", "gui_data", "synthetic_cases"]
     for subdir in subdirs:
         (SENTE_DATA_DIR / subdir).mkdir(exist_ok=True)
 

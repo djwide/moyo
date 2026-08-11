@@ -1,0 +1,42 @@
+{% from "components/macros.j2" import source_refs %}
+<section class="page page--basis-inventory">
+  <h2>Complete Prioritized Exposure Inventory</h2>
+  <p class="basis-lede">
+    Every extracted finding, ranked by weighted exposure. Nothing is dropped:
+    outliers, contested, and single-model disclosures are retained. Corroboration
+    counts the distinct model outputs behind the finding; S-numbers point to the
+    Sources and Citations section.
+  </p>
+  <table class="inventory-table">
+    <colgroup>
+      <col class="col-id" />
+      <col class="col-claim" />
+      <col class="col-category" />
+      <col class="col-corrob" />
+      <col class="col-source" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Claim</th>
+        <th>Category</th>
+        <th class="num">Corrob.</th>
+        <th>Source Cite</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in content.basis.inventory %}
+      <tr>
+        <td class="mono">{{ row.claim_id }}</td>
+        <td class="claim-cell">{{ row.claim }}</td>
+        <td class="category-cell">{{ row.category }}</td>
+        <td class="num">{{ row.corroboration }}</td>
+        <td class="source-cell">
+          <span class="source-cite">{{ row.source_cite }}</span>
+          {{ source_refs(row.source_refs) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

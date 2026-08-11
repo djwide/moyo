@@ -1,0 +1,17 @@
+<section class="page page--glossary">
+  <h2>{{ content.pages.glossary.title or "Glossary" }}</h2>
+  <p class="section-lede">{{ content.pages.glossary.lede }}</p>
+  {% for group in content.glossary %}
+  <div class="glossary-group">
+    <h3 class="glossary-group__title">{{ group.title }}</h3>
+    <dl class="glossary-terms">
+      {% for entry in group.terms %}
+      <div class="glossary-term">
+        <dt>{{ entry.term }}</dt>
+        <dd>{{ entry.definition }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </div>
+  {% endfor %}
+</section>

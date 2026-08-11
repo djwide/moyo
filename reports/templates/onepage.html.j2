@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · Exposure Snapshot · {{ data.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body>
+  <article class="onepage">
+    <header class="brand-bar">
+      <img class="logo" src="{{ logo_uri }}" alt="MOYO" />
+      <div class="date">{{ report_date }}</div>
+    </header>
+
+    <div class="eyebrow">Exposure Snapshot</div>
+    <h1 class="headline">{{ data.headline or data.topic }}</h1>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="value">{{ data.counts.findings }}</div>
+        <div class="label">Findings</div>
+      </div>
+      <div class="metric">
+        <div class="value">{{ data.counts.llms_tested }}</div>
+        <div class="label">LLMs tested</div>
+      </div>
+      <div class="metric">
+        <div class="value">{{ data.counts.high_sensitivity }}</div>
+        <div class="label">High-sensitivity</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <section class="panel">
+        <h2>Most significant finding</h2>
+        <p>{{ data.top_finding.text }}</p>
+        <p>
+          {% for b in data.top_finding.badges %}
+          <span class="badge badge-{{ b|lower }}">{{ b }}</span>
+          {% endfor %}
+        </p>
+      </section>
+      <section class="panel">
+        <h2>Model exposure</h2>
+        {% for row in data.model_exposure %}
+        <div>{{ row.model }} <span class="dots">{{ "●" * row.dots }}{{ "○" * (dot_max - row.dots) }}</span></div>
+        {% endfor %}
+      </section>
+    </div>
+
+    <div class="grid-2">
+      <section class="panel">
+        <h2>What else we found</h2>
+        <ul>
+          {% for item in data.what_else %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="panel">
+        <h2>Full assessment</h2>
+        <p>{{ data.counts.findings }} findings · {{ data.counts.chains or data.chains|length }} evidence chains</p>
+        <p>white-box testing · remediation analysis</p>
+        {% if show_request_full_report %}
+        <p><span class="cta">Request full report →</span></p>
+        {% endif %}
+      </section>
+    </div>
+  </article>
+</body>
+</html>

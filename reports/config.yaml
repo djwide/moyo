@@ -1,0 +1,100 @@
+# Human-tunable knobs for the exploration processor.
+# See docs/exploration_processor.md for the full operator guide.
+
+input:
+  exploration: null          # set via CLI --exploration
+  summary: null              # optional; auto-detect sibling summary.md
+
+output:
+  run_id: null               # default: parent folder name of exploration.md
+  dir: reports/build         # artifacts land in <dir>/<run_id>/
+
+chunk:
+  target_tokens: 8000        # aim 5–15k
+  max_tokens: 15000
+  min_tokens: 120            # skip thinner stubs before paid extract
+  languages: null            # e.g. [English] to cut multilingual extract cost
+  skip_refusals: true        # skip refusal / empty-hedge chunks before extract
+  include_failed: false
+  include_pruned_stubs: false
+
+extract:
+  provider: custom
+  model: kimi-k2.6
+  base_url: https://api.moonshot.ai/v1
+  api_key: $MOONSHOT_API_KEY
+  temperature: 0.2
+  max_tokens: 2500
+  workers: 4
+  prompt: prompts/extract_claims.md
+  require_raw_excerpt: true
+  # Phase 2 (not implemented yet): cheap triage before paid extract
+  # triage:
+  #   enabled: true
+  #   backend: heuristic   # later: ollama
+  #   keep: [dense, sparse]
+  # Emits triage.jsonl under the run dir when enabled.
+
+cluster:
+  similarity_threshold: 0.82
+  corroboration_min_sources: 2
+  prompt: prompts/cluster_claims.md
+
+score:
+  weights:
+    sensitivity: 0.25
+    specificity: 0.25
+    novelty: 0.20
+    interestingness: 0.20
+    confidence: 0.10
+  high_sensitivity_min: 4
+  top_finding_count: 1
+  chain_count: 3
+
+graphics:
+  emit:
+    - exposure_radar
+    - model_heatmap
+    - sensitivity_distribution
+    - evidence_graph
+  model_aliases:
+    "ChatGPT (OpenAI gpt-4o)": GPT
+    "Gemini (Google gemini-3.1-pro-preview)": Gemini
+    "Grok (xAI grok-4.5)": Grok
+    "Kimi (Moonshot kimi-k2.6)": Kimi
+    "Llama 3.1 8B (local)": Llama
+    "Llama 3.3 70B Instruct": Llama70
+    "Llama 4 Maverick": Maverick
+    "DeepSeek Chat": DeepSeek
+    "Qwen (Alibaba qwen-plus)": Qwen
+    "Claude (Anthropic Sonnet)": Claude
+    "Perplexity (sonar-pro)": Perplexity
+  dot_max: 5
+
+render:
+  headline: null             # override auto headline from topic
+  report_date: null          # ISO date or null (= today)
+  logo: assets/branding/MoyoLogo.png
+  partner_logo: assets/branding/SenTeGuardLogo.png
+  favicon: assets/branding/favicon-32x32.png
+  # Basis Report remediation is sourced from the ISVF control catalog.
+  # Path is relative to the repo root (or absolute). Set null to disable.
+  isvf_path: IdeaSecurityVerificationFramework
+  # Off by default; enable via --include-remediation or this flag.
+  include_remediation: false
+  show_request_full_report: false  # one-pager omits CTA; email may still CTA
+  page_size: A4
+  design_system: design-system
+  executive_prompt: prompts/executive_summary.md
+  followups_prompt: prompts/recommend_followups.md
+  # Per-run package: content (md/yaml) separate from presentation (design-system)
+  package_layout: true
+  # Alert email (output/alert-email.*) — may include a purchase/CTA URL
+  email_cta_text: Request the full MOYO exposure assessment
+  email_cta_url: null        # e.g. https://moyo.example/request-report
+
+brand:
+  teal: "#4FB0A2"
+  cream: "#F2F1E8"
+  ink: "#1D2228"
+  black: "#000000"

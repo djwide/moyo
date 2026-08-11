@@ -17,7 +17,8 @@ def build_regex_rules_master(data_dir: Optional[pathlib.Path] = None) -> pathlib
     Build regex_rules_master.json by combining component files with regex_internal.json.
     
     Args:
-        data_dir: Directory containing component files. Defaults to data/sente/static_hits.
+        data_dir: Directory containing component regex JSON files. Defaults to
+            ``data`` (master written as ``data/regex_rules_master.json``).
         
     Returns:
         Path to the generated master file.
@@ -25,7 +26,7 @@ def build_regex_rules_master(data_dir: Optional[pathlib.Path] = None) -> pathlib
     This function should be used as the only source for static scanning.
     """
     if data_dir is None:
-        data_dir = pathlib.Path("data/sente/static_hits")
+        data_dir = pathlib.Path("data")
     
     master_rules = {
         "_meta": {
@@ -109,13 +110,13 @@ def get_component_file_paths(data_dir: Optional[pathlib.Path] = None) -> Dict[st
     Get paths to all component regex rule files.
     
     Args:
-        data_dir: Directory containing component files. Defaults to data/sente/static_hits.
+        data_dir: Directory containing component files. Defaults to data.
         
     Returns:
         Dictionary mapping component names to their file paths.
     """
     if data_dir is None:
-        data_dir = pathlib.Path("data/sente/static_hits")
+        data_dir = pathlib.Path("data")
     
     component_files = {
         "secrets": data_dir / "secrets.json",
@@ -134,13 +135,13 @@ def validate_component_files(data_dir: Optional[pathlib.Path] = None) -> Dict[st
     Validate that all component files exist and are valid JSON.
     
     Args:
-        data_dir: Directory containing component files. Defaults to data/sente/static_hits.
+        data_dir: Directory containing component files. Defaults to data.
         
     Returns:
         Dictionary mapping component names to validation status.
     """
     if data_dir is None:
-        data_dir = pathlib.Path("data/sente/static_hits")
+        data_dir = pathlib.Path("data")
     
     component_paths = get_component_file_paths(data_dir)
     validation_results = {}
@@ -170,13 +171,13 @@ def get_rule_statistics(data_dir: Optional[pathlib.Path] = None) -> Dict[str, in
     Get statistics about rules in each component file.
     
     Args:
-        data_dir: Directory containing component files. Defaults to data/sente/static_hits.
+        data_dir: Directory containing component files. Defaults to data.
         
     Returns:
         Dictionary mapping component names to rule counts.
     """
     if data_dir is None:
-        data_dir = pathlib.Path("data/sente/static_hits")
+        data_dir = pathlib.Path("data")
     
     component_paths = get_component_file_paths(data_dir)
     statistics = {}

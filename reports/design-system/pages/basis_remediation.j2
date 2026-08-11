@@ -1,0 +1,56 @@
+{% from "components/macros.j2" import remediation_box %}
+<section class="page page--basis-remediation">
+  <h2>Actionable Remediation and Investigation Steps</h2>
+  <p class="basis-lede">
+    Remediation is mapped to the Idea Security Verification Framework (ISVF)
+    control catalog. Each control below includes the framework control
+    statement and concrete investigation steps drawn from its evidence
+    requirements.
+  </p>
+
+  {% if content.basis.remediation %}
+  {% for fam in content.basis.remediation %}
+  <div class="remediation-family">
+    <div class="remediation-family__head">
+      <h3 class="remediation-family__name">
+        {{ fam.family_name }}
+        <span class="remediation-family__code">{{ fam.family_code }}</span>
+      </h3>
+      {% if fam.why %}<p class="remediation-family__why">{{ fam.why }}</p>{% endif %}
+    </div>
+    {% for ctl in fam.controls %}
+    <div class="remediation-control">
+      <p class="remediation-control__title">
+        {{ ctl.title }}
+        <span class="remediation-control__code">{{ ctl.code }}{% if ctl.mitigations %} · {{ ctl.mitigations|join(', ') }}{% endif %}</span>
+      </p>
+      {% if ctl.statement %}<p class="remediation-control__statement">{{ ctl.statement }}</p>{% endif %}
+      {% if ctl.investigation_steps %}
+      <ul class="remediation-steps">
+        {% for step in ctl.investigation_steps %}
+        <li>{{ step }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <p class="remediation-source">
+    Source: Idea Security Verification Framework — Control Catalog
+    (SenTeGuard). Controls are provisional draft guidance.
+  </p>
+  {% else %}
+  <p class="basis-lede">
+    ISVF control catalog was not available at build time; remediation mapping
+    was skipped. Configure <code>render.isvf_path</code> to enable it.
+  </p>
+  {% endif %}
+
+  {% if content.followups %}
+  <h3>Run-Specific Follow-Ups</h3>
+  {% for item in content.followups %}
+    {{ remediation_box(item) }}
+  {% endfor %}
+  {% endif %}
+</section>

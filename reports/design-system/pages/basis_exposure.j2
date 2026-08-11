@@ -1,0 +1,49 @@
+{% from "components/macros.j2" import svg_asset, severity_badge, citation_line %}
+<section class="page page--basis-exposure">
+  <h2>Source and Evidence Graph</h2>
+  <p class="basis-lede">
+    How individual model outputs connect into claims, and how those claims
+    combine into higher-level exposures.
+  </p>
+  {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide') }}
+
+  {% if content.basis.cross_chain_implication %}
+  <p class="chain-implication">{{ content.basis.cross_chain_implication }}</p>
+  {% endif %}
+
+  <h2>Exposure Detail: What Was Recovered and How</h2>
+  {% for c in content.basis.chain_details %}
+  <article class="chain-block">
+    <h3 class="chain-block__title">{{ c.label }}</h3>
+    <p class="chain-block__meta">
+      {{ c.chain_id }} · {{ c.model_count }} corroborating model(s) · score {{ c.score }}
+    </p>
+
+    <div class="chain-subhead">What was inferred / recovered</div>
+    <p class="chain-recovered">{{ c.recovered }}</p>
+    {{ citation_line(c.citations) }}
+
+    <div class="chain-subhead">Exactly how MOYO reached this</div>
+    <ol class="chain-steps">
+      {% for step in c.derivation.steps %}
+      <li>{{ step }}</li>
+      {% endfor %}
+    </ol>
+
+    <div class="chain-subhead">Multiple corroborating model outputs</div>
+    {% for o in c.corroborating_outputs %}
+    <div class="corroboration-item">
+      <div class="corroboration-item__source">{{ o.source }} · <span class="mono">{{ o.claim_id }}</span></div>
+      <p class="corroboration-item__claim">{{ o.claim }}</p>
+      {% if o.excerpt %}
+      <div class="corroboration-item__excerpt">{{ o.excerpt | md }}{% if o.start_line %}<div class="corroboration-item__lines">lines {{ o.start_line }}–{{ o.end_line or o.start_line }}</div>{% endif %}</div>
+      {% endif %}
+      {{ citation_line(o.citations) }}
+    </div>
+    {% endfor %}
+
+    <div class="chain-subhead">Specific implication / exploitation scenario</div>
+    <p class="chain-implication">{{ c.implication }}</p>
+  </article>
+  {% endfor %}
+</section>

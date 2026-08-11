@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO Basis Report · {{ content.meta.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body>
+  {% include "pages/basis_cover.j2" %}
+  {% include "pages/executive_summary.j2" %}
+  {% include "pages/risk_overview.j2" %}
+  {% include "pages/basis_inventory.j2" %}
+  {% include "pages/basis_findings.j2" %}
+  {% include "pages/basis_exposure.j2" %}
+  {% if content.meta.include_remediation %}
+  {% include "pages/basis_remediation.j2" %}
+  {% endif %}
+  {% if content.next_steps and content.next_steps.basis %}
+  {% with section = content.next_steps.basis %}
+  {% include "pages/next_steps.j2" %}
+  {% endwith %}
+  {% endif %}
+  {% include "pages/sources.j2" %}
+  {% include "pages/glossary.j2" %}
+</body>
+</html>

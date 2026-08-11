@@ -146,14 +146,13 @@ class StructureAwareGrammarFuzzer:
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
-        """Load synonym map from data directory."""
+        """Return the optional synonym map (empty — shared JSON map removed)."""
         try:
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            from shared_utils.regex_utils import load_synonym_map
+
+            return load_synonym_map()
         except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
+            logger.warning("Failed to load synonym map: %s", e)
         return {}
     
     def fuzz_with_structure_awareness(self, text: str, target_concept: str) -> str:
@@ -268,14 +267,13 @@ class MutationalFuzzer:
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
-        """Load synonym map from data directory."""
+        """Return the optional synonym map (empty — shared JSON map removed)."""
         try:
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            from shared_utils.regex_utils import load_synonym_map
+
+            return load_synonym_map()
         except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
+            logger.warning("Failed to load synonym map: %s", e)
         return {}
     
     def apply_mutations(self, text: str, target_concept: str) -> str:
@@ -366,14 +364,13 @@ class RandomWalkParaphraser:
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
-        """Load synonym map from data directory."""
+        """Return the optional synonym map (empty — shared JSON map removed)."""
         try:
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            from shared_utils.regex_utils import load_synonym_map
+
+            return load_synonym_map()
         except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
+            logger.warning("Failed to load synonym map: %s", e)
         return {}
     
     def random_walk_paraphrase(self, text: str, target_concept: str) -> str:
@@ -454,14 +451,13 @@ class DifferentialRandomFuzzer:
         self.synonym_map = self._load_synonym_map()
     
     def _load_synonym_map(self) -> Dict[str, List[str]]:
-        """Load synonym map from data directory."""
+        """Return the optional synonym map (empty — shared JSON map removed)."""
         try:
-            synonym_file = Path(__file__).resolve().parents[3] / "data" / "synonym_map.json"
-            if synonym_file.exists():
-                with open(synonym_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+            from shared_utils.regex_utils import load_synonym_map
+
+            return load_synonym_map()
         except Exception as e:
-            logger.warning(f"Failed to load synonym map: {e}")
+            logger.warning("Failed to load synonym map: %s", e)
         return {}
     
     def differential_fuzz(self, text: str, target_concept: str) -> str:

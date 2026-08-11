@@ -16,7 +16,8 @@ Configuration:
 
 The GUI (**Create Private Index**, **Build Public Corpus**) exposes the full
 catalog plus a device selector (`Auto` / `CUDA` / `CPU`). Catalog keys live in
-`shared_utils/model_config.py` (`EMBEDDING_CATALOG`).
+`shared_utils/model_config.py` (`EMBEDDING_CATALOG`). The selected model key is
+persisted in `config/model_config.json` (override directory with `MOYO_CONFIG_DIR`).
 
 ## GPU setup
 
