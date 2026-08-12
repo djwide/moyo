@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to config/retrieval_llms.json to configure the LLMs a naive-prompt exploration fans out to. api_key values of the form \"$ENV_VAR\" are read from the environment so secrets stay out of this file. Provider kinds: openai/anthropic = closed API, custom = open / self-hosted OpenAI-compatible endpoint, ollama = local, echo = offline stub.",
+  "_comment": "Copy to config/retrieval_llms.json to configure the LLMs a naive-prompt exploration fans out to. Do not list local Ollama as a retrieval target (Ollama is for rewording/clustering only). api_key values of the form \"$ENV_VAR\" are read from the environment so secrets stay out of this file. Provider kinds: openai/anthropic = closed API, custom = open / self-hosted OpenAI-compatible endpoint, echo = offline stub.",
   "retrieval_llms": [
     {
       "provider": "openai",
@@ -26,12 +26,6 @@
       "base_url": "https://api.perplexity.ai",
       "api_key": "$PERPLEXITY_API_KEY",
       "label": "Perplexity (sonar-pro)"
-    },
-    {
-      "provider": "ollama",
-      "model": "llama3.1:8b",
-      "base_url": "http://localhost:11434",
-      "label": "Local Ollama Llama 3.1 8B"
     }
   ]
 }

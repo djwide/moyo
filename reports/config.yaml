@@ -36,9 +36,29 @@ extract:
   # Emits triage.jsonl under the run dir when enabled.
 
 cluster:
-  similarity_threshold: 0.82
+  # Local Ollama groups paraphrases of the same atomic fact (no Jaccard).
+  provider: ollama
+  model: llama3.1:8b
+  base_url: http://localhost:11434
+  temperature: 0.1
+  max_tokens: 4000
+  num_ctx: 16000
+  timeout: 180
+  batch_size: 35              # claims per Ollama grouping call
   corroboration_min_sources: 2
+  collapse: true              # merge similar claims; false = annotate-only
   prompt: prompts/cluster_claims.md
+
+# Post-cluster LLM stages (executive summary, follow-ups, Englishize).
+# Uses Kimi — never the local Ollama cluster model.
+synthesize:
+  provider: custom
+  model: kimi-k2.6
+  base_url: https://api.moonshot.ai/v1
+  api_key: $MOONSHOT_API_KEY
+  temperature: 0.3
+  max_tokens: 2000
+  timeout: 120
 
 score:
   weights:
@@ -62,7 +82,6 @@ graphics:
     "Gemini (Google gemini-3.1-pro-preview)": Gemini
     "Grok (xAI grok-4.5)": Grok
     "Kimi (Moonshot kimi-k2.6)": Kimi
-    "Llama 3.1 8B (local)": Llama
     "Llama 3.3 70B Instruct": Llama70
     "Llama 4 Maverick": Maverick
     "DeepSeek Chat": DeepSeek

@@ -311,19 +311,61 @@ def englishize_findings(
     return out
 
 
-def default_translate_fn() -> TranslateFn | None:
-    """Best-effort local translator; returns None if unavailable."""
+def kimi_translate_fn(llm_config: dict[str, Any] | None = None) -> TranslateFn | None:
+    """Translate via Kimi / Moonshot API (post-cluster report stages)."""
+    cfg = dict(llm_config or {})
     try:
-        from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
+        from moyo.llm.client import LLMClient, LLMSpec
+        from moyo.llm.testing import is_test_mode
 
-        fuzzer = LLMFuzzer.local_ollama()
+        if is_test_mode():
+            return None
+    except Exception:
+        return None
+
+    try:
+        spec = LLMSpec.from_dict(
+            {
+                "provider": cfg.get("provider", "custom"),
+                "model": cfg.get("model", "kimi-k2.6"),
+                "base_url": cfg.get("base_url", "https://api.moonshot.ai/v1"),
+                "api_key": cfg.get("api_key", "$MOONSHOT_API_KEY"),
+                "temperature": float(cfg.get("temperature", 0.1)),
+                "max_tokens": int(cfg.get("max_tokens", 2000)),
+                "timeout": int(cfg.get("timeout", 120)),
+            }
+        )
+        if not spec.api_key:
+            return None
+        client = LLMClient(spec)
+        if not client.is_available():
+            return None
     except Exception:
         return None
 
     def _translate(text: str) -> str:
+        src = (text or "").strip()
+        if not src:
+            return ""
+        prompt = (
+            "Translate the following text into clear English. "
+            "Return only the English translation, with no preamble.\n\n"
+            f"{src}"
+        )
         try:
-            return (fuzzer.localize_to_english(text).english or "").strip()
+            return (client.complete(prompt) or "").strip()
         except Exception:
-            return text
+            return src
 
     return _translate
+
+
+def default_translate_fn(
+    llm_config: dict[str, Any] | None = None,
+) -> TranslateFn | None:
+    """Best-effort translator for report Englishization.
+
+    Prefers the Kimi API (``llm_config`` / extract defaults). Does not use
+    local Ollama — clustering is the only Ollama stage.
+    """
+    return kimi_translate_fn(llm_config)

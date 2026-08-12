@@ -1,24 +1,25 @@
-# Cluster and reconcile claims
+# Group claims that state the same atomic fact
 
-You receive many claim objects from multi-LLM extraction. Merge paraphrases of
-the **same atomic fact**, update `corroboration` (distinct `source_model`
-labels), `source_count` (distinct citations across the cluster), raise
-`confidence` when multiple LLMs and/or multiple citations agree, and assign
-final `status`:
+You are clustering extracted claims. Decide which claims are paraphrases of the
+**same atomic fact** (same who/what/when/amount/event), even when wording differs.
 
-- CORROBORATED — ≥ {{ corroboration_min_sources }} distinct LLMs agree
-- CONTESTED — sources materially disagree
-- OUTLIER — surprising / extreme vs consensus (keep; do not drop)
-- UNVERIFIED — weak grounding
-- MODEL-SPECIFIC — distinctive to one model
+Return **only** JSON (no markdown fences):
 
-Confidence boost (applied on top of extraction confidence, capped at 5):
-+1 for ≥2 LLMs, +1 for ≥3 LLMs, +1 for ≥2 citations, +1 for ≥3 citations.
+```json
+{ "groups": [["C0001", "C0004"], ["C0002"], ["C0003", "C0005", "C0008"]] }
+```
 
-Never drop contested, outlier, sensitive, or single-source findings.
+## Rules
 
-Return JSON: `{ "findings": [ ...merged claims... ], "disagreements": [ ... ] }`.
+- Every input `claim_id` must appear in **exactly one** group.
+- Put claims in the same group only when they assert the same concrete fact.
+- Different facts about the same person/topic stay in **separate** groups
+  (e.g. a Bank of China account vs late STOCK Act filings).
+- Prefer merging when numbers/dates match or one claim is a stricter version of
+  another (e.g. "$100,001–$250,000" vs "Bank of China account").
+- Do not invent claim_ids. Use only ids from the input list.
+- If unsure, keep claims in separate singleton groups.
 
-## Input
+## Claims
 
 {{ claims_json }}

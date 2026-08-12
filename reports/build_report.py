@@ -24,6 +24,9 @@ from pipeline.parse import (
     exploration_run_meta,
     load_chunks_manifest,
     parse_exploration,
+    prompts_from_exploration,
+    remember_exploration_path,
+    resolve_exploration_path,
     topic_from_exploration,
     write_chunks_manifest,
 )
@@ -157,6 +160,7 @@ def render_pdfs(
         overwrite_graphics=not keep_graphics,
         isvf_path=isvf_path,
         include_remediation=include_remediation,
+        llm_config=(cfg.get("synthesize") or cfg.get("extract") or {}),
     )
 
     output_dir = run_dir / "output"
@@ -419,6 +423,17 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = _resolve_run_dir(cfg, run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Recover exploration.md for mid-pipeline rebuilds (topic / cover prompt /
+    # explore_meta) even when --exploration was omitted.
+    exploration = resolve_exploration_path(
+        exploration=exploration,
+        run_id=run_id,
+        run_dir=run_dir,
+        repo_root=REPO_ROOT,
+    )
+    if exploration is not None:
+        remember_exploration_path(run_dir, exploration, repo_root=REPO_ROOT)
+
     start = stage_index(args.from_stage)
     stop = stage_index(args.stop_after)
     if stop < start:
@@ -430,6 +445,8 @@ def main(argv: list[str] | None = None) -> int:
 
     chunk_cfg = cfg.get("chunk") or {}
     extract_cfg = cfg.get("extract") or {}
+    # Post-cluster LLM stages (synthesize, Englishize) use Kimi — never Ollama.
+    synthesize_cfg = cfg.get("synthesize") or extract_cfg
     cluster_cfg = cfg.get("cluster") or {}
     score_cfg = cfg.get("score") or {}
     graphics_cfg = cfg.get("graphics") or {}
@@ -505,15 +522,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if want("cluster"):
         print("[3] cluster", file=sys.stderr)
+        before_n = len(claims)
+        prompt_rel = cluster_cfg.get("prompt") or "prompts/cluster_claims.md"
         claims, clusters = cluster_claims(
             claims,
-            similarity_threshold=float(cluster_cfg.get("similarity_threshold", 0.82)),
             corroboration_min_sources=int(cluster_cfg.get("corroboration_min_sources", 2)),
+            collapse=bool(cluster_cfg.get("collapse", True)),
+            llm_config=cluster_cfg,
+            prompt_path=REPORTS_ROOT / prompt_rel,
+            dry_run=bool(args.dry_run),
         )
         with claims_path.open("w", encoding="utf-8") as f:
             for c in claims:
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
-        print(f"  → {len(clusters)} clusters", file=sys.stderr)
+        print(
+            f"  → {len(clusters)} clusters; "
+            f"collapsed {before_n} → {len(claims)} claims",
+            file=sys.stderr,
+        )
     elif start > stage_index("cluster"):
         from collections import defaultdict
 
@@ -535,8 +561,10 @@ def main(argv: list[str] | None = None) -> int:
         print("[3] score → report_data.json", file=sys.stderr)
         if exploration and exploration.exists():
             topic = topic_from_exploration(exploration)
+            prompts = prompts_from_exploration(exploration)
         else:
             topic = run_id.replace("_", " ")
+            prompts = [topic] if topic and topic != run_id else []
         report_data = score_report(
             claims,
             clusters,
@@ -545,6 +573,9 @@ def main(argv: list[str] | None = None) -> int:
             config=score_cfg,
             graphics_cfg=graphics_cfg,
         )
+        if prompts:
+            report_data["prompts"] = prompts
+            report_data["topic"] = prompts[0]
         if render_cfg.get("headline"):
             report_data["headline"] = render_cfg["headline"]
         if exploration and exploration.exists():
@@ -560,11 +591,16 @@ def main(argv: list[str] | None = None) -> int:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
         if exploration and exploration.exists() and not report_data.get("explore_meta"):
             report_data["explore_meta"] = exploration_run_meta(exploration)
+        if exploration and exploration.exists():
+            prompts = prompts_from_exploration(exploration)
+            if prompts:
+                report_data["prompts"] = prompts
+                report_data["topic"] = prompts[0]
         report_data = synthesize(
             report_data,
             prompts_dir=REPORTS_ROOT / "prompts",
             config=render_cfg,
-            llm_config=extract_cfg,
+            llm_config=synthesize_cfg,
             dry_run=args.dry_run,
         )
         report_data_path.write_text(json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -602,6 +638,14 @@ def main(argv: list[str] | None = None) -> int:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
         if exploration and exploration.exists() and not report_data.get("explore_meta"):
             report_data["explore_meta"] = exploration_run_meta(exploration)
+        if exploration and exploration.exists():
+            prompts = prompts_from_exploration(exploration)
+            if prompts and (
+                not report_data.get("prompts")
+                or report_data.get("topic") in {None, "", run_id}
+            ):
+                report_data["prompts"] = prompts
+                report_data["topic"] = prompts[0]
         if args.keep_graphics:
             graphics = load_graphics_assets(run_dir, emit=emit or None)
             print(f"  → using assets/*.svg (not regenerating)", file=sys.stderr)

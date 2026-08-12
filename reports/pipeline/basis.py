@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .textclean import plain_text
+from .cluster import dedupe_findings_by_group
 
 
 def _severity_label(sensitivity: int) -> str:
@@ -87,6 +88,39 @@ def _dominant_category(members: list[dict]) -> str:
     return max(counts, key=counts.get)
 
 
+def _corroborating_outputs(finding: dict[str, Any]) -> list[dict[str, Any]]:
+    """Model-level rows for a collapsed group (from member_scores when present)."""
+    scores = finding.get("member_scores")
+    if isinstance(scores, list) and scores:
+        rows = []
+        for m in scores:
+            rows.append(
+                {
+                    "claim_id": m.get("claim_id"),
+                    "source": m.get("source_model"),
+                    "source_model": m.get("source_model"),
+                    "claim": plain_text(m.get("claim")),
+                    "excerpt": m.get("raw_excerpt") or finding.get("raw_excerpt"),
+                    "start_line": m.get("raw_start_line") or finding.get("raw_start_line"),
+                    "end_line": m.get("raw_end_line") or finding.get("raw_end_line"),
+                    "citations": list(m.get("citations") or []),
+                }
+            )
+        return rows
+    return [
+        {
+            "claim_id": finding.get("claim_id"),
+            "source": finding.get("source_cite") or finding.get("source_model"),
+            "source_model": finding.get("source_model"),
+            "claim": plain_text(finding.get("claim")),
+            "excerpt": finding.get("raw_excerpt"),
+            "start_line": finding.get("raw_start_line"),
+            "end_line": finding.get("raw_end_line"),
+            "citations": list(finding.get("citations_display") or []),
+        }
+    ]
+
+
 def build_basis_section(
     report_data: dict[str, Any],
     findings: list[dict[str, Any]],
@@ -94,17 +128,16 @@ def build_basis_section(
     remediation: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the ``basis`` content block consumed by the Basis Report template."""
-    findings = list(findings or [])
+    # One inventory / findings row per collapsed exposure group.
+    findings = dedupe_findings_by_group(list(findings or []))
     by_id = {f.get("claim_id"): f for f in findings if f.get("claim_id")}
     chains = list(report_data.get("chains") or [])
 
-    # 1) Complete prioritized exposure inventory (all findings, ranked).
-    #    Kept to five columns so the table fits the page width.
+    # 1) Complete prioritized exposure inventory (collapsed groups only).
     inventory = [
         {
             "claim_id": f.get("claim_id"),
             "claim": plain_text(f.get("claim")),
-            # Underscored slugs break mid-word in a narrow column.
             "category": plain_text(f.get("category")).replace("_", " ") or "unclassified",
             "corroboration": f.get("corroboration") or 1,
             "source_cite": f.get("source_cite") or f.get("source_model"),
@@ -122,80 +155,84 @@ def build_basis_section(
         row["rationale"] = _rationale(f)
         findings_full.append(row)
 
-    # 3) What was inferred/recovered + corroborating outputs + derivation,
-    #    organized per exposure chain (clusters of related claims).
+    # 3) Exposure chains: one collapsed finding per chain; corroborating model
+    #    paraphrases come from member_scores, not duplicate inventory rows.
     chain_details = []
     for ch in chains:
         member_ids = list(ch.get("claim_ids") or [])
         members = [by_id[c] for c in member_ids if c in by_id]
         if not members:
+            # Locate survivor that absorbed these member ids
+            wanted = set(member_ids)
+            members = [
+                f
+                for f in findings
+                if wanted.intersection(set(f.get("merged_from") or []))
+                or f.get("claim_id") in wanted
+            ]
+        if not members:
             continue
-        models = sorted({m.get("source_model") for m in members if m.get("source_model")})
-        cited: list[dict[str, str]] = []
-        for m in members:
-            for entry in m.get("citations_display") or []:
-                if all(c.get("ref") != entry.get("ref") for c in cited):
-                    cited.append(entry)
-        query_ids = sorted({m.get("query_id") for m in members if m.get("query_id")})
-        line_spans = [
-            f"lines {m.get('raw_start_line')}\u2013{m.get('raw_end_line')}"
-            for m in members
-            if m.get("raw_start_line")
-        ]
         rep = members[0]
+        models = list(
+            ch.get("models")
+            or rep.get("source_models")
+            or ([rep.get("source_model")] if rep.get("source_model") else [])
+        )
+        models = [m for m in models if m]
+        cited: list[dict[str, str]] = []
+        for entry in rep.get("citations_display") or []:
+            if all(c.get("ref") != entry.get("ref") for c in cited):
+                cited.append(entry)
+        query_ids = sorted(
+            {
+                *(rep.get("query_ids") or []),
+                *([rep.get("query_id")] if rep.get("query_id") else []),
+            }
+        )
+        line_spans = []
+        if rep.get("raw_start_line"):
+            line_spans.append(
+                f"lines {rep.get('raw_start_line')}\u2013{rep.get('raw_end_line')}"
+            )
+        group_size = int(rep.get("merged_count") or len(rep.get("member_scores") or []) or 1)
         chain_details.append(
             {
                 "chain_id": ch.get("chain_id"),
                 "label": plain_text(ch.get("label") or rep.get("claim"))[:120],
                 "score": ch.get("score"),
                 "recovered": plain_text(rep.get("claim")),
-                "model_count": len(models),
+                "model_count": len(models) or int(rep.get("corroboration") or 1),
                 "models": models,
-                "member_ids": member_ids,
+                "member_ids": list(rep.get("merged_from") or member_ids),
                 "citations": cited[:8],
-                # Multiple corroborating model outputs (verbatim per model).
-                "corroborating_outputs": [
-                    {
-                        "claim_id": m.get("claim_id"),
-                        "source": m.get("source_cite") or m.get("source_model"),
-                        "source_model": m.get("source_model"),
-                        "claim": plain_text(m.get("claim")),
-                        "excerpt": m.get("raw_excerpt"),
-                        "start_line": m.get("raw_start_line"),
-                        "end_line": m.get("raw_end_line"),
-                        "citations": list(m.get("citations_display") or []),
-                    }
-                    for m in members
-                ],
-                # Exactly how MOYO reached this conclusion (provenance trail).
+                "corroborating_outputs": _corroborating_outputs(rep),
                 "derivation": {
                     "query_ids": query_ids,
                     "models": models,
                     "line_spans": line_spans[:6],
-                    "cluster_size": len(members),
+                    "cluster_size": group_size,
                     "score": ch.get("score"),
                     "steps": [
                         (
                             f"Reworded the operator prompt into retrieval seeds "
-                            f"({', '.join(query_ids) or 'multiple queries'})."
+                            f"({', '.join(str(q) for q in query_ids) or 'multiple queries'})."
                         ),
                         (
-                            f"Fanned out to {len(models)} model(s): "
-                            f"{', '.join(models) or 'multiple models'}."
+                            f"Fanned out to {len(models) or int(rep.get('corroboration') or 1)} "
+                            f"model(s): {', '.join(str(m) for m in models) or 'multiple models'}."
                         ),
                         (
                             "Extracted atomic claims with source line offsets "
                             + (f"({'; '.join(line_spans[:4])})." if line_spans else ".")
                         ),
                         (
-                            f"Clustered {len(members)} paraphrases into one "
+                            f"Collapsed {group_size} paraphrase(s) into one "
                             f"exposure and scored it ({ch.get('score')})."
                         ),
                     ],
                 },
-                # Specific implication / exploitation scenario.
                 "implication": _CATEGORY_SCENARIOS.get(
-                    _dominant_category(members), _GENERIC_SCENARIO
+                    _dominant_category([rep]), _GENERIC_SCENARIO
                 ),
             }
         )

@@ -97,11 +97,18 @@ def model_heatmap_svg(
     model_labels: dict[str, str] = {}
     seen_m: set[str] = set()
     for f in all_findings:
-        key = short_model_name(f["source_model"], aliases)
-        if key not in seen_m:
+        raw_models = f.get("source_models")
+        if not isinstance(raw_models, list) or not raw_models:
+            raw_models = [f.get("source_model") or ""]
+        for raw in raw_models:
+            key = short_model_name(str(raw or ""), aliases)
+            if not key or key in seen_m:
+                continue
             seen_m.add(key)
             model_keys.append(key)
-            model_labels[key] = full_model_name(f["source_model"])
+            model_labels[key] = full_model_name(str(raw or ""))
+            if len(model_keys) >= 10:
+                break
         if len(model_keys) >= 10:
             break
     if not model_keys:
@@ -162,11 +169,18 @@ def model_heatmap_svg(
     claim_index = {f["claim_id"]: j for j, f in enumerate(claims)}
     for f in all_findings:
         cid = f.get("claim_id")
-        key = short_model_name(f.get("source_model") or "", aliases)
-        if cid in claim_index and key in model_keys:
-            i = model_keys.index(key)
-            j = claim_index[cid]
-            grid[(i, j)] = max(0, min(5, int(f.get("sensitivity", 1))))
+        if cid not in claim_index:
+            continue
+        j = claim_index[cid]
+        sens = max(0, min(5, int(f.get("sensitivity", 1) or 0)))
+        raw_models = f.get("source_models")
+        if not isinstance(raw_models, list) or not raw_models:
+            raw_models = [f.get("source_model") or ""]
+        for raw in raw_models:
+            key = short_model_name(str(raw or ""), aliases)
+            if key in model_keys:
+                i = model_keys.index(key)
+                grid[(i, j)] = max(grid[(i, j)], sens)
 
     panel_x = left - 8
     panel_y = top - 8

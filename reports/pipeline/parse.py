@@ -46,6 +46,18 @@ def _clean_model_label(raw: str) -> str:
     return label
 
 
+def is_local_ollama_label(label: str | None) -> bool:
+    """True for local Ollama retrieval labels (not hosted Llama via API)."""
+    s = (label or "").strip().lower()
+    if not s:
+        return False
+    if "local ollama" in s:
+        return True
+    if "llama 3.1 8b" in s and "(local)" in s:
+        return True
+    return False
+
+
 def parse_exploration(
     path: Path,
     *,
@@ -141,6 +153,8 @@ def parse_exploration(
             continue
 
         for mi, (m_start, model) in enumerate(model_starts):
+            if is_local_ollama_label(str(model)):
+                continue
             m_end = model_starts[mi + 1][0] if mi + 1 < len(model_starts) else q_end
             text = "\n".join(lines[m_start:m_end])
             failed = bool(FAILED_RE.search(text[:500]))
@@ -303,7 +317,12 @@ def exploration_run_meta(path: Path) -> dict:
                 continue
             for label in _RETRIEVAL_MODEL_RE.findall(line):
                 cleaned = _clean_model_label(label)
-                if cleaned and cleaned not in models and cleaned.lower() != fuzz_mode:
+                if (
+                    cleaned
+                    and cleaned not in models
+                    and cleaned.lower() != fuzz_mode
+                    and not is_local_ollama_label(cleaned)
+                ):
                     models.append(cleaned)
 
     return {
@@ -312,3 +331,112 @@ def exploration_run_meta(path: Path) -> dict:
         "languages": languages,
         "models_tested": models,
     }
+
+
+_EXPLORATION_PTR = "exploration.path"
+
+
+def remember_exploration_path(
+    run_dir: Path,
+    exploration: Path,
+    *,
+    repo_root: Path | None = None,
+) -> None:
+    """Persist the source exploration.md path for mid-pipeline rebuilds."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = exploration.resolve()
+    text = str(path)
+    if repo_root is not None:
+        try:
+            text = str(path.relative_to(repo_root.resolve()))
+        except ValueError:
+            pass
+    (run_dir / _EXPLORATION_PTR).write_text(text + "\n", encoding="utf-8")
+
+
+def _read_exploration_pointer(run_dir: Path, repo_root: Path) -> Path | None:
+    ptr = run_dir / _EXPLORATION_PTR
+    if not ptr.exists():
+        return None
+    raw = ptr.read_text(encoding="utf-8").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path if path.is_file() else None
+
+
+def _chunk_query_texts(chunks_path: Path) -> set[str]:
+    texts: set[str] = set()
+    if not chunks_path.is_file():
+        return texts
+    with chunks_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            qt = str(row.get("query_text") or "").strip()
+            if qt:
+                texts.add(qt)
+    return texts
+
+
+def _find_exploration_by_queries(
+    public_sources: Path,
+    queries: set[str],
+) -> Path | None:
+    """Match an exploration.md whose seed prompts appear in chunks.jsonl."""
+    if not queries or not public_sources.is_dir():
+        return None
+    best: Path | None = None
+    best_hits = 0
+    for expl in sorted(public_sources.glob("*/exploration.md")):
+        try:
+            text = expl.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        hits = sum(1 for q in queries if q in text)
+        if hits > best_hits:
+            best_hits = hits
+            best = expl
+    # Require at least two shared seeds so short run-ids don't false-match.
+    return best if best_hits >= 2 else None
+
+
+def resolve_exploration_path(
+    *,
+    exploration: Path | None,
+    run_id: str,
+    run_dir: Path,
+    repo_root: Path,
+) -> Path | None:
+    """Locate exploration.md from CLI, pointer, slug, or chunk seed match."""
+    if exploration is not None:
+        path = Path(exploration)
+        if path.is_file():
+            return path
+
+    pointed = _read_exploration_pointer(run_dir, repo_root)
+    if pointed is not None:
+        return pointed
+
+    public = repo_root / "data" / "public_sources"
+    by_slug = public / run_id / "exploration.md"
+    if by_slug.is_file():
+        return by_slug
+
+    return _find_exploration_by_queries(
+        public,
+        _chunk_query_texts(run_dir / "chunks.jsonl"),
+    )
+
+
+def prompts_from_exploration(path: Path) -> list[str]:
+    """Cover-page prompt(s): the exploration topic title."""
+    topic = topic_from_exploration(path).strip()
+    return [topic] if topic else []

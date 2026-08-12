@@ -96,10 +96,14 @@ def evidence_graph_svg(
     models: list[str] = []
     seen_m: set[str] = set()
     for f in findings:
-        m = short_model_name(f["source_model"], aliases)
-        if m not in seen_m:
-            seen_m.add(m)
-            models.append(m)
+        raw_models = f.get("source_models")
+        if not isinstance(raw_models, list) or not raw_models:
+            raw_models = [f.get("source_model") or ""]
+        for raw in raw_models:
+            m = short_model_name(str(raw or ""), aliases)
+            if m and m not in seen_m:
+                seen_m.add(m)
+                models.append(m)
 
     def _ys(n: int, top: float = node_top, bot: float = node_bot) -> list[float]:
         if n <= 1:
@@ -133,11 +137,15 @@ def evidence_graph_svg(
 
     edges = []
     for f in findings:
-        m = short_model_name(f["source_model"], aliases)
-        if m in model_pos and f["claim_id"] in claim_pos:
-            x1, y1 = model_pos[m]
-            x2, y2 = claim_pos[f["claim_id"]]
-            edges.append(_curve(x1 + 14, y1, x2 - 36, y2, opacity=0.5, color=TEAL))
+        raw_models = f.get("source_models")
+        if not isinstance(raw_models, list) or not raw_models:
+            raw_models = [f.get("source_model") or ""]
+        for raw in raw_models:
+            m = short_model_name(str(raw or ""), aliases)
+            if m in model_pos and f["claim_id"] in claim_pos:
+                x1, y1 = model_pos[m]
+                x2, y2 = claim_pos[f["claim_id"]]
+                edges.append(_curve(x1 + 14, y1, x2 - 36, y2, opacity=0.5, color=TEAL))
 
     for ch in chains:
         for cid in ch.get("claim_ids", [])[:10]:

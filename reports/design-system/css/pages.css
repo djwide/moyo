@@ -301,13 +301,13 @@ code, .mono {
   color: var(--moyo-muted);
 }
 
-/* —— Sources and Citations —— */
+/* —— Sources and Citations (compact default) —— */
 .source-table {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
   font-family: var(--font-sans);
-  font-size: 0.74rem;
+  font-size: 0.62rem;
 }
 .source-table col.col-ref { width: 14mm; }
 .source-table col.col-label { width: 146mm; }
@@ -315,14 +315,14 @@ code, .mono {
 .source-table th,
 .source-table td {
   text-align: left;
-  padding: 0.3rem 0.4rem;
+  padding: 0.12rem 0.25rem;
   border-bottom: 1px solid var(--moyo-border);
   vertical-align: top;
   overflow-wrap: break-word;
   word-break: break-word;
 }
 .source-table th {
-  font-size: 0.64rem;
+  font-size: 0.55rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--moyo-muted);
@@ -334,35 +334,35 @@ code, .mono {
 .source-table__url {
   display: block;
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: 0.55rem;
   color: var(--moyo-teal-deep);
 }
 
-/* —— Glossary —— */
-.glossary-group { margin-bottom: var(--space-5); break-inside: avoid; }
+/* —— Glossary (compact default) —— */
+.glossary-group { margin-bottom: var(--space-2); break-inside: avoid; }
 .glossary-group__title {
   font-family: var(--font-sans);
-  font-size: 0.72rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--moyo-teal-deep);
-  margin: 0 0 var(--space-2);
+  margin: 0 0 0.15rem;
   border: 0;
   padding: 0;
 }
 .glossary-terms { margin: 0; }
 .glossary-term {
   display: flex;
-  gap: var(--space-3);
-  padding: 0.22rem 0;
+  gap: var(--space-2);
+  padding: 0.08rem 0;
   border-bottom: 1px solid var(--moyo-border);
   break-inside: avoid;
 }
 .glossary-term dt {
-  flex: 0 0 44mm;
+  flex: 0 0 36mm;
   font-family: var(--font-sans);
-  font-size: 0.76rem;
+  font-size: 0.64rem;
   font-weight: 700;
   color: var(--moyo-ink);
 }
@@ -370,22 +370,22 @@ code, .mono {
   flex: 1 1 auto;
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 0.8rem;
-  line-height: 1.4;
+  font-size: 0.66rem;
+  line-height: 1.25;
   color: var(--moyo-ink);
 }
 
-/* —— Next Steps —— */
+/* —— Next Steps (compact default) —— */
 .next-steps-list {
   list-style: none;
-  margin: var(--space-4) 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   counter-reset: next-step;
 }
 .next-step {
   counter-increment: next-step;
   position: relative;
-  padding: var(--space-4) 0 var(--space-4) 2.6rem;
+  padding: var(--space-2) 0 var(--space-2) 2rem;
   border-bottom: 1px solid var(--moyo-border);
   break-inside: avoid;
 }
@@ -394,24 +394,84 @@ code, .mono {
   content: counter(next-step, decimal-leading-zero);
   position: absolute;
   left: 0;
-  top: var(--space-4);
+  top: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   letter-spacing: 0.04em;
   color: var(--moyo-teal-deep);
 }
 .next-step__title {
   font-family: var(--font-sans);
-  font-size: 0.95rem;
-  margin: 0 0 var(--space-2);
+  font-size: 0.8rem;
+  margin: 0 0 0.15rem;
   border: 0;
   padding: 0;
 }
 .next-step__body {
   font-family: var(--font-serif);
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 0.78rem;
+  line-height: 1.3;
   color: var(--moyo-ink);
   margin: 0;
-  max-width: 68ch;
+  max-width: none;
+}
+
+/* —— Dense trailing / abridged pages —— */
+.page--findings,
+.page--evidence,
+.page--next-steps,
+.page--sources,
+.page--glossary,
+.page--basis-findings,
+.page--basis-exposure {
+  padding-top: 0;
+}
+.page--findings h2,
+.page--evidence h2,
+.page--next-steps h2,
+.page--sources h2,
+.page--glossary h2,
+.page--basis-findings h2,
+.page--basis-exposure h2 {
+  font-size: 0.98rem;
+  margin: 0 0 var(--space-2);
+  padding-bottom: 0.2rem;
+}
+.page--findings .section-lede,
+.page--evidence .section-lede,
+.page--next-steps .section-lede,
+.page--sources .section-lede,
+.page--glossary .section-lede,
+.page--basis-findings .basis-lede,
+.page--basis-exposure .basis-lede {
+  font-size: 0.82rem;
+  line-height: 1.3;
+  margin: 0 0 var(--space-2);
+  max-width: none;
+}
+.page--evidence h3.mono {
+  font-size: 0.68rem;
+  margin: var(--space-2) 0 0.15rem;
+}
+
+/* Pack dense sections onto shared pages when they fit */
+.page--evidence,
+.page--sources,
+.page--glossary,
+.page--basis-exposure {
+  break-before: auto;
+}
+
+.page--evidence .graphic--wide,
+.page--evidence .graphic--compact {
+  max-width: 140mm;
+  max-height: 55mm;
+  margin: var(--space-1) auto var(--space-2);
+}
+.page--evidence .graphic--wide svg,
+.page--evidence .graphic--wide img,
+.page--evidence .graphic--compact svg,
+.page--evidence .graphic--compact img {
+  max-width: 140mm;
+  max-height: 55mm;
 }

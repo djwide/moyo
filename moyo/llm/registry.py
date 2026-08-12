@@ -115,14 +115,29 @@ def _load_retrieval_specs() -> List[LLMSpec]:
 
 
 def get_retrieval_specs() -> List[LLMSpec]:
-    """Return the configured retrieval-LLM specs (see module docstring)."""
+    """Return the configured retrieval-LLM specs (see module docstring).
+
+    Local Ollama is intentionally excluded: it is used for prompt rewording
+    and report clustering, not as a ``moyo-gather explore`` retrieval target.
+    """
     try:
         from moyo.llm.testing import is_test_mode, test_llm_spec
         if is_test_mode():
             return [test_llm_spec()]
     except Exception:
         pass
-    return _load_retrieval_specs()
+    specs = _load_retrieval_specs()
+    kept: List[LLMSpec] = []
+    for spec in specs:
+        provider = (spec.provider or "").lower()
+        if provider == "ollama":
+            logger.info(
+                "Skipping local Ollama retrieval LLM %s (not used for explore fan-out)",
+                spec.label or spec.model,
+            )
+            continue
+        kept.append(spec)
+    return kept if kept else specs
 
 
 def get_retrieval_llms() -> List[LLMClient]:

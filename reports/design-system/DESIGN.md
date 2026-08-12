@@ -25,6 +25,11 @@ reports/build/<run-id>/
 
 Shared presentation lives in `reports/design-system/` (not copied per run).
 
+**Density:** Findings, evidence, next steps, sources/citations, and glossary
+use compact panels and tighter spacing by default (snapshot and basis). Future
+renders pick this up automatically from `css/components.css`, `css/pages.css`,
+and `css/basis.css`.
+
 ## Fonts
 
 | Role | Primary | Fallback |

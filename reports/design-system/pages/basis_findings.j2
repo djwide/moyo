@@ -2,10 +2,10 @@
 <section class="page page--basis-findings">
   <h2>Full Findings With Evidence</h2>
   <p class="basis-lede">
-    Each finding with its severity, rationale, confidence, and the English
-    evidence form (with line offsets back into the exploration transcript).
-    Foreign-language prompting is annotated on the finding; claim text is
-    always presented in English.
+    One finding per collapsed exposure group, with severity, rationale,
+    confidence, and the English evidence form (line offsets back into the
+    exploration transcript). Multi-model paraphrases are merged; foreign-language
+    prompting is annotated on the finding; claim text is always English.
   </p>
   {% for f in content.basis.findings_full %}
   <article class="basis-finding{% if f.severity == 'high' %} basis-finding--high{% endif %}">

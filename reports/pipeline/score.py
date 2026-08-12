@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .language import looks_like_english
+from .cluster import dedupe_findings_by_group
 
 
 def _headline_for_topic(topic: str) -> str:
@@ -52,15 +53,25 @@ def score_report(
     dot_max = int(graphics_cfg.get("dot_max", 5))
     aliases = graphics_cfg.get("model_aliases") or {}
 
+    # PDF inventories / findings list one row per collapsed exposure group.
+    claims = dedupe_findings_by_group(list(claims or []))
     ranked = sorted(claims, key=lambda c: _weighted_score(c, weights), reverse=True)
 
-    # Model exposure: sum of sensitivity*specificity for claims from that model
+    # Model exposure: sum of sensitivity*specificity for claims from that model.
+    # Collapsed claims carry ``source_models`` (all corroborating LLMs).
     model_scores: dict[str, float] = defaultdict(float)
     model_counts: dict[str, int] = defaultdict(int)
     for c in claims:
-        m = _alias(c["source_model"], aliases)
-        model_scores[m] += float(c.get("sensitivity", 0)) * float(c.get("specificity", 0))
-        model_counts[m] += 1
+        models = c.get("source_models")
+        if not isinstance(models, list) or not models:
+            models = [c.get("source_model")]
+        weight = float(c.get("sensitivity", 0)) * float(c.get("specificity", 0))
+        for raw in models:
+            if not raw:
+                continue
+            m = _alias(str(raw), aliases)
+            model_scores[m] += weight
+            model_counts[m] += 1
 
     if model_scores:
         peak = max(model_scores.values()) or 1.0
@@ -109,23 +120,37 @@ def score_report(
     ]
 
     # Prefer English-labeled cluster members for chain labels when available.
+    # One chain entry per collapsed group (claim_ids already = survivor id).
     chain_objs = []
     for cl in clusters:
-        members = [c for c in claims if c["claim_id"] in cl["claim_ids"]]
+        id_set = set(cl.get("claim_ids") or [])
+        # Prefer survivor claim_ids; fall back to member_ids only to locate the
+        # collapsed finding that absorbed them.
+        members = [c for c in claims if c.get("claim_id") in id_set]
+        if not members:
+            member_ids = set(cl.get("member_ids") or [])
+            members = [
+                c
+                for c in claims
+                if c.get("claim_id") in member_ids
+                or member_ids.intersection(set(c.get("merged_from") or []))
+            ]
         if not members:
             continue
+        # One finding per group after dedupe
         rep = next(
             (m for m in members if looks_like_english(str(m.get("claim") or ""))),
             members[0],
         )
-        avg_sens = sum(c.get("sensitivity", 0) for c in members) / len(members)
+        models = list(cl.get("models") or rep.get("source_models") or [])
+        corr = int(rep.get("corroboration") or len(models) or 1)
         chain_objs.append(
             {
-                "chain_id": cl["cluster_id"].replace("CL", "CH"),
+                "chain_id": str(cl.get("cluster_id") or "").replace("CL", "CH"),
                 "label": rep["claim"][:120],
-                "claim_ids": cl["claim_ids"],
-                "models": cl["models"],
-                "score": round(avg_sens * len(members), 2),
+                "claim_ids": [rep["claim_id"]],
+                "models": models,
+                "score": round(float(rep.get("sensitivity") or 0) * corr, 2),
             }
         )
     chain_objs.sort(key=lambda x: -x["score"])
@@ -138,10 +163,14 @@ def score_report(
             return 0.0
         return round(sum(c.get(key, 0) for c in claims) / len(claims), 2)
 
+    topic_clean = (topic or "").strip()
+    prompts = [topic_clean] if topic_clean else []
+
     return {
         "run_id": run_id,
-        "topic": topic,
-        "headline": _headline_for_topic(topic),
+        "topic": topic_clean,
+        "prompts": prompts,
+        "headline": _headline_for_topic(topic_clean),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "counts": {
             "findings": len(claims),

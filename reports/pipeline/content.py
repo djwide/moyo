@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 from graphics.style import format_source_cite, short_model_name
+from pipeline.cluster import dedupe_findings_by_group
 from pipeline.graphics import ASSET_NAMES
 from pipeline.synthesize import parse_executive_payload
 from pipeline.basis import build_basis_section
@@ -170,6 +171,7 @@ def _enrich_findings(
     *,
     aliases: dict[str, str] | None = None,
     translate: bool = True,
+    llm_config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Attach source cites and present every finding in English.
 
@@ -182,7 +184,7 @@ def _enrich_findings(
         for c in clusters
         if c.get("cluster_id")
     }
-    translate_fn = default_translate_fn() if translate else None
+    translate_fn = default_translate_fn(llm_config) if translate else None
     normalized = englishize_findings(findings, translate=translate_fn)
     out: list[dict[str, Any]] = []
     for f in normalized:
@@ -191,6 +193,9 @@ def _enrich_findings(
         row["claim"] = plain_text(row.get("claim"))
         row["category"] = plain_text(row.get("category")) or "unclassified"
         row["source_short"] = short_model_name(row.get("source_model") or "", aliases)
+        source_models = row.get("source_models")
+        if isinstance(source_models, list) and len(source_models) > 1:
+            peers = [str(m) for m in source_models]
         cite = format_source_cite(
             row.get("source_model") or "",
             corroboration=row.get("corroboration"),
@@ -336,11 +341,18 @@ def _confidence_label(score: int) -> str:
 def _prompts_list(report_data: dict[str, Any]) -> list[str]:
     raw = report_data.get("prompts") or report_data.get("prompt")
     if isinstance(raw, list):
-        return [str(p).strip() for p in raw if str(p).strip()]
+        out = [str(p).strip() for p in raw if str(p).strip()]
+        if out:
+            return out
     if isinstance(raw, str) and raw.strip():
         return [raw.strip()]
     topic = (report_data.get("topic") or "").strip()
-    return [topic] if topic else []
+    run_id = str(report_data.get("run_id") or "").strip()
+    # Avoid printing a bare run-id as the cover "Prompt" when topic was never
+    # recovered from exploration.md (e.g. mid-pipeline rebuild without -e).
+    if topic and topic != run_id and topic.replace(" ", "_") != run_id:
+        return [topic]
+    return [topic] if topic and topic != run_id else []
 
 
 def _build_executive_page(
@@ -458,6 +470,7 @@ def build_content_doc(
     aliases: dict[str, str] | None = None,
     isvf_path: Path | None = None,
     include_remediation: bool = False,
+    llm_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Structured content document consumed by design-system templates."""
     counts = report_data.get("counts") or {}
@@ -466,7 +479,10 @@ def build_content_doc(
         list(report_data.get("findings") or []),
         list(report_data.get("clusters") or []),
         aliases=aliases,
+        llm_config=llm_config,
     )
+    # One row per collapsed exposure group in inventory / findings / claims.
+    findings = dedupe_findings_by_group(findings)
     # Real-world citations extracted from exploration.md, numbered once per run
     # (S1, S2, …) so every product cites the same registry.
     sources, findings = build_source_registry(findings)
@@ -760,6 +776,7 @@ def write_content_package(
     overwrite_graphics: bool = True,
     isvf_path: Path | None = None,
     include_remediation: bool = False,
+    llm_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write report.md, report.yaml, and SVG assets under run_dir.
 
@@ -779,6 +796,7 @@ def write_content_package(
         aliases=aliases,
         isvf_path=isvf_path,
         include_remediation=include_remediation,
+        llm_config=llm_config,
     )
     assets_dir = run_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)

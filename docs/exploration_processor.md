@@ -210,7 +210,7 @@ Keep `claims.jsonl` + `report_data.json` with the PDFs so findings stay auditabl
 |-------|-----------|-------------|
 | **[1] Parse / chunk** | Split by language → query → model response; keep line offsets; never drop text | Chunk target size; max chunk tokens; whether to include pruned stubs |
 | **[2] Extract** | Per-chunk LLM → claim objects into `claims.jsonl` (resumes via `extract_done.jsonl` if interrupted) | Extractor model, temperature, prompt file, concurrency; optional “must-include themes”. Delete `claims.jsonl` + `extract_done.jsonl` to force a full re-extract |
-| **[3] Dedupe / cluster / score** | Merge paraphrases; set `corroboration` (distinct LLMs) + `source_count` (citations); raise `confidence` when multi-LLM / multi-source; score & chain | Score weights; corroboration minimum; cluster similarity threshold; status overrides |
+| **[3] Dedupe / cluster / score** | Local Ollama groups same-fact claims; collapse into one; union citations + source_models; keep `member_scores`; sensitivity = max; confidence = # LLMs | Ollama model/URL; batch size; collapse on/off; corroboration minimum |
 | **[4] Graphics** | SVG radar, heatmap, sensitivity bars, evidence graph | Which graphics to emit; color scale; model alias map for short names |
 | **[5] Templates → PDF** | Jinja fill + WeasyPrint | Template copy/tone; logo choice; forced headline; date; hide/show “REQUEST FULL REPORT” |
 
@@ -242,11 +242,12 @@ Every extracted finding should look like:
 }
 ```
 
-After clustering, `corroboration` is the number of distinct `source_model`
-values in the claim’s cluster, `source_count` is the number of distinct
-citations across that cluster, and `confidence` is raised from the extractor’s
-provisional score when multiple LLMs and/or citations agree (+1 at ≥2 and +1
-at ≥3 for each axis, capped at 5).
+After clustering, similar claims are **collapsed** into one survivor by a
+**local Ollama** model (same-fact paraphrase detection). `corroboration` /
+`confidence` equal the number of distinct LLMs on the merged claim (clamped
+1–5), `member_scores` keeps each member's individual dims, union
+`sensitivity` is the highest member sensitivity, and `specificity` gains +1
+when the claim text contains exact numbers.
 
 **Hard rule for operators and prompts:** never omit a finding solely because it
 is unusual, disputed, sensitive, or single-model. Classify it instead:
@@ -342,7 +343,11 @@ then.
 
 | Knob | Typical | Effect |
 |------|---------|--------|
-| `cluster.similarity_threshold` | `0.82` | Higher = fewer merges |
+| `cluster.provider` | `ollama` | Local LLM for same-fact grouping |
+| `cluster.model` | `llama3.1:8b` | Ollama model tag |
+| `cluster.base_url` | `http://localhost:11434` | Ollama endpoint |
+| `cluster.batch_size` | `35` | Claims per grouping call |
+| `cluster.collapse` | `true` | Merge similar claims into one (false = annotate only) |
 | `cluster.corroboration_min_sources` | `2` | Threshold for `CORROBORATED` |
 | `score.weights.sensitivity` | `0.25` | Rank weight for one-pager |
 | `score.weights.specificity` | `0.25` | |
@@ -440,7 +445,7 @@ Use gather for acquisition; use the exploration processor for **auditable scorin
 | Symptom | Likely knob / action |
 |---------|----------------------|
 | Extractor returns empty / truncated JSON | Lower `chunk.target_tokens`; raise `extract.num_ctx` / `max_tokens` |
-| Too many near-duplicate claims | Raise `cluster.similarity_threshold` slightly, or tighten cluster prompt |
+| Too many near-duplicate claims | Ensure Ollama is up; lower `cluster.batch_size` if merges are weak; re-run `--from-stage cluster` |
 | One-pager feels “safe” / generic | Raise weight on `specificity` + `interestingness`; check outliers not filtered |
 | PDF missing fonts / broken layout | Check WeasyPrint install; simplify CSS; verify image paths absolute or relative to HTML |
 | Run too slow | Raise `extract.workers`; exclude failed/pruned chunks; `--from-stage` to skip work |
