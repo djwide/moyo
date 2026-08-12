@@ -329,6 +329,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stop-after", default="render", choices=STAGES)
     ap.add_argument("--dry-run", action="store_true", help="Heuristic extract; no LLM calls")
     ap.add_argument(
+        "--test",
+        action="store_true",
+        help=(
+            "Use fake deterministic LLM clients (no network / API keys). "
+            "Implies --dry-run for extract/synthesize; also settable via "
+            "MOYO_TEST_MODE=1."
+        ),
+    )
+    ap.add_argument(
         "--report",
         choices=["snapshot", "basis", "both"],
         default="snapshot",
@@ -368,6 +377,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = ap.parse_args(argv)
+
+    if args.test:
+        try:
+            from moyo.llm.testing import enable_test_mode
+            enable_test_mode()
+        except Exception as exc:
+            print(f"Warning: could not enable LLM test mode: {exc}", file=sys.stderr)
+        args.dry_run = True
 
     if args.graphics_only:
         if args.keep_graphics:

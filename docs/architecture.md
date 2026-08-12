@@ -60,7 +60,7 @@ Source adapters: patents, press releases, git commits, conference talks, arXiv/P
 
 #### Barrier Probe (`barrierprobe/`)
 Analyses information barriers between private and public FAISS indexes:
-- `barrier_analyzer.py` – cosine distance and Sobolev norm analysis
+- `barrier_analyzer.py` – cosine distance analysis
 - `llm_fuzzer.py` – LLM-assisted fuzzing; explore rewording; fuzz modes
   `basic` / `multilingual` (local Ollama default for generation)
 - `iterative_llm_search.py` – iterative refinement of closest matches
@@ -81,9 +81,12 @@ and retrieval LLMs from `config/retrieval_llms.json`.
 
 ### Red Team (`redteam/`)
 Probes a *target* LLM for proprietary-information leakage, exposed as
-`moyo-redteam` (`whitebox`, `blackbox`, `report`). White-box uses a known
+`moyo-redteam` (`whitebox`, `blackbox`, `blackbox-explore`, `report`). White-box uses a known
 secret inventory (`SecretStore`) to plan attacks; black-box does
-hypothesis-driven blind probing. A separate helper LLM generates probes and
+hypothesis-driven blind probing. `blackbox-explore` feeds
+`HypothesisEngine` prompts into the gather explore pipeline via
+`--prompts-file` or `explore_and_save_many` without modifying
+`moyo-gather explore`. A separate helper LLM generates probes and
 never sees the target's responses. See `docs/threat_model.md`.
 
 ### Desktop GUI (`gui/`)
@@ -110,7 +113,7 @@ Prompt → Local fuzzer seeds → Retrieval LLMs (parallel)
 
 ### Barrier Analysis
 ```
-Private Index + Public Index → Cosine distance → Sobolev norms → Risk assessment
+Private Index + Public Index → Cosine distance → Risk assessment
 ```
 
 ### Iterative LLM Enhancement

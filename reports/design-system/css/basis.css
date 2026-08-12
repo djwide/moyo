@@ -101,6 +101,12 @@
   color: var(--moyo-muted);
   align-items: center;
 }
+.basis-finding__lang {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  color: var(--moyo-teal-deep);
+}
 
 /* Exposure chain detail blocks */
 .chain-block {

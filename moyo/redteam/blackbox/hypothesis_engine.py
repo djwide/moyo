@@ -62,6 +62,14 @@ class HypothesisEngine:
         self._helper_client = self._init_helper()
 
     def _init_helper(self) -> Optional[object]:
+        try:
+            from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+            if is_test_mode() or self.helper_provider in ("test", "echo"):
+                return FakeDeterministicLLM(model_name=self.helper_model or "echo-test")
+        except Exception:
+            if self.helper_provider in ("test", "echo"):
+                return None
+
         if self.helper_provider == "openai":
             try:
                 from openai import OpenAI

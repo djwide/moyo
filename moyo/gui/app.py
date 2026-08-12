@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QPlainTextEdit, QSizePolicy,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtGui import QFont, QColor, QIcon
 
 # When running without an editable install, add the repo root so that
 # "moyo" and "shared_utils" are importable.  With `pip install -e .` this
@@ -703,6 +703,69 @@ def _busy(button: QPushButton, busy: bool, idle_label: str) -> None:
         button.setEnabled(True)
 
 
+def _ollama_base_url(url: Optional[str] = None) -> str:
+    return (url or "http://localhost:11434").rstrip("/")
+
+
+def _ollama_is_reachable(base_url: Optional[str] = None) -> bool:
+    """Return True if an Ollama server answers at base_url."""
+    from moyo.publicside.barrierprobe.llm_fuzzer import OllamaClient
+    return OllamaClient("x", base_url=_ollama_base_url(base_url)).is_available()
+
+
+def _start_ollama_serve(base_url: Optional[str] = None) -> tuple:
+    """Start ``ollama serve`` in WSL/Linux if it is not already running.
+
+    Detaches the process into its own session so it keeps running after the
+    GUI worker finishes. Returns ``(ok, message)``.
+    """
+    import shutil
+    import subprocess
+    import time
+
+    base = _ollama_base_url(base_url)
+    if _ollama_is_reachable(base):
+        return True, f"Ollama is already running at {base}"
+
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        return (
+            False,
+            "ollama not found on PATH. Install in WSL with:\n"
+            "  curl -fsSL https://ollama.com/install.sh | sh",
+        )
+
+    log_path = Path("/tmp/ollama-moyo.log")
+    with open(log_path, "ab") as log_fh:
+        proc = subprocess.Popen(
+            [ollama_bin, "serve"],
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,  # detach from this process tree
+        )
+
+    for _ in range(30):  # up to ~15s
+        time.sleep(0.5)
+        if _ollama_is_reachable(base):
+            return (
+                True,
+                f"Started `ollama serve` (pid {proc.pid}) at {base}. "
+                f"Logs: {log_path}",
+            )
+        if proc.poll() is not None:
+            return (
+                False,
+                f"`ollama serve` exited early (code {proc.returncode}). "
+                f"See {log_path}",
+            )
+
+    return (
+        False,
+        f"`ollama serve` started (pid {proc.pid}) but not reachable yet at "
+        f"{base}. Check {log_path} or wait a few seconds and Test again.",
+    )
+
+
 class GatherPublicSourcesTab(QWidget):
     """Tab for gathering public sources via the PublicSourcesCrawler."""
 
@@ -877,6 +940,13 @@ class GatherPublicSourcesTab(QWidget):
 
         # --- Actions
         action_row = QHBoxLayout()
+        self.ollama_btn = QPushButton("Start Ollama Serve")
+        self.ollama_btn.setToolTip(
+            "Run `ollama serve` in WSL if nothing is listening on "
+            "http://localhost:11434 (needed for Explore / local fuzzing)."
+        )
+        self.ollama_btn.clicked.connect(self._start_ollama)
+        action_row.addWidget(self.ollama_btn)
         self.run_btn = QPushButton("Start Crawl")
         self.run_btn.clicked.connect(self._start_crawl)
         action_row.addWidget(self.run_btn)
@@ -944,6 +1014,32 @@ class GatherPublicSourcesTab(QWidget):
         if not picks:
             return None
         return [SourceType(s) for s in picks]
+
+    def _start_ollama(self):
+        """Start ``ollama serve`` in the background (no-op if already up)."""
+        if getattr(self, "_ollama_worker", None) is not None and self._ollama_worker.isRunning():
+            QMessageBox.information(self, "Busy", "Ollama start is already in progress.")
+            return
+        self.log.append("Checking Ollama / starting `ollama serve`…")
+        _busy(self.ollama_btn, True, "Start Ollama Serve")
+
+        def job():
+            return _start_ollama_serve()
+
+        self._ollama_worker = BackgroundWorker(job)
+        self._ollama_worker.log.connect(self.log.append)
+        self._ollama_worker.done.connect(self._on_ollama_done)
+        self._ollama_worker.failed.connect(self._on_ollama_failed)
+        self._ollama_worker.start()
+
+    def _on_ollama_done(self, result):
+        _busy(self.ollama_btn, False, "Start Ollama Serve")
+        ok, message = result if isinstance(result, tuple) else (False, str(result))
+        self.log.append(("✅ " if ok else "❌ ") + message)
+
+    def _on_ollama_failed(self, message: str):
+        _busy(self.ollama_btn, False, "Start Ollama Serve")
+        self.log.append(f"❌ {message}")
 
     def _start_crawl(self):
         if self._worker is not None:
@@ -1881,6 +1977,14 @@ class FuzzerTab(QWidget):
 
         # --- Actions
         action_row = QHBoxLayout()
+        self.ollama_btn = QPushButton("Start Ollama Serve")
+        self.ollama_btn.setToolTip(
+            "Run `ollama serve` in WSL if nothing is listening on the Base URL "
+            "(default http://localhost:11434)."
+        )
+        self.ollama_btn.clicked.connect(self._start_ollama)
+        action_row.addWidget(self.ollama_btn)
+
         self.test_btn = QPushButton("Test LLM Connection")
         self.test_btn.clicked.connect(self._test_llm)
         action_row.addWidget(self.test_btn)
@@ -1964,6 +2068,36 @@ class FuzzerTab(QWidget):
             target_similarity=self.target_sim_spin.value(),
             fuzz_mode=self.fuzz_mode_combo.currentData() or "basic",
         )
+
+    def _start_ollama(self):
+        """Start ``ollama serve`` in the background (no-op if already up)."""
+        if getattr(self, "_ollama_worker", None) is not None and self._ollama_worker.isRunning():
+            QMessageBox.information(self, "Busy", "Ollama start is already in progress.")
+            return
+        base_url = self.base_url_input.text().strip() or None
+        self.log.append(
+            f"Checking Ollama / starting `ollama serve` "
+            f"(endpoint {base_url or 'http://localhost:11434'})…"
+        )
+        _busy(self.ollama_btn, True, "Start Ollama Serve")
+
+        def job():
+            return _start_ollama_serve(base_url)
+
+        self._ollama_worker = BackgroundWorker(job)
+        self._ollama_worker.log.connect(self.log.append)
+        self._ollama_worker.done.connect(self._on_ollama_done)
+        self._ollama_worker.failed.connect(self._on_ollama_failed)
+        self._ollama_worker.start()
+
+    def _on_ollama_done(self, result):
+        _busy(self.ollama_btn, False, "Start Ollama Serve")
+        ok, message = result if isinstance(result, tuple) else (False, str(result))
+        self.log.append(("✅ " if ok else "❌ ") + message)
+
+    def _on_ollama_failed(self, message: str):
+        _busy(self.ollama_btn, False, "Start Ollama Serve")
+        self.log.append(f"❌ {message}")
 
     def _test_llm(self):
         from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
@@ -2675,8 +2809,18 @@ class BuildReportTab(QWidget):
         form.addRow("Report type:", self.report_combo)
 
         self.stage_combo = QComboBox()
-        for stage in ("parse", "extract", "cluster", "score", "synthesize", "graphics", "render"):
-            self.stage_combo.addItem(stage, stage)
+        # Display label includes a short explanation; data value stays the
+        # stage name consumed by reports/build_report.py --from-stage.
+        for stage, label in (
+            ("parse", "parse — Split exploration.md into language/query/model chunks"),
+            ("extract", "extract — Pull claim objects from each chunk (LLM or dry-run)"),
+            ("cluster", "cluster — Dedupe paraphrases and group related claims"),
+            ("score", "score — Score sensitivity/specificity and build exposure chains"),
+            ("synthesize", "synthesize — Draft report narrative (headline, findings, summary)"),
+            ("graphics", "graphics — Generate SVG charts (radar, heatmap, bars, graph)"),
+            ("render", "render — Fill templates and write the PDF products"),
+        ):
+            self.stage_combo.addItem(label, stage)
         form.addRow("From stage:", self.stage_combo)
 
         layout.addLayout(form)
@@ -2782,6 +2926,12 @@ class BuildReportTab(QWidget):
         self.log.append(f"Failed: {message}")
 
 
+def _gui_icon() -> QIcon:
+    """Return the moyo desktop logo as a QIcon (empty if the asset is missing)."""
+    icon_path = Path(__file__).resolve().parent / "assets" / "MoyoDesktopLogo.png"
+    return QIcon(str(icon_path)) if icon_path.is_file() else QIcon()
+
+
 class MoyoGUI(QMainWindow):
     """Main moyo GUI application."""
 
@@ -2791,6 +2941,7 @@ class MoyoGUI(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("moyo GUI")
+        self.setWindowIcon(_gui_icon())
         self.setGeometry(100, 100, 1400, 900)
 
         central_widget = QWidget()
@@ -2825,6 +2976,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("moyo GUI")
     app.setApplicationVersion("1.0.0")
+    app.setWindowIcon(_gui_icon())
 
     window = MoyoGUI()
     window.show()

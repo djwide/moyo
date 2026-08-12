@@ -24,11 +24,38 @@ Pick one of:
 ```bash
 moyo-gui                          # console script (preferred)
 python -m moyo.gui.app            # module entry point
+./scripts/launch-moyo-gui.sh      # used by the Windows Desktop shortcut
 ```
+
+### Desktop logo / shortcut (Windows → WSL)
+
+The window and taskbar icon is `moyo/gui/assets/MoyoDesktopLogo.png`.
+
+On your **Windows Desktop**:
+
+| Item | What it does |
+| ---- | ------------ |
+| **moyo** (`.lnk`) | Double-click to open the GUI (silent; uses WSLg) |
+| **Launch moyo GUI.bat** | Same launch, with a console — useful if something fails |
+
+Both call `wsl.exe -d Ubuntu -- bash scripts/launch-moyo-gui.sh`, which starts
+the PyQt app inside WSL. Launchers and the `.ico` also live under
+`%LOCALAPPDATA%\moyo\`.
+
+To recreate the Desktop shortcut from WSL:
+
+```bash
+/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe \
+  -NoProfile -ExecutionPolicy Bypass -File scripts/create-moyo-desktop-shortcut.ps1
+```
+
+If the window does not appear, check `/tmp/moyo-gui-launch.log` in WSL (or
+`%LOCALAPPDATA%\moyo\launch.log` on Windows) and confirm WSLg is working
+(`echo $DISPLAY` in a WSL terminal should show `:0`).
 
 ## Tabs
 
-The main window exposes 7 tabs, mirroring the moyo CLI commands.
+The main window exposes 8 tabs, mirroring the moyo CLI commands.
 
 | Tab                       | Backed by                                              |
 | ------------------------- | ------------------------------------------------------ |
@@ -36,6 +63,7 @@ The main window exposes 7 tabs, mirroring the moyo CLI commands.
 | Create Private Index      | `shared_utils.embeddings` + `shared_utils.faiss_index` |
 | Gather Public Sources     | `moyo.publicside.gatherpublicsources.PublicSourcesCrawler` |
 | Build Public Corpus       | `moyo.publicside.barrierprobe.PublicIndexBuilder`      |
+| Build Report              | `reports/build_report.py`                              |
 | Barrier Probe             | `moyo.publicside.barrierprobe.BarrierAnalyzer`         |
 | LLM Fuzzer                | `moyo.publicside.barrierprobe.LLMFuzzer`               |
 | Visualize Indices         | matplotlib + sklearn (+ optional UMAP / scipy)         |
@@ -78,6 +106,23 @@ size/overlap, min/max chunk length, source-type / relevance / confidence
 filters, deduplication and normalization toggles, and index type. Model
 tiers are documented in [`docs/embeddings.md`](embeddings.md).
 
+### Build Report
+
+Renders MOYO report products from an `exploration.md` via
+`reports/build_report.py`. Choose Exposure Snapshot, Basis Report, or both.
+**From stage** resumes the pipeline at a chosen step (earlier stages are
+skipped if their artifacts already exist):
+
+| Stage | What it does |
+| ----- | ------------ |
+| `parse` | Split `exploration.md` into language/query/model chunks |
+| `extract` | Pull claim objects from each chunk (LLM or dry-run) |
+| `cluster` | Dedupe paraphrases and group related claims |
+| `score` | Score sensitivity/specificity and build exposure chains |
+| `synthesize` | Draft report narrative (headline, findings, summary) |
+| `graphics` | Generate SVG charts (radar, heatmap, bars, graph) |
+| `render` | Fill templates and write the PDF products |
+
 ### Barrier Probe
 
 Compares a public and a private index. For each private chunk it finds the
@@ -118,8 +163,11 @@ machine, offloading to an NVIDIA GPU via CUDA when available.
 # 1. Install Ollama (Linux / WSL2):
 curl -fsSL https://ollama.com/install.sh | sh
 
-# 2. Start the server (leave running in its own terminal):
+# 2. Start the server — either from a terminal:
 ollama serve
+# or click **Start Ollama Serve** in the GUI (LLM Fuzzer tab, or Gather
+# Public Sources). That runs `ollama serve` in WSL in the background if
+# nothing is already listening on http://localhost:11434.
 
 # 3. Pull a model that fits your GPU. For an 8 GB card, a 7–8B model at the
 #    default Q4 quantisation is the sweet spot (~4.7 GB VRAM):
@@ -131,9 +179,10 @@ ollama pull llama3.1:8b        # general default
 moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
 ```
 
-In the GUI, pick **Provider = ollama**, leave **Base URL** blank for the
-default endpoint, and click **Test LLM Connection**. On the CLI, pass
-`--llm-provider ollama --model llama3.1:8b` (and `--base-url` if remote).
+In the GUI, pick **Provider = ollama**, leave **Base URL** at the default,
+click **Start Ollama Serve** if needed, then **Test LLM Connection**. On the
+CLI, pass `--llm-provider ollama --model llama3.1:8b` (and `--base-url` if
+remote).
 
 VRAM guidance for an 8 GB GPU:
 
@@ -192,7 +241,10 @@ button.
 ```
 moyo/gui/
 ├── __init__.py        # re-exports `main`
-└── app.py             # MoyoGUI + all tab classes + BackgroundWorker
+├── app.py             # MoyoGUI + all tab classes + BackgroundWorker
+└── assets/
+    ├── MoyoDesktopLogo.png   # window / taskbar icon
+    └── MoyoDesktopLogo.ico   # Windows Desktop shortcut icon
 ```
 
 Long-running operations (crawling, embedding, analysis, fuzzing) are
@@ -207,6 +259,21 @@ into each tab's log pane.
 - Add a unified Project workflow (a wizard that runs gather → build → probe
   → fuzz sequentially on one topic).
 - Add a Stop button to in-flight workers.
+
+## Offline / `--test` mode
+
+Any CLI that talks to an LLM accepts a top-level ``--test`` flag (or
+``MOYO_TEST_MODE=1``). That swaps in fake deterministic clients — no API keys,
+no Ollama, no network:
+
+```bash
+moyo-gather --test explore -p "What is X?"
+moyo-probe --test test-llm
+moyo-redteam --test whitebox --secrets-file secrets.txt --target-provider test
+python reports/build_report.py -e path/to/exploration.md --test
+```
+
+``reports/build_report.py --test`` also implies ``--dry-run`` (heuristic extract).
 
 ## Troubleshooting
 

@@ -22,6 +22,13 @@
 .severity-badge--model-specific { background: var(--moyo-ink); color: var(--moyo-teal); }
 .severity-badge--corroborated { background: var(--moyo-low); color: #fff; }
 .severity-badge--unverified { background: var(--moyo-muted); color: #fff; }
+.severity-badge--via-lang {
+  background: var(--moyo-cream);
+  color: var(--moyo-teal-deep);
+  border: 1px solid var(--moyo-border);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
 
 .metric-card {
   background: var(--moyo-cream);
@@ -74,6 +81,12 @@
   font-family: var(--font-sans);
   font-size: 0.78rem;
   color: var(--moyo-muted);
+}
+.finding-card__lang {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  color: var(--moyo-teal-deep);
 }
 
 .evidence-box {

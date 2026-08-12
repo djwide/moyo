@@ -18,6 +18,13 @@ from pipeline.synthesize import parse_executive_payload
 from pipeline.basis import build_basis_section
 from pipeline.glossary import glossary_groups
 from pipeline.isvf import load_isvf_controls, select_remediation
+from pipeline.language import (
+    default_translate_fn,
+    englishize_findings,
+    is_foreign_language,
+    languages_from_findings,
+    looks_like_english,
+)
 from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
 
@@ -162,29 +169,118 @@ def _enrich_findings(
     clusters: list[dict[str, Any]],
     *,
     aliases: dict[str, str] | None = None,
+    translate: bool = True,
 ) -> list[dict[str, Any]]:
-    """Attach short model name + ``source_cite`` (e.g. ``Kimi + 5``)."""
+    """Attach source cites and present every finding in English.
+
+    Foreign-language prompt provenance is kept as ``language_annotation``;
+    claim / excerpt bodies shown in reports are English only.
+    """
     aliases = aliases or {}
     peers_by_cluster = {
         c.get("cluster_id"): list(c.get("models") or [])
         for c in clusters
         if c.get("cluster_id")
     }
+    translate_fn = default_translate_fn() if translate else None
+    normalized = englishize_findings(findings, translate=translate_fn)
     out: list[dict[str, Any]] = []
-    for f in findings:
+    for f in normalized:
         row = dict(f)
         peers = peers_by_cluster.get(row.get("cluster_id"))
         row["claim"] = plain_text(row.get("claim"))
         row["category"] = plain_text(row.get("category")) or "unclassified"
         row["source_short"] = short_model_name(row.get("source_model") or "", aliases)
-        row["source_cite"] = format_source_cite(
+        cite = format_source_cite(
             row.get("source_model") or "",
             corroboration=row.get("corroboration"),
             peer_models=peers,
             aliases=aliases,
         )
+        note = (row.get("language_annotation") or "").strip()
+        if note:
+            row["source_cite"] = f"{cite} · {note}" if cite else note
+        else:
+            row["source_cite"] = cite
         out.append(row)
     return out
+
+
+def _prompt_languages(
+    report_data: dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> list[str]:
+    explore_meta = report_data.get("explore_meta") or {}
+    langs = list(explore_meta.get("languages") or [])
+    if not langs:
+        langs = languages_from_findings(findings)
+    # Dedupe, English first
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in langs:
+        key = (name or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(name.strip())
+    eng = [x for x in out if not is_foreign_language(x)]
+    foreign = [x for x in out if is_foreign_language(x)]
+    return eng + foreign
+
+
+def _sync_top_finding_english(
+    top: dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Ensure top_finding.text is English and carries prompt-language metadata."""
+    top = dict(top or {})
+
+    def _usable(f: dict[str, Any]) -> bool:
+        return looks_like_english(str(f.get("claim") or "")) and not f.get(
+            "english_pending"
+        )
+
+    top_id = top.get("claim_id") or ""
+    match = next((f for f in findings if f.get("claim_id") == top_id), None)
+    if match and _usable(match):
+        top["text"] = plain_text(match.get("claim") or top.get("text"))
+        note = (match.get("language_annotation") or "").strip()
+        badges = [
+            b
+            for b in list(top.get("badges") or [])
+            if not str(b).upper().startswith("VIA ")
+        ]
+        if note:
+            top["language_annotation"] = note
+            top["prompt_language"] = match.get("prompt_language") or match.get(
+                "language"
+            )
+        top["badges"] = badges
+        return top
+
+    # Fall back to the highest-ranked English finding for display.
+    english = next((f for f in findings if _usable(f)), None)
+    if english:
+        badges: list[str] = []
+        if int(english.get("sensitivity") or 0) >= 4:
+            badges.append("HIGH")
+        status = (english.get("status") or "").upper()
+        if status in {"OUTLIER", "MODEL-SPECIFIC", "CONTESTED"}:
+            badges.append(status)
+        if int(english.get("specificity") or 0) >= 4:
+            badges.append("SPECIFIC")
+        top = {
+            "claim_id": english.get("claim_id"),
+            "text": plain_text(english.get("claim")),
+            "badges": badges,
+            "language_annotation": english.get("language_annotation") or "",
+            "prompt_language": english.get("prompt_language")
+            or english.get("language"),
+        }
+        return top
+
+    top["text"] = plain_text(top.get("text"))
+    return top
 
 
 _PUBLIC_SOURCE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
@@ -374,6 +470,7 @@ def build_content_doc(
     # Real-world citations extracted from exploration.md, numbered once per run
     # (S1, S2, …) so every product cites the same registry.
     sources, findings = build_source_registry(findings)
+    top = _sync_top_finding_english(top, findings)
     pull = plain_text(top.get("text") or "")[:280]
     prompts = [plain_text(p) for p in _prompts_list(report_data)]
     exec_page = _build_executive_page(
@@ -386,22 +483,29 @@ def build_content_doc(
     )
 
     # High-specificity findings for the one-pager "Specific" panel (bottom left).
-    # Cap at 2 so the snapshot stays a single page.
+    # Cap at 2 so the snapshot stays a single page. Prefer English claim bodies.
     specific_min = 4
-    specific_findings = [
+    english_findings = [
         f
         for f in findings
+        if looks_like_english(str(f.get("claim") or "")) and not f.get("english_pending")
+    ] or [
+        f for f in findings if looks_like_english(str(f.get("claim") or ""))
+    ] or findings
+    specific_findings = [
+        f
+        for f in english_findings
         if int(f.get("specificity") or 0) >= specific_min
         and f.get("claim_id") != (top.get("claim_id") or "")
     ][:2]
     if not specific_findings:
         specific_findings = [
             f
-            for f in findings
+            for f in english_findings
             if f.get("claim_id") != (top.get("claim_id") or "")
         ][:2]
 
-    abridged = findings[:5]
+    abridged = english_findings[:5]
 
     explore_meta = report_data.get("explore_meta") or {}
     models_tested = list(explore_meta.get("models_tested") or [])
@@ -414,6 +518,10 @@ def build_content_doc(
     strategies = list(explore_meta.get("strategies") or [])
     if not strategies:
         strategies = ["paraphrase", "translate", "summarize"]
+
+    prompt_languages = _prompt_languages(report_data, findings)
+    foreign_languages = [x for x in prompt_languages if is_foreign_language(x)]
+    languages_count = len(prompt_languages) if foreign_languages else 0
 
     headline = (report_data.get("headline") or "").strip()
     if not headline or headline.lower().startswith("what ai systems reveal about"):
@@ -435,10 +543,6 @@ def build_content_doc(
     basis_section = build_basis_section(
         report_data, findings, remediation=remediation
     )
-    top = {
-        **top,
-        "text": plain_text(top.get("text")),
-    }
     followups = [
         {
             **item,
@@ -460,6 +564,7 @@ def build_content_doc(
             "fuzz_mode": explore_meta.get("fuzz_mode") or "basic",
             "strategies": strategies,
             "models_tested": models_tested,
+            "languages": prompt_languages,
             "include_remediation": bool(include_remediation),
             "counts": {
                 "findings": counts.get("findings", len(findings)),
@@ -469,6 +574,7 @@ def build_content_doc(
                 "outliers": counts.get("outliers", 0),
                 "model_specific": counts.get("model_specific", 0),
                 "chains": counts.get("chains", 0),
+                "languages": languages_count,
             },
         },
         "pages": {

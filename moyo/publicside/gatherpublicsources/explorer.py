@@ -649,7 +649,8 @@ def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     Defaults to local Ollama (``llama3.1:8b``) with an enlarged ``num_ctx`` so
     multi-source corpora fit. Override with a configured client (e.g. CLI
     ``--provider``), or via ``MOYO_SUMMARY_MODEL`` / ``MOYO_SUMMARY_NUM_CTX`` /
-    ``MOYO_SUMMARY_BASE_URL``.
+    ``MOYO_SUMMARY_BASE_URL``. Under ``--test`` / ``MOYO_TEST_MODE``, returns
+    an offline echo client.
     """
     if override is not None:
         return override
@@ -657,6 +658,13 @@ def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     import os
 
     from moyo.llm.client import LLMSpec, ensure_env_loaded
+
+    try:
+        from moyo.llm.testing import is_test_mode, test_llm_spec
+        if is_test_mode():
+            return LLMClient(test_llm_spec())
+    except Exception:
+        pass
 
     ensure_env_loaded()
 

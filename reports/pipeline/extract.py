@@ -517,6 +517,13 @@ def extract_all(
     already_n = len(selected) - len(pending)
     _progress_bar(already_n, total, extra="resuming" if already_n else "starting")
 
+    try:
+        from moyo.llm.testing import is_test_mode
+        if is_test_mode():
+            dry_run = True
+    except Exception:
+        pass
+
     if dry_run:
         finished = already_n
         for chunk in pending:

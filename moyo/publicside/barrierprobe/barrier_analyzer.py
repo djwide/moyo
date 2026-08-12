@@ -206,49 +206,6 @@ class BarrierAnalyzer:
         # Return cosine distance (1 - similarity)
         return 1.0 - cosine_similarity
     
-    def calculate_sobolev_norm(self, vec: List[float], order: int = 1) -> float:
-        """Calculate Sobolev norm of a vector.
-        
-        Args:
-            vec: Input vector
-            order: Order of the Sobolev norm (default: 1)
-            
-        Returns:
-            Sobolev norm value
-        """
-        vec = np.array(vec, dtype=np.float32)
-        
-        if order == 1:
-            # First-order Sobolev norm: ||f||_H^1 = sqrt(||f||_L^2^2 + ||∇f||_L^2^2)
-            # For discrete vectors, we approximate ∇f as finite differences
-            l2_norm = np.linalg.norm(vec)
-            
-            # Calculate gradient (finite differences)
-            if len(vec) > 1:
-                gradient = np.diff(vec)
-                gradient_norm = np.linalg.norm(gradient)
-            else:
-                gradient_norm = 0.0
-            
-            return np.sqrt(l2_norm**2 + gradient_norm**2)
-        
-        elif order == 2:
-            # Second-order Sobolev norm
-            l2_norm = np.linalg.norm(vec)
-            
-            if len(vec) > 2:
-                # Second derivative (finite differences)
-                second_deriv = np.diff(vec, n=2)
-                second_deriv_norm = np.linalg.norm(second_deriv)
-            else:
-                second_deriv_norm = 0.0
-            
-            return np.sqrt(l2_norm**2 + second_deriv_norm**2)
-        
-        else:
-            # For other orders, use L2 norm as approximation
-            return np.linalg.norm(vec)
-    
     def find_nearest_public_neighbors(self, top_k: int = 1) -> List[NearestNeighborResult]:
         """For each private phrase, find its nearest public neighbor(s).
         
@@ -531,79 +488,7 @@ class BarrierAnalyzer:
         results["private"] = results["private"][:top_k]
 
         return results
-    
-    def find_largest_sobolev_norms(self, top_k: int = 10, order: int = 1) -> List[Dict[str, Any]]:
-        """Find chunks with the largest Sobolev norms.
-        
-        Args:
-            top_k: Number of largest norms to return
-            order: Order of Sobolev norm to calculate
-            
-        Returns:
-            List of chunks with largest Sobolev norms
-        """
-        if not self.public_builder or not self.private_builder:
-            logger.error("Indexes not loaded")
-            return []
-        
-        logger.info(f"Finding chunks with largest Sobolev norms (order {order})...")
-        
-        # Calculate Sobolev norms for all chunks
-        public_norms = []
-        private_norms = []
-        
-        # Public chunks
-        for chunk in self.public_builder.chunks:
-            if chunk.embedding:
-                norm = self.calculate_sobolev_norm(chunk.embedding, order)
-                public_norms.append({
-                    'norm': norm,
-                    'chunk': chunk,
-                    'type': 'public'
-                })
-        
-        # Private chunks
-        for chunk in self.private_builder.chunks:
-            if chunk.embedding:
-                norm = self.calculate_sobolev_norm(chunk.embedding, order)
-                private_norms.append({
-                    'norm': norm,
-                    'chunk': chunk,
-                    'type': 'private'
-                })
-        
-        # Combine and sort by norm
-        all_norms = public_norms + private_norms
-        all_norms.sort(key=lambda x: x['norm'], reverse=True)
-        
-        # Return top_k
-        results = []
-        for i, norm_info in enumerate(all_norms[:top_k]):
-            chunk = norm_info['chunk']
-            
-            # Get content based on chunk type
-            if norm_info['type'] == 'public':
-                content = chunk.content
-                source_type = chunk.source_type.value
-            else:
-                content = chunk.text
-                source_type = 'private'
-            
-            result = {
-                'rank': i + 1,
-                'norm': norm_info['norm'],
-                'type': norm_info['type'],
-                'chunk_id': chunk.id,
-                'content': content[:200] + "..." if len(content) > 200 else content,
-                'metadata': chunk.metadata,
-                'source_type': source_type
-            }
-            
-            results.append(result)
-        
-        logger.info(f"Found {len(results)} chunks with largest Sobolev norms")
-        return results
-    
+
     def analyze_barriers(self, top_k: int = 10) -> BarrierProbeResult:
         """Perform comprehensive barrier analysis.
         
@@ -673,9 +558,6 @@ class BarrierAnalyzer:
         # Filter to matches within threshold
         raw_matches = self.find_closest_matches(top_k * 5)
         filtered_matches = self._filter_results(raw_matches, top_k)
-
-        # Find largest Sobolev norms
-        largest_norms = self.find_largest_sobolev_norms(top_k)
 
         # Identify potential breaches
         potential_breaches = []
@@ -776,7 +658,6 @@ class BarrierAnalyzer:
             metadata={
                 'closest_matches': raw_matches,
                 'top_breaches': filtered_matches,
-                'largest_sobolev_norms': largest_norms,
                 'total_comparisons': len(self._nn_cache) if self._nn_cache else 0,
                 'global_minimum_pair': {
                     'private_chunk_id': global_min.private_chunk_id,

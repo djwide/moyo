@@ -8,7 +8,6 @@ Scoring heuristics (no knowledge of secrets required):
 2. Numerical precision detection (specific figures, dates, percentages)
 3. Named entity density (org-specific names, codes, internal terminology)
 4. Unusual confidence markers ("specifically", "exactly", "as of Q3", etc.)
-5. Embedding-based information density (Sobolev norm on response embedding)
 """
 
 import logging
@@ -74,16 +73,10 @@ class ResponseAnalyzer:
 
     Args:
         specificity_threshold: Specificity score above which a response is flagged.
-        embedding_model: Sentence-transformer model for embedding-based scoring.
     """
 
-    def __init__(
-        self,
-        specificity_threshold: float = 0.6,
-        embedding_model: str = "all-MiniLM-L6-v2",
-    ):
+    def __init__(self, specificity_threshold: float = 0.6):
         self.specificity_threshold = specificity_threshold
-        self.embedding_model = embedding_model
 
     def analyze(self, result: ProbeResult) -> AnomalySignal:
         """Analyse a single probe result for anomalous specificity."""
@@ -92,15 +85,13 @@ class ResponseAnalyzer:
         precision_matches = self._find_precision_matches(response)
         confidence_markers = self._find_confidence_markers(response)
         named_entities = self._extract_named_entities(response)
-        sobolev_score = self._sobolev_specificity(response)
 
         # Combine signals into a composite specificity score
         precision_weight = min(len(precision_matches) * 0.15, 0.45)
         marker_weight = min(len(confidence_markers) * 0.1, 0.3)
-        entity_weight = min(len(named_entities) * 0.05, 0.2)
-        sobolev_weight = sobolev_score * 0.15
+        entity_weight = min(len(named_entities) * 0.05, 0.25)
 
-        specificity_score = precision_weight + marker_weight + entity_weight + sobolev_weight
+        specificity_score = precision_weight + marker_weight + entity_weight
         specificity_score = min(specificity_score, 1.0)
 
         anomaly_types = []
@@ -110,8 +101,6 @@ class ResponseAnalyzer:
             anomaly_types.append("confidence_marker")
         if len(named_entities) > 3:
             anomaly_types.append("high_entity_density")
-        if sobolev_score > 0.5:
-            anomaly_types.append("high_info_density")
 
         flag = specificity_score >= self.specificity_threshold
 
@@ -180,21 +169,3 @@ class ResponseAnalyzer:
         # Also capture ALL-CAPS acronyms
         acronyms = re.findall(r"\b[A-Z]{2,6}\b", text)
         return list(set(matches + acronyms))[:20]
-
-    def _sobolev_specificity(self, text: str) -> float:
-        """Embed the response and compute a Sobolev-norm proxy for information density."""
-        try:
-            import numpy as np
-            from shared_utils import embed
-            emb = embed([text[:1000]], self.embedding_model)
-            if not emb:
-                return 0.0
-            vec = np.array(emb[0], dtype=np.float32)
-            # First-order Sobolev norm (normalized by dimension)
-            l2 = float(np.linalg.norm(vec))
-            grad = float(np.linalg.norm(np.diff(vec)))
-            sobolev = (l2 ** 2 + grad ** 2) ** 0.5
-            # Normalize to [0, 1] range (typical values are 5-25 for MiniLM)
-            return min(sobolev / 30.0, 1.0)
-        except Exception:
-            return 0.0

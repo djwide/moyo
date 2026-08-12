@@ -65,10 +65,18 @@ def get_deliverable_llm(override: Optional[LLMClient] = None) -> LLMClient:
 
     Override with a configured client, or via ``MOYO_DELIVERABLE_MODEL`` /
     ``MOYO_DELIVERABLE_BASE_URL`` / ``MOYO_DELIVERABLE_API_KEY`` (falls back to
-    ``XAI_API_KEY``).
+    ``XAI_API_KEY``). Under ``--test`` / ``MOYO_TEST_MODE``, returns an offline
+    echo client (no API key required).
     """
     if override is not None:
         return override
+
+    try:
+        from moyo.llm.testing import is_test_mode, test_llm_spec
+        if is_test_mode():
+            return LLMClient(test_llm_spec())
+    except Exception:
+        pass
 
     ensure_env_loaded()
     model = (

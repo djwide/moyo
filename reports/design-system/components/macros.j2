@@ -48,6 +48,12 @@
   {%- endif -%}
 {%- endmacro %}
 
+{% macro language_badge(language) -%}
+  {%- if language -%}
+  <span class="severity-badge severity-badge--via-lang">via {{ language }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
 {% macro finding_card(f) -%}
   {%- set sens = (f.sensitivity or 0)|int -%}
   {%- set sev = 'high' if sens >= 4 else ('medium' if sens == 3 else ('low' if sens == 2 else 'info')) -%}
@@ -56,6 +62,7 @@
       <span class="finding-card__id">{{ f.claim_id }}</span>
       {{ severity_badge(f.status) }}
       {{ severity_badge(sev) }}
+      {{ language_badge(f.prompt_language) }}
     </div>
     <p class="finding-card__claim">{{ f.claim }}</p>
     <div class="finding-card__meta">
@@ -63,6 +70,9 @@
       <span>Sens {{ f.sensitivity }} · Spec {{ f.specificity }}</span>
       <span>Confidence {{ confidence(f.confidence) }}</span>
     </div>
+    {% if f.language_annotation %}
+    <p class="finding-card__lang">{{ f.language_annotation }}</p>
+    {% endif %}
     {{ citation_line(f.citations_display) }}
     {% if f.raw_excerpt %}
       {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}

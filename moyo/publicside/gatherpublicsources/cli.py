@@ -9,9 +9,22 @@ from .schema import CrawlConfig, SourceType
 
 
 @click.group()
-def cli() -> None:
+@click.option(
+    "--test",
+    "test_mode",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use fake deterministic LLM clients (no network / API keys). "
+        "Also settable via MOYO_TEST_MODE=1."
+    ),
+)
+def cli(test_mode: bool) -> None:
     """CLI for gathering public sources."""
-    pass
+    if test_mode:
+        from moyo.llm.testing import enable_test_mode
+        enable_test_mode()
+        click.echo("LLM test mode ON (fake deterministic clients).", err=True)
 
 
 @cli.command()

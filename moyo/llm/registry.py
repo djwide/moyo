@@ -40,11 +40,19 @@ _default_override: Optional[LLMSpec] = None
 def default_spec() -> LLMSpec:
     """Resolve the current default LLM spec.
 
-    Precedence: runtime override (:func:`set_default_llm`) > ``MOYO_LLM_*``
-    settings / ``.env`` > field defaults.
+    Precedence: runtime override (:func:`set_default_llm`) > ``--test`` /
+    ``MOYO_TEST_MODE`` (echo) > ``MOYO_LLM_*`` settings / ``.env`` > field
+    defaults.
     """
     if _default_override is not None:
         return _default_override
+
+    try:
+        from moyo.llm.testing import is_test_mode, test_llm_spec
+        if is_test_mode():
+            return test_llm_spec()
+    except Exception:
+        pass
 
     try:
         from moyo.config.settings import get_settings
@@ -108,9 +116,15 @@ def _load_retrieval_specs() -> List[LLMSpec]:
 
 def get_retrieval_specs() -> List[LLMSpec]:
     """Return the configured retrieval-LLM specs (see module docstring)."""
+    try:
+        from moyo.llm.testing import is_test_mode, test_llm_spec
+        if is_test_mode():
+            return [test_llm_spec()]
+    except Exception:
+        pass
     return _load_retrieval_specs()
 
 
 def get_retrieval_llms() -> List[LLMClient]:
     """Return an :class:`LLMClient` for each configured retrieval LLM."""
-    return [LLMClient(spec) for spec in _load_retrieval_specs()]
+    return [LLMClient(spec) for spec in get_retrieval_specs()]

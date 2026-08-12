@@ -6,6 +6,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from .language import looks_like_english
+
 
 def _headline_for_topic(topic: str) -> str:
     del topic  # prompt is shown separately; title stays fixed
@@ -71,7 +73,11 @@ def score_report(
         dots = min(dot_max, dots)
         model_exposure.append({"model": m, "score": round(sc, 2), "dots": dots})
 
-    top = ranked[0] if ranked else None
+    # Prefer an English claim body for the headline finding; foreign-language
+    # prompting stays on the finding as metadata, not as display text.
+    top = next((c for c in ranked if looks_like_english(str(c.get("claim") or ""))), None)
+    if top is None:
+        top = ranked[0] if ranked else None
     badges: list[str] = []
     if top:
         if top.get("sensitivity", 0) >= high_min:
@@ -102,17 +108,21 @@ def score_report(
         f"{outliers} unusual outliers",
     ]
 
-    # Evidence chains from clusters (top N by size * avg sensitivity)
+    # Prefer English-labeled cluster members for chain labels when available.
     chain_objs = []
     for cl in clusters:
         members = [c for c in claims if c["claim_id"] in cl["claim_ids"]]
         if not members:
             continue
+        rep = next(
+            (m for m in members if looks_like_english(str(m.get("claim") or ""))),
+            members[0],
+        )
         avg_sens = sum(c.get("sensitivity", 0) for c in members) / len(members)
         chain_objs.append(
             {
                 "chain_id": cl["cluster_id"].replace("CL", "CH"),
-                "label": members[0]["claim"][:120],
+                "label": rep["claim"][:120],
                 "claim_ids": cl["claim_ids"],
                 "models": cl["models"],
                 "score": round(avg_sens * len(members), 2),

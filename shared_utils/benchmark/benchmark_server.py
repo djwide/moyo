@@ -165,10 +165,9 @@ def profile(
     search_t = 0.0
     static_t = 0.0
     semantic_t = 0.0
-    sobolev_t = 0.0
     
-    # Run semantic search if cosine or sobolev scanning is enabled
-    if scan_types in ['cosine', 'sobolev', 'all']:
+    # Run semantic search if cosine scanning is enabled
+    if scan_types in ['cosine', 'all']:
         start = time.perf_counter()
         scores = linter.semantic_scores(embeddings, index)
         if device == "cuda":
@@ -193,24 +192,14 @@ def profile(
                 pass
         semantic_t = time.perf_counter() - start
 
-    # Run Sobolev norm calculation if sobolev scanning is enabled
-    if scan_types in ['sobolev', 'all']:
-        start = time.perf_counter()
-        # Sobolev norm calculation would be done here
-        # For now, we'll just simulate the timing
-        sobolev_t = 0.001  # Placeholder
-        if device == "cuda":
-            torch.cuda.synchronize()
-        sobolev_t = time.perf_counter() - start
-
-    total = index_t + encode_t + search_t + static_t + semantic_t + sobolev_t
+    total = index_t + encode_t + search_t + static_t + semantic_t
     
     # Print timing breakdown based on enabled scan types
     timing_parts = []
     timing_parts.append(f"index={index_t:.3f}s")
     timing_parts.append(f"encode={encode_t:.3f}s")
     
-    if scan_types in ['cosine', 'sobolev', 'all']:
+    if scan_types in ['cosine', 'all']:
         timing_parts.append(f"search={search_t:.3f}s")
     
     if scan_types in ['static', 'all']:
@@ -218,9 +207,6 @@ def profile(
     
     if scan_types in ['cosine', 'all']:
         timing_parts.append(f"semantic={semantic_t:.3f}s")
-    
-    if scan_types in ['sobolev', 'all']:
-        timing_parts.append(f"sobolev={sobolev_t:.3f}s")
     
     print("\n".join(timing_parts))
     return total
@@ -329,9 +315,9 @@ Examples:
     parser.add_argument(
         "--scan-types",
         nargs="+",
-        choices=["static", "cosine", "sobolev", "all"],
+        choices=["static", "cosine", "all"],
         default=["all"],
-        help="Scan types to benchmark: static (regex), cosine (semantic similarity), sobolev (Sobolev norm), or all (default: all)",
+        help="Scan types to benchmark: static (regex), cosine (semantic similarity), or all (default: all)",
     )
     args = parser.parse_args()
 
@@ -467,16 +453,14 @@ Examples:
 
                     static_hits = sum(bool(r.get("static_hit")) for r in results)
                     semantic_hits = sum(bool(r.get("semantic_hit")) for r in results)
-                    sobolev_hits = sum(bool(r.get("sobolev_hit")) for r in results)
                     total = len(results)
                     print(
-                        "Static hits: {} misses: {}\n" "Semantic hits: {} misses: {}\n" "Sobolev hits: {} misses: {}".format(
+                        "Static hits: {} misses: {}\n"
+                        "Semantic hits: {} misses: {}".format(
                             static_hits,
                             total - static_hits,
                             semantic_hits,
                             total - semantic_hits,
-                            sobolev_hits,
-                            total - sobolev_hits,
                         )
                     )
 

@@ -217,6 +217,13 @@ def synthesize(
     if parsed.get("headline"):
         report_data["headline"] = parsed["headline"]
 
+    try:
+        from moyo.llm.testing import is_test_mode
+        if is_test_mode():
+            dry_run = True
+    except Exception:
+        pass
+
     if dry_run:
         return report_data
 

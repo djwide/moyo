@@ -7,9 +7,8 @@ This guide explains how to use the barrier analysis functionality in the `moyo` 
 The barrier analysis module provides tools to:
 
 1. **Find closest matches** between public and private information using cosine distance
-2. **Calculate Sobolev norms** to analyze vector characteristics
-3. **Identify potential breaches** based on similarity thresholds
-4. **Generate recommendations** for information barrier management
+2. **Identify potential breaches** based on similarity thresholds
+3. **Generate recommendations** for information barrier management
 
 ## Key Concepts
 
@@ -17,11 +16,6 @@ The barrier analysis module provides tools to:
 - Measures the similarity between two vectors in high-dimensional space
 - Range: 0 (identical) to 1 (completely different)
 - Lower values indicate more similar content
-
-### Sobolev Norms
-- Mathematical measure of vector "smoothness" and complexity
-- Higher values indicate more complex or variable content
-- Useful for identifying content that might be more sensitive or detailed
 
 ### Information Barrier Breaches
 - Occur when public and private content are too similar
@@ -102,9 +96,6 @@ if analyzer.load_indexes():
     # Find closest matches
     closest_matches = analyzer.find_closest_matches(top_k=10)
     
-    # Find largest Sobolev norms
-    largest_norms = analyzer.find_largest_sobolev_norms(top_k=10, order=1)
-    
     # Perform full analysis
     result = analyzer.analyze_barriers(top_k=10)
 ```
@@ -128,11 +119,7 @@ The analysis provides several key metrics:
    - Cosine distance for each pair
    - Content previews for review
 
-4. **Sobolev Norms**
-   - Top K chunks with largest Sobolev norms
-   - Indicates content complexity and potential sensitivity
-
-5. **Recommendations**
+4. **Recommendations**
    - Actionable advice based on findings
    - Risk assessment and mitigation suggestions
 
@@ -160,13 +147,6 @@ Top 10 Closest Matches (Cosine Distance):
   2. Distance: 0.0456
      Public: Deep learning techniques for natural language processing...
      Private: Our NLP implementation using transformer models...
-
-Top 10 Largest Sobolev Norms:
-  1. Norm: 2.5100 (public)
-     Content: Comprehensive analysis of machine learning algorithms...
-
-  2. Norm: 2.3685 (private)
-     Content: Detailed technical specifications for our AI platform...
 
 Recommendations:
   • Found 3 potential information barrier breaches

@@ -8,7 +8,7 @@ moyo provides:
 
 - **Private side processing**: Ingest local data and build a FAISS-backed vector corpus
 - **Public side analysis**: Gather and index open-source information
-- **Barrier assessment**: Identify how closely public information approaches private data, using cosine distance, Sobolev norms, and LLM-assisted fuzzing
+- **Barrier assessment**: Identify how closely public information approaches private data, using cosine distance and LLM-assisted fuzzing
 - **Corpus management**: Build, query, and maintain knowledge corpora
 
 ## Architecture
@@ -151,6 +151,11 @@ moyo-redteam blackbox --domain "acme corp" --rounds 3 --hypothesis-source llm
 # Black-box seeded from a bundled probe path (list of target-valuable secrets):
 moyo-redteam blackbox --domain "state campaign" --rounds 8 \
   --probe-path political_opposition_research
+
+# Feed black-box hypotheses into moyo-gather explore (explore CLI unchanged):
+moyo-redteam blackbox-explore -d "state campaign" \
+  --probe-path political_opposition_research --prompts-only -f /tmp/bb.txt
+moyo-gather explore -f /tmp/bb.txt
 
 moyo-redteam report --input results.json --format text
 ```

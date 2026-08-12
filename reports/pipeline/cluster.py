@@ -1,4 +1,4 @@
-"""[3a] Dedupe + cluster claims; refresh corroboration / status."""
+"""[3a] Dedupe + cluster claims; refresh corroboration / status / confidence."""
 
 from __future__ import annotations
 
@@ -18,6 +18,46 @@ def jaccard(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb)
 
 
+def _normalize_citation(cite: Any) -> str:
+    """Stable key for a citation string or {label,url} dict."""
+    if isinstance(cite, dict):
+        raw = str(cite.get("url") or cite.get("label") or cite.get("ref") or "").strip()
+    else:
+        raw = str(cite or "").strip()
+    return raw.lower().rstrip("/")
+
+
+def _cluster_citation_keys(claims: list[dict], idxs: list[int]) -> set[str]:
+    keys: set[str] = set()
+    for i in idxs:
+        for cite in claims[i].get("citations") or []:
+            key = _normalize_citation(cite)
+            if key:
+                keys.add(key)
+    return keys
+
+
+def confidence_boost(*, n_models: int, n_citations: int) -> int:
+    """How many points to add to provisional extraction confidence.
+
+    Multi-LLM and multi-source agreement each contribute up to +2 (capped later
+    with the base score at 5):
+
+    - +1 when ≥2 distinct LLMs agree; +1 more when ≥3
+    - +1 when ≥2 distinct citations/sources; +1 more when ≥3
+    """
+    boost = 0
+    if n_models >= 2:
+        boost += 1
+    if n_models >= 3:
+        boost += 1
+    if n_citations >= 2:
+        boost += 1
+    if n_citations >= 3:
+        boost += 1
+    return boost
+
+
 def cluster_claims(
     claims: list[dict],
     *,
@@ -27,8 +67,15 @@ def cluster_claims(
     """
     Greedy cluster by claim-text similarity.
 
+    Updates each claim with:
+      - ``corroboration`` — count of distinct ``source_model`` values in the cluster
+      - ``source_count`` — count of distinct citations across the cluster
+      - ``confidence`` — extraction confidence boosted for multi-LLM / multi-source
+        agreement (see :func:`confidence_boost`)
+      - ``status`` — ``CORROBORATED`` when model count ≥ ``corroboration_min_sources``
+
     Returns (updated_claims, clusters) where each cluster is:
-      {cluster_id, claim_ids, models, representative_id}
+      {cluster_id, claim_ids, models, citations, representative_id}
     """
     if not claims:
         return [], []
@@ -59,6 +106,7 @@ def cluster_claims(
     clusters: list[dict] = []
     for ci, (_root, idxs) in enumerate(sorted(groups.items()), start=1):
         models = sorted({claims[i]["source_model"] for i in idxs})
+        citation_keys = _cluster_citation_keys(claims, idxs)
         # Representative: highest interestingness * specificity
         rep = max(
             idxs,
@@ -71,27 +119,36 @@ def cluster_claims(
             "cluster_id": f"CL{ci:03d}",
             "claim_ids": [claims[i]["claim_id"] for i in idxs],
             "models": models,
+            "citations": sorted(citation_keys),
             "representative_id": claims[rep]["claim_id"],
             "size": len(idxs),
         }
         clusters.append(cluster)
 
-        n_sources = len(models)
+        n_models = len(models)
+        n_citations = len(citation_keys)
+        boost = confidence_boost(n_models=n_models, n_citations=n_citations)
         for i in idxs:
             claims[i]["cluster_id"] = cluster["cluster_id"]
-            claims[i]["corroboration"] = n_sources
+            claims[i]["corroboration"] = n_models
+            claims[i]["source_count"] = n_citations
+            try:
+                base_conf = int(claims[i].get("confidence") or 3)
+            except (TypeError, ValueError):
+                base_conf = 3
+            claims[i]["confidence"] = max(1, min(5, base_conf + boost))
             # Preserve contested / outlier if already set and still meaningful
             prior = claims[i].get("status", "UNVERIFIED")
             if prior == "CONTESTED":
                 continue
-            if n_sources >= corroboration_min_sources:
+            if n_models >= corroboration_min_sources:
                 # If same cluster but conflicting specificity language — keep simple:
                 claims[i]["status"] = "CORROBORATED"
-            elif n_sources == 1 and prior in {"OUTLIER", "MODEL-SPECIFIC", "UNVERIFIED"}:
+            elif n_models == 1 and prior in {"OUTLIER", "MODEL-SPECIFIC", "UNVERIFIED"}:
                 if prior == "UNVERIFIED" and claims[i].get("sensitivity", 0) >= 4:
                     claims[i]["status"] = "MODEL-SPECIFIC"
                 # else keep prior
-            elif n_sources == 1:
+            elif n_models == 1:
                 claims[i]["status"] = "MODEL-SPECIFIC"
 
     # Contested: high-sensitivity claims where sibling clusters disagree on formula detail

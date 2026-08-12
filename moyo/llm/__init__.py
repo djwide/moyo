@@ -26,13 +26,25 @@ from moyo.llm.registry import (
     get_retrieval_llms,
     set_default_llm,
 )
+from moyo.llm.testing import (
+    FakeDeterministicLLM,
+    enable_test_mode,
+    fake_complete,
+    fake_llm_client,
+    is_test_mode,
+)
 
 __all__ = [
     "LLMClient",
     "LLMSpec",
+    "FakeDeterministicLLM",
     "classify_provider",
     "default_spec",
+    "enable_test_mode",
+    "fake_complete",
+    "fake_llm_client",
     "get_default_llm",
     "get_retrieval_llms",
+    "is_test_mode",
     "set_default_llm",
 ]

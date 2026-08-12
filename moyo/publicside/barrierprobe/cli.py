@@ -74,7 +74,17 @@ def _resolve_api_key(provider: str, api_key: Optional[str]) -> Optional[str]:
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
 @click.option('--debug', is_flag=True, help='Enable debug logging')
-def cli(verbose: bool, debug: bool):
+@click.option(
+    '--test',
+    'test_mode',
+    is_flag=True,
+    default=False,
+    help=(
+        'Use fake deterministic LLM clients (no network / API keys). '
+        'Also settable via MOYO_TEST_MODE=1.'
+    ),
+)
+def cli(verbose: bool, debug: bool, test_mode: bool):
     """
     moyo Barrier Probe - LLM-assisted fuzzing and barrier analysis.
     
@@ -95,6 +105,10 @@ def cli(verbose: bool, debug: bool):
     • Search corpus: moyo-probe search -c corpus_dir -q "security incident" -k 10
     • Test LLM: moyo-probe test-llm --llm-provider openai --model gpt-4
     """
+    if test_mode:
+        from moyo.llm.testing import enable_test_mode
+        enable_test_mode()
+        click.echo("LLM test mode ON (fake deterministic clients).", err=True)
     if verbose:
         import logging
         logging.basicConfig(level=logging.INFO)
@@ -110,7 +124,7 @@ def cli(verbose: bool, debug: bool):
 @click.option('--target-concept', '-t', required=True, help='Target concept to move towards')
 @click.option('--corpus-index', '-i', type=click.Path(exists=True), required=True, help='Path to corpus FAISS index')
 @click.option('--output', '-o', type=click.Path(), help='Output file for results')
-@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local', 'test']), help='LLM provider')
 @click.option(
     '--model',
     default='llama3.1:8b',
@@ -335,7 +349,7 @@ def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k,
 
 @cli.command()
 @click.option('--config', '-c', type=click.Path(exists=True), help='Configuration file')
-@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local']), help='LLM provider')
+@click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local', 'test']), help='LLM provider')
 @click.option(
     '--model',
     default='llama3.1:8b',

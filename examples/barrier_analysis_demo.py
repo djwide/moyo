@@ -3,7 +3,7 @@
 Demonstration of barrier analysis functionality.
 
 This script shows how to compare public and private FAISS indexes
-to find closest matches and largest Sobolev norms.
+to find closest matches via cosine distance.
 """
 
 import sys
@@ -236,14 +236,6 @@ def demonstrate_barrier_analysis(public_index_path: str, private_index_path: str
             print(f"     Private: {match['private_content']}")
             print()
     
-    # Largest Sobolev norms
-    if result.metadata.get('largest_sobolev_norms'):
-        print(f"\nTop 10 Largest Sobolev Norms:")
-        for norm_info in result.metadata['largest_sobolev_norms']:
-            print(f"  {norm_info['rank']}. Norm: {norm_info['norm']:.4f} ({norm_info['type']})")
-            print(f"     Content: {norm_info['content']}")
-            print()
-    
     # Recommendations
     if result.recommendations:
         print(f"\nRecommendations:")
@@ -283,17 +275,6 @@ def demonstrate_individual_analyses(public_index_path: str, private_index_path: 
         print(f"     Private: {match['private_content']}")
         print()
     
-    # Find largest Sobolev norms
-    print("\nFinding largest Sobolev norms...")
-    largest_norms = analyzer.find_largest_sobolev_norms(top_k=5, order=1)
-    
-    print(f"Top 5 Largest Sobolev Norms (Order 1):")
-    for norm_info in largest_norms:
-        print(f"  {norm_info['rank']}. Norm: {norm_info['norm']:.4f} ({norm_info['type']})")
-        print(f"     Content: {norm_info['content']}")
-        print()
-
-
 def main():
     """Run the demonstration."""
     print("Barrier Analysis Demonstration")

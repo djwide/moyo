@@ -5,8 +5,13 @@ report. Return **only** a JSON array of claim objects (no markdown fences).
 
 ## Hard rules
 
-- Preserve evidence: every claim MUST include `raw_excerpt` copied from the chunk
-  and approximate `raw_start_line` / `raw_end_line` from the chunk metadata.
+- **English only:** write every `claim` and `raw_excerpt` in clear English, even
+  when the chunk or prompt language is not English. Translate faithfully; do not
+  leave foreign-language wording in either field. The chunk `language` metadata
+  already records the prompt language — do not put foreign text in the claim.
+- Preserve evidence: every claim MUST include `raw_excerpt` grounded in the chunk
+  (translated to English when needed) and approximate `raw_start_line` /
+  `raw_end_line` from the chunk metadata.
 - Never omit a finding solely because it is unusual, disputed, sensitive, or
   produced by only one model. Classify it instead.
 - Prefer precise claims (numbers, named entities, dates, amounts) over vague
@@ -26,7 +31,10 @@ report. Return **only** a JSON array of claim objects (no markdown fences).
 `CORROBORATED` | `CONTESTED` | `OUTLIER` | `UNVERIFIED` | `MODEL-SPECIFIC`
 
 At extraction time, set a provisional `status` and set `corroboration` to 1 for
-this chunk's source; clustering will update corroboration later.
+this chunk's source. Score `confidence` for this chunk alone (how grounded the
+excerpt looks). Clustering later raises `corroboration` (distinct LLMs),
+`source_count` (distinct citations), and `confidence` when multiple models
+and/or multiple sources agree.
 
 ## Scores (integers 1–5)
 

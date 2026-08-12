@@ -1,4 +1,4 @@
-{% from "components/macros.j2" import severity_badge %}
+{% from "components/macros.j2" import severity_badge, language_badge %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -38,7 +38,7 @@
     <p class="date-line">{{ content.meta.report_date }}</p>
     <h1 class="headline">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
 
-    <div class="metrics">
+    <div class="metrics{% if content.meta.counts.languages %} metrics--langs{% endif %}">
       <div class="metric">
         <div class="value">{{ content.meta.counts.findings }}</div>
         <div class="label">Findings</div>
@@ -51,6 +51,12 @@
         <div class="value">{{ content.meta.counts.high_sensitivity }}</div>
         <div class="label">High-sensitivity</div>
       </div>
+      {% if content.meta.counts.languages %}
+      <div class="metric">
+        <div class="value">{{ content.meta.counts.languages }}</div>
+        <div class="label">Languages</div>
+      </div>
+      {% endif %}
     </div>
 
     <section class="panel panel--lead">
@@ -60,7 +66,11 @@
         {% for b in content.top_finding.badges or [] %}
           {{ severity_badge(b) }}
         {% endfor %}
+        {{ language_badge(content.top_finding.prompt_language) }}
       </p>
+      {% if content.top_finding.language_annotation %}
+      <p class="lead-lang">{{ content.top_finding.language_annotation }}</p>
+      {% endif %}
     </section>
 
     <div class="grid-2 lower">
@@ -76,6 +86,9 @@
             <span class="specific-claim">{{ f.claim }}</span>
             {% if f.source_cite %}
             <span class="specific-source">{{ f.source_cite }}</span>
+            {% endif %}
+            {% if f.language_annotation %}
+            <span class="specific-lang">{{ f.language_annotation }}</span>
             {% endif %}
             {% if f.citations_display %}
             <span class="specific-cited">Cited: {{ f.citations_display | map(attribute='short') | join('; ') }}</span>

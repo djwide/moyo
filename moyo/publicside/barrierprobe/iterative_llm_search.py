@@ -29,7 +29,17 @@ class IterativeLLMSearch:
                 Ollama ``llama3.1:8b``.
         """
         self.barrier_analyzer = barrier_analyzer
-        self.llm_client = llm_client or OllamaClient(DEFAULT_OLLAMA_MODEL)
+        if llm_client is not None:
+            self.llm_client = llm_client
+        else:
+            try:
+                from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+                if is_test_mode():
+                    self.llm_client = FakeDeterministicLLM(model_name="echo-test")
+                else:
+                    self.llm_client = OllamaClient(DEFAULT_OLLAMA_MODEL)
+            except Exception:
+                self.llm_client = OllamaClient(DEFAULT_OLLAMA_MODEL)
         self.iteration_results = []
         
     def fuzz_text(self, text: str, fuzz_level: float = 0.1) -> str:

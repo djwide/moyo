@@ -504,8 +504,15 @@ class LLMClient:
             max_tokens = 256
         provider = self.spec.provider
 
-        if provider == "echo":
-            return self._echo(prompt, system)
+        # ``--test`` / MOYO_TEST_MODE always stays offline, even if this client
+        # was constructed against a live provider before test mode was enabled.
+        try:
+            from moyo.llm.testing import is_test_mode
+            if provider == "echo" or is_test_mode():
+                return self._echo(prompt, system)
+        except Exception:
+            if provider == "echo":
+                return self._echo(prompt, system)
 
         if self._client is None:
             raise RuntimeError(self._init_error or f"LLM provider '{provider}' unavailable")

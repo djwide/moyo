@@ -10,6 +10,9 @@
     {{ metric_card(content.meta.counts.llms_tested, "Models") }}
     {{ metric_card(content.meta.counts.high_sensitivity, "High Sens.") }}
     {{ metric_card(content.meta.counts.chains, "Chains") }}
+    {% if content.meta.counts.languages %}
+    {{ metric_card(content.meta.counts.languages, "Languages") }}
+    {% endif %}
   </div>
 
   {% if content.pages.executive_summary.public_sources %}

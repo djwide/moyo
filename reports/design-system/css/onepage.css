@@ -90,6 +90,9 @@ body {
   border-top: 1px solid var(--moyo-border);
   border-bottom: 1px solid var(--moyo-border);
 }
+.metrics.metrics--langs {
+  grid-template-columns: repeat(4, 1fr);
+}
 .metrics .metric {
   padding: 0.75rem 1rem;
   text-align: center;
@@ -210,6 +213,14 @@ body {
   font-size: 0.72rem;
   color: var(--moyo-muted);
   font-weight: 600;
+}
+.specific-lang,
+.lead-lang {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--moyo-teal-deep);
+  font-family: var(--font-sans);
 }
 .specific-cited {
   display: block;

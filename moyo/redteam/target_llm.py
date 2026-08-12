@@ -60,6 +60,15 @@ class TargetLLMClient:
 
     def _init_client(self) -> Any:
         provider = self.config.provider
+        try:
+            from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+            if is_test_mode() or provider in ("test", "echo"):
+                return FakeDeterministicLLM(model_name=self.config.model or "echo-test")
+        except Exception:
+            if provider in ("test", "echo"):
+                logger.error("Could not load FakeDeterministicLLM for --test mode")
+                return None
+
         if provider == "openai":
             try:
                 from openai import OpenAI
@@ -90,7 +99,10 @@ class TargetLLMClient:
                 logger.error("httpx package not installed: pip install httpx")
                 return None
         else:
-            logger.error(f"Unknown target provider: {provider!r}. Use 'openai', 'anthropic', or 'rest'.")
+            logger.error(
+                f"Unknown target provider: {provider!r}. "
+                "Use 'openai', 'anthropic', 'rest', or 'test'."
+            )
             return None
 
     def send_probe(
@@ -137,6 +149,14 @@ class TargetLLMClient:
 
     def _call_provider(self, prompt: str, system: Optional[str]) -> tuple[str, int]:
         """Dispatch to the correct provider backend. Returns (response_text, tokens_used)."""
+        from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+
+        if isinstance(self._client, FakeDeterministicLLM) or is_test_mode() or self.config.provider in (
+            "test",
+            "echo",
+        ):
+            text = self._client.generate(prompt, system=system)
+            return text, len(text.split())
         if self.config.provider == "openai":
             return self._call_openai(prompt, system)
         elif self.config.provider == "anthropic":

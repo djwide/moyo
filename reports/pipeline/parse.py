@@ -260,7 +260,9 @@ _RETRIEVAL_MODEL_RE = re.compile(r"`([^`]+)`")
 
 
 def exploration_run_meta(path: Path) -> dict:
-    """Pull fuzz mode, strategies, and retrieval models from exploration.md."""
+    """Pull fuzz mode, strategies, languages, and retrieval models from exploration.md."""
+    from .language import parse_languages_line
+
     text = path.read_text(encoding="utf-8")
     fuzz_mode = "basic"
     m = _FUZZ_MODE_RE.search(text)
@@ -288,6 +290,8 @@ def exploration_run_meta(path: Path) -> dict:
         else:
             strategies = ["paraphrase", "translate", "summarize"]
 
+    languages = parse_languages_line(text)
+
     models: list[str] = []
     # Prefer the Retrieval sources block (before Detailed findings)
     sources_block = text
@@ -305,5 +309,6 @@ def exploration_run_meta(path: Path) -> dict:
     return {
         "fuzz_mode": fuzz_mode,
         "strategies": strategies,
+        "languages": languages,
         "models_tested": models,
     }

@@ -725,8 +725,22 @@ class LLMFuzzer:
         """Build a fuzzer backed by a locally running Ollama model.
 
         Defaults to ``llama3.1:8b`` — the same local model used for black-box
-        explore rewording.
+        explore rewording. Under ``--test`` / ``MOYO_TEST_MODE``, returns a
+        fake deterministic client instead of contacting Ollama.
         """
+        try:
+            from moyo.llm.testing import is_test_mode
+            if is_test_mode():
+                return cls(
+                    LLMFuzzerConfig(
+                        llm_provider="test",
+                        model_name="echo-test",
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                )
+        except Exception:
+            pass
         return cls(
             LLMFuzzerConfig(
                 llm_provider="ollama",
@@ -736,8 +750,20 @@ class LLMFuzzer:
                 temperature=temperature,
             )
         )
+
     def _initialize_llm_client(self):
         """Initialize the LLM client based on configuration."""
+        try:
+            from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+            if is_test_mode() or self.config.llm_provider in ("test", "echo"):
+                return FakeDeterministicLLM(
+                    model_name=self.config.model_name or "echo-test"
+                )
+        except Exception:
+            if self.config.llm_provider in ("test", "echo"):
+                logger.error("Could not load FakeDeterministicLLM for --test mode")
+                return None
+
         if self.config.llm_provider == "local":
             # Offline synonym transformer; still uses MiniLM for similarity gating.
             return LocalLLMClient(
@@ -830,7 +856,21 @@ class LLMFuzzer:
         system_msg = system if system is not None else default_system
             
         try:
-            if self.config.llm_provider == "local":
+            from moyo.llm.testing import FakeDeterministicLLM
+
+            # FakeDeterministicLLM (provider test/echo or global --test) exposes
+            # generate() just like OllamaClient.
+            if isinstance(self.llm_client, FakeDeterministicLLM) or self.config.llm_provider in (
+                "test",
+                "echo",
+            ):
+                text = self.llm_client.generate(
+                    prompt,
+                    system=system_msg,
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                )
+            elif self.config.llm_provider == "local":
                 # Extract information from the prompt for local transformation
                 original_phrase, target_concept, similar_phrases = self._parse_fuzzing_prompt(prompt)
                 text = self.llm_client.transform_text(original_phrase, target_concept, similar_phrases)

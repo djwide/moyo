@@ -35,7 +35,9 @@ governance assessments, penetration testing of AI systems with written permissio
 - **Hypotheses**: The hypothesis engine can be seeded from a **probe path**
   (`--probe-path`) — a curated list of secrets a given target type would value
   (see `probe_paths/`). Seeds are injected as high-confidence hypotheses and used
-  to focus LLM expansion.
+  to focus LLM expansion. The same hypotheses can seed public multi-LLM
+  exploration via `moyo-redteam blackbox-explore` → `moyo-gather explore -f`
+  (or an in-process explore run) without changing the gather `explore` command.
 
 ### T2 — Insider Threat (White-Box)
 - **Profile**: Disgruntled employee, contractor, or compromised account

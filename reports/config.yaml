@@ -24,7 +24,7 @@ extract:
   base_url: https://api.moonshot.ai/v1
   api_key: $MOONSHOT_API_KEY
   temperature: 0.2
-  max_tokens: 2500
+  max_tokens: 6000
   workers: 4
   prompt: prompts/extract_claims.md
   require_raw_excerpt: true

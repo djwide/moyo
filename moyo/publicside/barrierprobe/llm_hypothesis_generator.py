@@ -299,6 +299,16 @@ class LLMHypothesisGenerator:
         
     def _initialize_llm_client(self):
         """Initialize the LLM client based on provider."""
+        try:
+            from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+            if is_test_mode() or self.config.llm_provider in ("test", "echo"):
+                return FakeDeterministicLLM(
+                    model_name=self.config.model_name or "echo-test"
+                )
+        except Exception:
+            if self.config.llm_provider in ("test", "echo"):
+                return None
+
         if self.config.llm_provider == "local":
             # Offline synonym fallback (not the default).
             return LocalHypothesisGenerator(self.config.model_name)
@@ -432,13 +442,26 @@ Focus on:
     
     def _call_llm(self, prompt: str) -> str:
         """Call the LLM with the given prompt."""
+        from moyo.llm.testing import FakeDeterministicLLM
+
+        system = (
+            "You are a research assistant that proposes retrieval queries. "
+            "Follow the requested QUERY N: format exactly."
+        )
+        if isinstance(self.llm_client, FakeDeterministicLLM) or self.config.llm_provider in (
+            "test",
+            "echo",
+        ):
+            return self.llm_client.generate(
+                prompt,
+                system=system,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
         if self.config.llm_provider == "ollama":
             return self.llm_client.generate(
                 prompt,
-                system=(
-                    "You are a research assistant that proposes retrieval queries. "
-                    "Follow the requested QUERY N: format exactly."
-                ),
+                system=system,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
             )

@@ -210,7 +210,7 @@ Keep `claims.jsonl` + `report_data.json` with the PDFs so findings stay auditabl
 |-------|-----------|-------------|
 | **[1] Parse / chunk** | Split by language → query → model response; keep line offsets; never drop text | Chunk target size; max chunk tokens; whether to include pruned stubs |
 | **[2] Extract** | Per-chunk LLM → claim objects into `claims.jsonl` (resumes via `extract_done.jsonl` if interrupted) | Extractor model, temperature, prompt file, concurrency; optional “must-include themes”. Delete `claims.jsonl` + `extract_done.jsonl` to force a full re-extract |
-| **[3] Dedupe / cluster / score** | Merge paraphrases; assign status; score dimensions; build chains | Score weights; corroboration minimum; cluster similarity threshold; status overrides |
+| **[3] Dedupe / cluster / score** | Merge paraphrases; set `corroboration` (distinct LLMs) + `source_count` (citations); raise `confidence` when multi-LLM / multi-source; score & chain | Score weights; corroboration minimum; cluster similarity threshold; status overrides |
 | **[4] Graphics** | SVG radar, heatmap, sensitivity bars, evidence graph | Which graphics to emit; color scale; model alias map for short names |
 | **[5] Templates → PDF** | Jinja fill + WeasyPrint | Template copy/tone; logo choice; forced headline; date; hide/show “REQUEST FULL REPORT” |
 
@@ -232,20 +232,28 @@ Every extracted finding should look like:
   "novelty": 5,
   "confidence": 3,
   "corroboration": 1,
+  "source_count": 0,
   "interestingness": 5,
   "status": "OUTLIER",
   "raw_excerpt": "...exact source text...",
   "raw_start_line": 741,
-  "raw_end_line": 759
+  "raw_end_line": 759,
+  "citations": ["https://example.org/report"]
 }
 ```
+
+After clustering, `corroboration` is the number of distinct `source_model`
+values in the claim’s cluster, `source_count` is the number of distinct
+citations across that cluster, and `confidence` is raised from the extractor’s
+provisional score when multiple LLMs and/or citations agree (+1 at ≥2 and +1
+at ≥3 for each axis, capped at 5).
 
 **Hard rule for operators and prompts:** never omit a finding solely because it
 is unusual, disputed, sensitive, or single-model. Classify it instead:
 
 | Status | Meaning |
 |--------|---------|
-| `CORROBORATED` | Multiple distinct sources agree |
+| `CORROBORATED` | Multiple distinct LLMs agree |
 | `CONTESTED` | Material disagreement across sources |
 | `OUTLIER` | Diverges sharply from consensus / unusually specific |
 | `UNVERIFIED` | Not well grounded / weak support |

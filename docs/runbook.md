@@ -242,6 +242,21 @@ else:
 fans out each seed to every retrieval LLM in `config/retrieval_llms.json`,
 compiles/labels/translates responses, then writes `exploration.md` only.
 
+To seed explore from black-box red-team hypotheses **without changing** the
+`explore` command, use the bridge:
+
+```bash
+# Write prompts only, then run explore yourself
+moyo-redteam blackbox-explore -d "political opposition research" \
+  --probe-path political_opposition_research --prompts-only \
+  -f /tmp/bb_prompts.txt
+moyo-gather explore -f /tmp/bb_prompts.txt --fuzz-mode basic
+
+# Or generate hypotheses and run the same explore library path in-process
+moyo-redteam blackbox-explore -d "pharmaceutical research" --n-hypotheses 5 \
+  --output-dir data/public_sources --fuzz-mode basic
+```
+
 ```bash
 # basic (default): English seeds; default strategies paraphrase/translate/summarize
 moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic

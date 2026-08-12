@@ -3,7 +3,7 @@
 Simple demonstration of barrier analysis functionality.
 
 This script shows how to compare public and private information
-using cosine distance and Sobolev norms without requiring FAISS.
+using cosine distance without requiring FAISS.
 """
 
 import sys
@@ -182,34 +182,6 @@ def demonstrate_cosine_distance():
     print()
 
 
-def demonstrate_sobolev_norms():
-    """Demonstrate Sobolev norm calculations."""
-    print("=== Sobolev Norm Demonstration ===")
-    
-    embeddings = create_mock_embeddings()
-    
-    for name, embedding in embeddings.items():
-        vec = np.array(embedding)
-        
-        # Calculate first-order Sobolev norm
-        l2_norm = np.linalg.norm(vec)
-        
-        if len(vec) > 1:
-            gradient = np.diff(vec)
-            gradient_norm = np.linalg.norm(gradient)
-        else:
-            gradient_norm = 0.0
-        
-        sobolev_norm = np.sqrt(l2_norm**2 + gradient_norm**2)
-        
-        print(f"Sobolev norm for '{name}': {sobolev_norm:.4f}")
-        print(f"  L2 norm: {l2_norm:.4f}")
-        print(f"  Gradient norm: {gradient_norm:.4f}")
-        print()
-    
-    print()
-
-
 def demonstrate_barrier_analysis():
     """Demonstrate barrier analysis with mock data."""
     print("=== Barrier Analysis Demonstration ===")
@@ -261,53 +233,6 @@ def demonstrate_barrier_analysis():
         print(f"     Private: {match['private_chunk'].text}")
         print()
     
-    # Calculate Sobolev norm distances between public and private chunks
-    sobolev_distances = []
-    
-    for i, pub_chunk in enumerate(public_chunks):
-        for j, priv_chunk in enumerate(private_chunks):
-            pub_emb = np.array(pub_chunk.metadata['embedding'])
-            priv_emb = np.array(priv_chunk.metadata['embedding'])
-            
-            # Calculate Sobolev norm distance between the two embeddings
-            # Sobolev norm distance = ||vec1 - vec2||_H1 = sqrt(||vec1 - vec2||^2 + ||grad(vec1 - vec2)||^2)
-            diff_vec = pub_emb - priv_emb
-            
-            # L2 norm of the difference
-            l2_norm_diff = np.linalg.norm(diff_vec)
-            
-            # Gradient norm of the difference (if vectors have more than 1 element)
-            if len(diff_vec) > 1:
-                gradient_diff = np.diff(diff_vec)
-                gradient_norm_diff = np.linalg.norm(gradient_diff)
-            else:
-                gradient_norm_diff = 0.0
-            
-            # Sobolev norm distance
-            sobolev_distance = np.sqrt(l2_norm_diff**2 + gradient_norm_diff**2)
-            
-            sobolev_distances.append({
-                'distance': sobolev_distance,
-                'public_chunk': pub_chunk,
-                'private_chunk': priv_chunk,
-                'public_index': i,
-                'private_index': j,
-                'l2_norm_diff': l2_norm_diff,
-                'gradient_norm_diff': gradient_norm_diff
-            })
-    
-    # Sort by Sobolev distance (smaller distance = more similar)
-    sobolev_distances.sort(key=lambda x: x['distance'])
-    
-    print(f"\nTop 5 Closest Matches (Sobolev Norm Distance):")
-    for i, match in enumerate(sobolev_distances[:5], 1):
-        print(f"  {i}. Sobolev Distance: {match['distance']:.4f}")
-        print(f"     L2 Norm Diff: {match['l2_norm_diff']:.4f}")
-        print(f"     Gradient Norm Diff: {match['gradient_norm_diff']:.4f}")
-        print(f"     Public: {match['public_chunk'].content}")
-        print(f"     Private: {match['private_chunk'].text}")
-        print()
-    
     # Identify potential breaches
     similarity_threshold = 0.3
     breaches = [d for d in distances if d['distance'] <= similarity_threshold]
@@ -322,19 +247,6 @@ def demonstrate_barrier_analysis():
     else:
         print("  No potential breaches detected")
     
-    # Compare cosine and Sobolev distances for the same pairs
-    print(f"\nDistance Metric Comparison (Top 3 pairs):")
-    for i in range(min(5, len(distances))):
-        cosine_match = distances[i]
-        sobolev_match = sobolev_distances[i]
-        
-        print(f"  Pair {i+1}:")
-        print(f"    Cosine Distance: {cosine_match['distance']:.4f}")
-        print(f"    Sobolev Distance: {sobolev_match['distance']:.4f}")
-        print(f"    Public: {cosine_match['public_chunk'].content}")
-        print(f"    Private: {cosine_match['private_chunk'].text}")
-        print()
-    
     print()
 
 
@@ -347,9 +259,6 @@ def main():
         # Demonstrate cosine distance
         demonstrate_cosine_distance()
         
-        # Demonstrate Sobolev norms
-        demonstrate_sobolev_norms()
-        
         # Demonstrate barrier analysis
         demonstrate_barrier_analysis()
         
@@ -358,9 +267,7 @@ def main():
         print("   The barrier analysis concepts are working correctly.")
         print("   Key features demonstrated:")
         print("   • Cosine distance calculation between embeddings")
-        print("   • Sobolev norm distance as alternative semantic similarity metric")
         print("   • Finding closest matches between public and private content")
-        print("   • Comparing different distance metrics for semantic analysis")
         print("   • Identifying potential information barrier breaches")
         
     except Exception as e:

@@ -20,6 +20,15 @@ Usage examples:
         --rounds 8 \\
         --output output/redteam/bb_results.json
 
+  Black-box → gather explore (does not modify moyo-gather explore):
+    moyo-redteam blackbox-explore -d "political opposition research" \\
+        --probe-path political_opposition_research --prompts-only \\
+        -f /tmp/bb_prompts.txt
+    moyo-gather explore -f /tmp/bb_prompts.txt
+
+    # Or run the explore pipeline in-process after generating prompts:
+    moyo-redteam blackbox-explore -d "pharmaceutical research" --n-hypotheses 5
+
   Report generation:
     moyo-redteam report --input output/redteam/wb_results.json --format text
 """
@@ -94,8 +103,22 @@ def _load_private_grounding(index_path, embedding_model, centroid_clusters):
 
 @click.group()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def cli(verbose: bool) -> None:
+@click.option(
+    "--test",
+    "test_mode",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use fake deterministic LLM clients for target + helper "
+        "(no network / API keys). Also settable via MOYO_TEST_MODE=1."
+    ),
+)
+def cli(verbose: bool, test_mode: bool) -> None:
     """moyo-redteam — LLM red teaming tool for proprietary information extraction."""
+    if test_mode:
+        from moyo.llm.testing import enable_test_mode
+        enable_test_mode()
+        click.echo("LLM test mode ON (fake deterministic clients).", err=True)
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
@@ -378,6 +401,167 @@ def blackbox_cmd(
     with open(output_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2)
     click.echo(f"\nFull results saved to: {output_path}")
+
+
+# ── Black-box → gather explore bridge ─────────────────────────────────────────
+
+@cli.command(name="blackbox-explore")
+@click.option("--domain", "-d", default="technology company", show_default=True,
+              help="Organizational domain for hypothesis generation")
+@click.option("--n-hypotheses", default=10, show_default=True,
+              help="Number of black-box hypotheses / explore prompts to generate")
+@click.option("--hypothesis-source", default="llm", show_default=True,
+              help="Hypothesis source: llm | manual | public_corpus")
+@click.option("--seed", multiple=True,
+              help="Manual seed queries (repeatable; folded into hypotheses)")
+@click.option("--probe-path", default=None,
+              help="Bundled probe path name or path to .txt / directory of seeds")
+@click.option("--public-index", default=None,
+              help="Public FAISS index path (for --hypothesis-source=public_corpus)")
+@click.option("--helper-provider", default="openai", show_default=True,
+              help="Helper LLM provider for hypothesis generation")
+@click.option("--helper-model", default="gpt-4o-mini", show_default=True,
+              help="Helper LLM model for hypothesis generation")
+@click.option("--helper-api-key", envvar="MOYO_HELPER_API_KEY", default=None,
+              help="Helper LLM API key")
+@click.option(
+    "--prompts-file",
+    "-f",
+    type=click.Path(dir_okay=False),
+    default=None,
+    help="Write one prompt per line (compatible with moyo-gather explore -f)",
+)
+@click.option(
+    "--prompts-only",
+    is_flag=True,
+    default=False,
+    help="Only generate/write prompts; do not run explore (requires --prompts-file)",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default="data/public_sources",
+    show_default=True,
+    help="Explore output directory (same as moyo-gather explore --output-dir)",
+)
+@click.option(
+    "--explore-seeds",
+    type=int,
+    default=3,
+    show_default=True,
+    help="Seed count forwarded to explore rewording (moyo-gather explore --seeds)",
+)
+@click.option(
+    "--fuzz-mode",
+    type=click.Choice(["basic", "multilingual"], case_sensitive=False),
+    default="basic",
+    show_default=True,
+    help="Explore fuzz mode (forwarded unchanged)",
+)
+@click.option(
+    "--strategy",
+    "-S",
+    "strategies",
+    multiple=True,
+    type=click.Choice(
+        ["paraphrase", "translate", "summarize", "typo", "abstract"],
+        case_sensitive=False,
+    ),
+    help="Explore fuzz strategy (repeatable; forwarded unchanged)",
+)
+@click.option(
+    "--language",
+    "-l",
+    "languages",
+    multiple=True,
+    help="Extra multilingual language(s) for explore (repeatable)",
+)
+@click.option("--workers", type=int, default=None,
+              help="Explore concurrency cap (forwarded unchanged)")
+def blackbox_explore_cmd(
+    domain,
+    n_hypotheses,
+    hypothesis_source,
+    seed,
+    probe_path,
+    public_index,
+    helper_provider,
+    helper_model,
+    helper_api_key,
+    prompts_file,
+    prompts_only,
+    output_dir,
+    explore_seeds,
+    fuzz_mode,
+    strategies,
+    languages,
+    workers,
+):
+    """Generate black-box hypotheses and feed them into moyo-gather explore.
+
+    Leaves the ``moyo-gather explore`` command unchanged: either writes a
+    prompts file for ``moyo-gather explore -f``, or calls the same explore
+    library path the gather CLI uses.
+    """
+    from .blackbox.explore_bridge import run_explore_with_blackbox_prompts
+
+    click.echo(click.style("=== moyo-redteam: BLACK-BOX → EXPLORE ===", fg="yellow", bold=True))
+
+    if prompts_only and not prompts_file:
+        raise click.UsageError("--prompts-only requires --prompts-file / -f")
+
+    explore_kwargs = dict(
+        num_seeds=explore_seeds,
+        fuzz_mode=fuzz_mode,
+        strategies=list(strategies) or None,
+        extra_languages=list(languages) or None,
+        workers=workers,
+        summarize=False,
+    )
+
+    try:
+        result = run_explore_with_blackbox_prompts(
+            domain,
+            n=n_hypotheses,
+            hypothesis_source=hypothesis_source,
+            seeds=list(seed) or None,
+            probe_path=probe_path,
+            public_index_path=public_index,
+            helper_provider=helper_provider,
+            helper_model=helper_model,
+            helper_api_key=helper_api_key,
+            prompts_file=prompts_file,
+            prompts_only=prompts_only,
+            output_directory=output_dir,
+            explore_kwargs=explore_kwargs,
+            progress=lambda msg: click.echo(msg, err=True),
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        click.echo(click.style(str(exc), fg="red"), err=True)
+        sys.exit(1)
+
+    click.echo(f"Generated {len(result.prompts)} explore prompt(s) from black-box hypotheses.")
+    for i, prompt in enumerate(result.prompts, 1):
+        click.echo(f"  [{i}] {prompt[:100]}{'…' if len(prompt) > 100 else ''}")
+
+    if result.prompts_path:
+        click.echo(f"\nPrompts file: {result.prompts_path}")
+        if prompts_only:
+            click.echo(
+                "Run explore with:\n"
+                f"  moyo-gather explore -f {result.prompts_path} --output-dir {output_dir}"
+            )
+            return
+
+    for er in result.explore_results:
+        ok = sum(1 for r in er.results if r.ok)
+        click.echo(
+            f"[{er.prompt[:60]}{'…' if len(er.prompt) > 60 else ''}] "
+            f"{len(er.seeds)} seeds × {len(er.llm_labels)} LLMs "
+            f"({ok}/{len(er.results)} ok) → {er.output_path}",
+            err=True,
+        )
+        click.echo(er.output_path)
 
 
 # ── Report command ────────────────────────────────────────────────────────────

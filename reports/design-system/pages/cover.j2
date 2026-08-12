@@ -64,6 +64,12 @@
       {% if content.meta.counts.high_sensitivity %}
       <span><strong>{{ content.meta.counts.high_sensitivity }}</strong> High-Sensitivity</span>
       {% endif %}
+      {% if content.meta.counts.chains %}
+      <span><strong>{{ content.meta.counts.chains }}</strong> Chains</span>
+      {% endif %}
+      {% if content.meta.counts.languages %}
+      <span><strong>{{ content.meta.counts.languages }}</strong> Languages</span>
+      {% endif %}
     </div>
     <div class="cover-footer__badges">
       {% if content.meta.counts.outliers %}

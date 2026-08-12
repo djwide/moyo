@@ -117,6 +117,13 @@ class ProbeGenerator:
         key = self.config.helper_api_key
         model = self.config.helper_model
         try:
+            from moyo.llm.testing import FakeDeterministicLLM, is_test_mode
+            if is_test_mode() or provider in ("test", "echo"):
+                return FakeDeterministicLLM(model_name=model or "echo-test")
+        except Exception:
+            if provider in ("test", "echo"):
+                return None
+        try:
             if provider == "openai":
                 from openai import OpenAI
                 kwargs = {}

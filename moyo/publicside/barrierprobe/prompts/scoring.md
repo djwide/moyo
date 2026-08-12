@@ -106,7 +106,6 @@ are weighted into the final `specificity_score`.
 |----------------------|-----------|------------------|
 | Precision matches    | 0.45      | Regex (dollar amounts, dates, codes) |
 | Confidence markers   | 0.30      | Keyword list ("specifically", "as of", etc.) |
-| Named entity density | 0.20      | spaCy NER or regex fallback |
-| Sobolev norm         | 0.15      | Embedding gradient norm |
+| Named entity density | 0.25      | spaCy NER or regex fallback |
 
 Final score is clamped to [0, 1]. Default flag threshold: 0.60.
