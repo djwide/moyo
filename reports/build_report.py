@@ -285,6 +285,12 @@ def render_pdfs(
             )
             outputs["onepage"] = onepage_pdf
             outputs["report"] = report_pdf
+            onepage_html_path = output_dir / "one-page.html"
+            report_html_path = output_dir / "report.html"
+            onepage_html_path.write_text(onepage_html, encoding="utf-8")
+            report_html_path.write_text(report_html, encoding="utf-8")
+            outputs["onepage_html"] = onepage_html_path
+            outputs["report_html"] = report_html_path
 
         if want_basis:
             basis_pdf = output_dir / "basis-report.pdf"
@@ -293,6 +299,9 @@ def render_pdfs(
                 str(basis_pdf)
             )
             outputs["basis"] = basis_pdf
+            basis_html_path = output_dir / "basis-report.html"
+            basis_html_path.write_text(basis_html, encoding="utf-8")
+            outputs["basis_html"] = basis_html_path
 
     # Drop legacy root-level PDF/HTML leftovers from older layout
     for stale in (

@@ -45,6 +45,9 @@ reports = [
     "jinja2>=3.1",
     "weasyprint>=60",
 ]
+cloud = [
+    "firebase-admin>=6.5.0",
+]
 
 [project.scripts]
 moyo = "moyo.cli:cli"
