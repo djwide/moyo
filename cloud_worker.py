@@ -1,6 +1,7 @@
 """Cloud Run / GCE worker: Firestore order → explore → report → Storage.
 
-Triggered with ``ORDER_ID`` set. Reads ``orders/{ORDER_ID}``, runs the same
+Triggered with ``ORDER_ID`` set. Reads ``reports/{ORDER_ID}`` (storefront
+collection; override with ``FIRESTORE_ORDERS_COLLECTION``), runs the same
 ``moyo-gather explore`` + ``reports/build_report.py`` path used locally, then
 uploads artifacts and marks the order ``qc_pending``.
 
@@ -9,7 +10,7 @@ Storefront order fields used here::
     prompts              list[str] | JSON string   required, non-empty
     product              snapshot | basis | both   e.g. "basis"
     paymentStatus        informational
-    reportStatus         awaiting_prompts → generating → qc_pending | failed
+    reportStatus         queued / awaiting_prompts → generating → qc_pending | failed
     qcStatus             left as pending (checkout default)
     generationStartedAt  ISO-8601 UTC, set when work begins
     generationFinishedAt ISO-8601 UTC, set on success or failure
@@ -182,7 +183,9 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
 
     return OrderSpec(
         order_id=order_id,
-        prompts=normalize_prompts(_first(data, "prompts", "prompt")),
+        prompts=normalize_prompts(
+            _first(data, "prompts", "customerPrompts", "customer_prompts", "prompt")
+        ),
         product=normalize_product(_first(data, "product", default="snapshot")),
         fuzz_mode=fuzz_mode,
         seeds=seeds,
@@ -476,20 +479,67 @@ def _skip_firebase() -> bool:
     }
 
 
-def _init_firebase():
-    import firebase_admin
-    from firebase_admin import firestore, storage
-
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app()
-    bucket_name = (
-        os.environ.get("STORAGE_BUCKET")
-        or os.environ.get("FIREBASE_STORAGE_BUCKET")
+def _firebase_project_id() -> str | None:
+    return (
+        os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GCLOUD_PROJECT")
+        or os.environ.get("GCP_PROJECT")
         or None
     )
+
+
+def _storage_bucket_name() -> str | None:
+    explicit = (
+        os.environ.get("STORAGE_BUCKET")
+        or os.environ.get("FIREBASE_STORAGE_BUCKET")
+        or ""
+    ).strip()
+    if explicit:
+        return explicit
+    project = _firebase_project_id()
+    if not project:
+        return None
+    # Default Firebase bucket names (new, then classic).
+    return f"{project}.firebasestorage.app"
+
+
+def _init_firebase_app():
+    """Initialize the default Firebase app (Firestore does not need a bucket)."""
+    import firebase_admin
+
+    if firebase_admin._apps:
+        return
+    opts: dict[str, str] = {}
+    project = _firebase_project_id()
+    if project:
+        opts["projectId"] = project
+    bucket_name = _storage_bucket_name()
+    if bucket_name:
+        opts["storageBucket"] = bucket_name
+    firebase_admin.initialize_app(options=opts or None)
+
+
+def _init_firebase():
+    from firebase_admin import firestore, storage
+
+    _init_firebase_app()
     db = firestore.client()
-    bucket = storage.bucket(bucket_name) if bucket_name else storage.bucket()
+    name = _storage_bucket_name()
+    bucket = storage.bucket(name) if name else None
     return db, bucket, firestore
+
+
+def _orders_collection_candidates() -> list[str]:
+    primary = (
+        os.environ.get("FIRESTORE_ORDERS_COLLECTION")
+        or os.environ.get("FIRESTORE_COLLECTION")
+        or "reports"
+    ).strip() or "reports"
+    out = [primary]
+    for alt in ("reports", "orders"):
+        if alt not in out:
+            out.append(alt)
+    return out
 
 
 def _load_order_data(order_id: str) -> tuple[dict[str, Any], Any | None]:
@@ -498,12 +548,26 @@ def _load_order_data(order_id: str) -> tuple[dict[str, Any], Any | None]:
         return json.loads(raw), None
     if _skip_firebase():
         raise ValueError("ORDER_JSON is required when MOYO_CLOUD_SKIP_FIREBASE=1")
-    db, _bucket, _fs = _init_firebase()
-    ref = db.collection("orders").document(order_id)
-    snap = ref.get()
-    if not snap.exists:
-        raise ValueError(f"Firestore orders/{order_id} does not exist")
-    return snap.to_dict() or {}, ref
+    from firebase_admin import firestore
+
+    _init_firebase_app()
+    db = firestore.client()
+    tried: list[str] = []
+    for collection in _orders_collection_candidates():
+        ref = db.collection(collection).document(order_id)
+        snap = ref.get()
+        tried.append(collection)
+        if snap.exists:
+            logger.info(
+                "loaded order %s from Firestore %s/%s",
+                order_id,
+                collection,
+                order_id,
+            )
+            return snap.to_dict() or {}, ref
+    raise ValueError(
+        f"Firestore document {order_id!r} not found in collections: {', '.join(tried)}"
+    )
 
 
 def _upload_runs(bucket, order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
@@ -567,6 +631,12 @@ def main() -> int:
         uploaded: dict[str, Any] = {}
         if not _skip_firebase():
             _db, bucket, _fs = _init_firebase()
+            if bucket is None:
+                raise RuntimeError(
+                    "Storage bucket name not set. Set STORAGE_BUCKET or "
+                    "FIREBASE_STORAGE_BUCKET on the Cloud Run job "
+                    "(e.g. senteguard-website.firebasestorage.app)."
+                )
             uploaded = _upload_runs(bucket, spec.order_id, runs)
         finished = utc_now()
         _mark(

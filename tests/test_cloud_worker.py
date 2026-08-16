@@ -11,6 +11,19 @@ import pytest
 import cloud_worker as cw
 
 
+def test_storage_bucket_name_prefers_explicit_env(monkeypatch):
+    monkeypatch.setenv("STORAGE_BUCKET", "my-bucket")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
+    assert cw._storage_bucket_name() == "my-bucket"
+
+
+def test_storage_bucket_name_defaults_to_firebase_app(monkeypatch):
+    monkeypatch.delenv("STORAGE_BUCKET", raising=False)
+    monkeypatch.delenv("FIREBASE_STORAGE_BUCKET", raising=False)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
+    assert cw._storage_bucket_name() == "senteguard-website.firebasestorage.app"
+
+
 def test_normalize_product_aliases():
     assert cw.normalize_product(None) == "snapshot"
     assert cw.normalize_product("exposure") == "snapshot"
@@ -19,6 +32,12 @@ def test_normalize_product_aliases():
     assert cw.normalize_product("all") == "both"
     with pytest.raises(ValueError):
         cw.normalize_product("deluxe")
+
+
+def test_orders_collection_defaults_to_reports(monkeypatch):
+    monkeypatch.delenv("FIRESTORE_ORDERS_COLLECTION", raising=False)
+    monkeypatch.delenv("FIRESTORE_COLLECTION", raising=False)
+    assert cw._orders_collection_candidates()[0] == "reports"
 
 
 def test_parse_storefront_order():
@@ -48,7 +67,23 @@ def test_parse_storefront_order():
     assert spec.payment_status == "paid"
 
 
-def test_parse_order_prompts_json_string():
+def test_parse_live_reports_collection_shape():
+    spec = cw.parse_order(
+        "ord_781a0fe4e2d8a38c048823154ff0ec16",
+        {
+            "orderId": "ord_781a0fe4e2d8a38c048823154ff0ec16",
+            "product": "snapshot",
+            "productId": "moyo_snapshot",
+            "prompts": ["What controversies happened related to"],
+            "customerPrompts": ["What controversies happened related to"],
+            "paymentStatus": "paid",
+            "reportStatus": "queued",
+            "qcStatus": "pending",
+        },
+    )
+    assert spec.product == "snapshot"
+    assert spec.prompts == ["What controversies happened related to"]
+    assert spec.payment_status == "paid"
     spec = cw.parse_order(
         "ord_2",
         {"product": "basis", "prompts": '["Alpha secret", "Beta secret"]'},
