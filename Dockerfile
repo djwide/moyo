@@ -10,6 +10,7 @@ ENV MOYO_UTILITY_BASE_URL=https://openrouter.ai/api/v1
 ENV MOYO_CLOUD_REPORT_PROVIDER=openai
 ENV GOOGLE_CLOUD_PROJECT=senteguard-website
 ENV MOYO_VERTEX_GEMINI=1
+ENV MOYO_VERTEX_GEMINI_MODEL=google/gemini-2.5-pro
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

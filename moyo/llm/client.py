@@ -137,6 +137,22 @@ def retry_delay_seconds(exc: BaseException, attempt: int) -> float:
 # so keys placed in ``.env`` "just work" for every LLM provider.
 _ENV_FILE_LOADED = False
 
+# Secret Manager / Cloud Run env vars often include a trailing newline.
+_SECRET_ENV_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET")
+
+
+def sanitize_secret_environ() -> None:
+    """Strip whitespace and newlines from API keys already in ``os.environ``."""
+    for key, val in list(os.environ.items()):
+        if not isinstance(val, str) or not val:
+            continue
+        upper = key.upper()
+        if not any(upper.endswith(suf) for suf in _SECRET_ENV_SUFFIXES):
+            continue
+        cleaned = val.strip()
+        if cleaned != val:
+            os.environ[key] = cleaned
+
 
 def _load_env_file(path: Optional[str] = None) -> None:
     env_path = Path(path or os.environ.get("MOYO_ENV_FILE", ".env"))
@@ -174,12 +190,16 @@ def _load_env_file(path: Optional[str] = None) -> None:
 
 
 def ensure_env_loaded() -> None:
-    """Load ``.env`` into ``os.environ`` once (idempotent)."""
+    """Load ``.env`` into ``os.environ`` once (idempotent).
+
+    Always strips trailing whitespace from ``*_API_KEY`` / ``*_TOKEN`` /
+    ``*_SECRET`` env vars (Secret Manager values often include a newline).
+    """
     global _ENV_FILE_LOADED
-    if _ENV_FILE_LOADED:
-        return
-    _ENV_FILE_LOADED = True
-    _load_env_file()
+    if not _ENV_FILE_LOADED:
+        _ENV_FILE_LOADED = True
+        _load_env_file()
+    sanitize_secret_environ()
 
 
 # --- Provider classification ------------------------------------------------
@@ -365,6 +385,8 @@ class LLMSpec:
             self.model = _DEFAULT_MODEL_BY_PROVIDER.get(self.provider, "")
         if not self.api_key and self.provider in _ENV_KEY_BY_PROVIDER:
             self.api_key = os.environ.get(_ENV_KEY_BY_PROVIDER[self.provider])
+        if isinstance(self.api_key, str):
+            self.api_key = self.api_key.strip() or None
         if not self.label:
             self.label = _default_label(self.provider, self.model)
         if self.num_ctx is not None:
@@ -386,6 +408,8 @@ class LLMSpec:
         api_key = data.get("api_key")
         if isinstance(api_key, str) and api_key.startswith("$"):
             api_key = os.environ.get(api_key[1:])
+        if isinstance(api_key, str):
+            api_key = api_key.strip() or None
         num_ctx = data.get("num_ctx")
         return cls(
             provider=data.get("provider", "echo"),

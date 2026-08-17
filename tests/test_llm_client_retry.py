@@ -1,5 +1,7 @@
 """Tests for LLM client rate-limit retry helpers."""
 
+import os
+
 from moyo.llm.client import (
     LLMClient,
     LLMSpec,
@@ -98,6 +100,23 @@ def test_complete_does_not_retry_hard_failures(monkeypatch):
     except Exception as exc:
         assert "no credits remaining" in str(exc)
     assert calls["n"] == 1
+
+
+def test_sanitize_secret_environ_strips_newlines(monkeypatch):
+    from moyo.llm.client import LLMSpec, sanitize_secret_environ
+
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dash\n")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "  sk-or-test\r\n")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai\n")
+    sanitize_secret_environ()
+    assert os.environ["DASHSCOPE_API_KEY"] == "sk-dash"
+    assert os.environ["OPENROUTER_API_KEY"] == "sk-or-test"
+    spec = LLMSpec.from_dict(
+        {"provider": "custom", "model": "qwen-plus", "api_key": "$DASHSCOPE_API_KEY"}
+    )
+    assert spec.api_key == "sk-dash"
+    spec2 = LLMSpec(provider="openai", model="gpt-4o")
+    assert spec2.api_key == "sk-openai"
 
 
 def test_format_llm_error_includes_connection_cause():

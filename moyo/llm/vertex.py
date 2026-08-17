@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
+# AI Studio preview ids 404 on Vertex us-central1. Override with
+# ``MOYO_VERTEX_GEMINI_MODEL`` (e.g. ``google/gemini-1.5-pro``).
+VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
+
 
 def vertex_enabled() -> bool:
     flag = os.environ.get("MOYO_VERTEX_GEMINI", "1").strip().lower()
@@ -78,16 +82,14 @@ def vertex_api_key() -> str:
     return token
 
 
-def vertex_gemini_model(current: str) -> str:
+def vertex_gemini_model(_current: str = "") -> str:
+    """Stable Vertex model id. AI Studio preview names are not used as-is."""
     override = (os.environ.get("MOYO_VERTEX_GEMINI_MODEL") or "").strip()
     if override:
-        return override
-    name = (current or "").strip()
-    if name.startswith("google/"):
-        return name
-    if name:
-        return f"google/{name}"
-    return "google/gemini-2.5-pro"
+        if override.startswith("google/") or "/" in override:
+            return override
+        return f"google/{override}"
+    return VERTEX_DEFAULT_GEMINI_MODEL
 
 
 def rewrite_gemini_spec_for_vertex(spec: LLMSpec) -> LLMSpec:

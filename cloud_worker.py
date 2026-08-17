@@ -39,6 +39,8 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from moyo.llm.client import ensure_env_loaded
+
 logger = logging.getLogger("moyo.cloud_worker")
 
 PRODUCT_ALIASES = {
@@ -749,6 +751,7 @@ def main() -> int:
         level=os.environ.get("MOYO_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    ensure_env_loaded()
     order_id = os.environ.get("ORDER_ID") or ""
     if not order_id and os.environ.get("ORDER_JSON"):
         order_id = "local"

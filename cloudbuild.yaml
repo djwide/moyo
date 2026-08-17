@@ -5,8 +5,10 @@
 # Console: https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
 #          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker?project=senteguard-website
 #
-# User-managed Cloud Build SAs (project default or --service-account) require
-# an explicit log destination. CLOUD_LOGGING_ONLY writes to Cloud Logging.
+# Tag with $BUILD_ID (always set). $COMMIT_SHA is empty on a local
+# `gcloud builds submit` and produced worker: which Cloud Build rejects.
+#
+# User-managed Cloud Build SAs require an explicit log destination.
 options:
   logging: CLOUD_LOGGING_ONLY
 
@@ -15,13 +17,20 @@ steps:
     args:
       - build
       - -t
-      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
+      - -t
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:latest
       - .
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:latest
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -31,9 +40,10 @@ steps:
       - update
       - moyo-report-worker
       - --image
-      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
       - --region
       - us-central1
 
 images:
-  - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:$COMMIT_SHA
+  - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
+  - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:latest

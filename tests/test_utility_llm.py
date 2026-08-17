@@ -142,7 +142,7 @@ def test_vertex_rewrites_gemini_in_cloud(monkeypatch):
     out = rewrite_gemini_spec_for_vertex(spec)
     assert "aiplatform.googleapis.com" in (out.base_url or "")
     assert "/endpoints/openapi" in (out.base_url or "")
-    assert out.model == "google/gemini-3.1-pro-preview"
+    assert out.model == "google/gemini-2.5-pro"
     assert out.api_key is None
 
 
@@ -158,6 +158,15 @@ def test_vertex_rewrite_skipped_on_desktop(monkeypatch):
     )
     out = rewrite_gemini_spec_for_vertex(spec)
     assert "generativelanguage.googleapis.com" in (out.base_url or "")
+
+
+def test_vertex_gemini_model_honours_override(monkeypatch):
+    from moyo.llm.vertex import vertex_gemini_model
+
+    monkeypatch.setenv("MOYO_VERTEX_GEMINI_MODEL", "gemini-1.5-pro")
+    assert vertex_gemini_model("gemini-3.1-pro-preview") == "google/gemini-1.5-pro"
+    monkeypatch.setenv("MOYO_VERTEX_GEMINI_MODEL", "google/gemini-1.5-pro")
+    assert vertex_gemini_model("ignored") == "google/gemini-1.5-pro"
 
 
 def test_is_vertex_openai_url():
