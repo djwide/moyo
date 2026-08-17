@@ -136,6 +136,12 @@ def get_retrieval_specs() -> List[LLMSpec]:
                 spec.label or spec.model,
             )
             continue
+        try:
+            from moyo.llm.vertex import rewrite_gemini_spec_for_vertex
+
+            spec = rewrite_gemini_spec_for_vertex(spec)
+        except Exception as exc:
+            logger.warning("Vertex Gemini rewrite skipped: %s", exc)
         kept.append(spec)
     return kept if kept else specs
 

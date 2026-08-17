@@ -7,6 +7,9 @@ ENV MOYO_CLOUD_RUNTIME=1
 ENV MOYO_UTILITY_PROVIDER=custom
 ENV MOYO_UTILITY_MODEL=meta-llama/llama-3.1-8b-instruct
 ENV MOYO_UTILITY_BASE_URL=https://openrouter.ai/api/v1
+ENV MOYO_CLOUD_REPORT_PROVIDER=openai
+ENV GOOGLE_CLOUD_PROJECT=senteguard-website
+ENV MOYO_VERTEX_GEMINI=1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

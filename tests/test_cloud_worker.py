@@ -251,15 +251,20 @@ def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch
 
     enable_test_mode(False)
     monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
     monkeypatch.delenv("MOYO_TEST_MODE", raising=False)
     spec = cw.OrderSpec(order_id="ord_x", prompts=["Who killed JFK?"], headline="Cover")
     dest = cw._write_report_config(tmp_path, spec, "ord_x__01")
     import yaml
 
     cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
-    assert cfg["cluster"]["provider"] == "custom"
-    assert "openrouter" in cfg["cluster"]["base_url"]
-    assert cfg["cluster"]["api_key"] == "$OPENROUTER_API_KEY"
-    assert "sk-or-test" not in dest.read_text(encoding="utf-8")
+    assert cfg["extract"]["provider"] == "openai"
+    assert cfg["extract"]["model"] == "gpt-4o"
+    assert cfg["extract"]["api_key"] == "$OPENAI_API_KEY"
+    assert cfg["extract"].get("prompt") == "prompts/extract_claims.md"
+    assert cfg["synthesize"]["provider"] == "openai"
+    assert cfg["synthesize"]["api_key"] == "$OPENAI_API_KEY"
+    assert cfg["cluster"]["provider"] == "openai"
+    assert cfg["cluster"]["api_key"] == "$OPENAI_API_KEY"
+    assert "sk-test-openai" not in dest.read_text(encoding="utf-8")
     assert cfg["render"]["headline"] == "Cover"

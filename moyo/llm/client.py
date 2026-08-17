@@ -454,7 +454,27 @@ class LLMClient:
                 from openai import OpenAI
 
                 kwargs: Dict[str, Any] = {"timeout": self._http_timeout()}
-                if provider == "custom":
+                vertex = False
+                try:
+                    from moyo.llm.vertex import (
+                        is_vertex_openai_url,
+                        openai_compatible_http_client,
+                        vertex_api_key,
+                        vertex_openai_headers,
+                    )
+
+                    vertex = is_vertex_openai_url(self.spec.base_url)
+                    kwargs["http_client"] = openai_compatible_http_client(
+                        self._http_timeout(), vertex=vertex
+                    )
+                except Exception as exc:
+                    logger.warning("Could not build httpx client for LLM (%s)", exc)
+
+                if vertex:
+                    kwargs["api_key"] = vertex_api_key
+                    kwargs["base_url"] = self.spec.base_url
+                    kwargs["default_headers"] = vertex_openai_headers()
+                elif provider == "custom":
                     if not self.spec.base_url:
                         self._init_error = (
                             "provider 'custom' requires a base_url pointing at an "
@@ -462,8 +482,6 @@ class LLMClient:
                         )
                         return None
                     kwargs["base_url"] = self.spec.base_url
-                    # Many self-hosted servers ignore the key but the SDK
-                    # requires a non-empty value.
                     kwargs["api_key"] = self.spec.api_key or "not-needed"
                 else:
                     if self.spec.api_key:

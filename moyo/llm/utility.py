@@ -143,3 +143,28 @@ def utility_cluster_config(base: Optional[dict] = None) -> dict:
     cfg.setdefault("max_tokens", 4000)
     cfg.setdefault("timeout", 180)
     return cfg
+
+
+def cloud_paid_llm_config(base: Optional[dict] = None) -> dict:
+    """OpenAI (default) or Anthropic for Cloud Run extract / synthesize / cluster.
+
+    Moonshot, OpenRouter, and other custom endpoints currently RST from the
+    worker NAT IP; OpenAI and Anthropic are the two that return HTTP 200.
+    Override with ``MOYO_CLOUD_REPORT_PROVIDER=anthropic``.
+    """
+    cfg = dict(base or {})
+    choice = (os.environ.get("MOYO_CLOUD_REPORT_PROVIDER") or "openai").strip().lower()
+    cfg.pop("base_url", None)
+    cfg.pop("num_ctx", None)
+    if choice in {"anthropic", "claude"}:
+        cfg["provider"] = "anthropic"
+        cfg["model"] = (
+            os.environ.get("MOYO_CLOUD_REPORT_MODEL") or "claude-sonnet-4-6"
+        ).strip()
+        cfg["api_key"] = "$ANTHROPIC_API_KEY"
+    else:
+        cfg["provider"] = "openai"
+        cfg["model"] = (os.environ.get("MOYO_CLOUD_REPORT_MODEL") or "gpt-4o").strip()
+        cfg["api_key"] = "$OPENAI_API_KEY"
+    cfg.setdefault("timeout", 120)
+    return cfg

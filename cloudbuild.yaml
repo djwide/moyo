@@ -1,3 +1,9 @@
+# Build + push the Cloud Run worker, then update job moyo-report-worker.
+# This file is NOT run on GitHub push. CI (.github/workflows/ci.yml) only
+# runs tests. Deploy with:
+#   gcloud builds submit --config=cloudbuild.yaml --project=senteguard-website
+# Console: https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
+#          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker?project=senteguard-website
 steps:
   - name: gcr.io/cloud-builders/docker
     args:

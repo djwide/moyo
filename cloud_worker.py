@@ -411,10 +411,14 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     if spec.headline:
         cfg.setdefault("render", {})
         cfg["render"]["headline"] = spec.headline
-    from moyo.llm.utility import running_in_cloud, utility_cluster_config
+    from moyo.llm.utility import cloud_paid_llm_config, running_in_cloud
 
     if running_in_cloud():
-        cfg["cluster"] = utility_cluster_config(cfg.get("cluster") or {})
+        cfg["cluster"] = cloud_paid_llm_config(cfg.get("cluster") or {})
+        cfg["cluster"].setdefault("temperature", 0.1)
+        cfg["cluster"].setdefault("max_tokens", 4000)
+        cfg["extract"] = cloud_paid_llm_config(cfg.get("extract") or {})
+        cfg["synthesize"] = cloud_paid_llm_config(cfg.get("synthesize") or {})
     dest = work / "report_config.yaml"
     dest.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return dest
@@ -536,6 +540,16 @@ def run_moyo(
             "providers): %s",
             ", ".join(missing_keys),
         )
+    try:
+        from moyo.llm.registry import get_retrieval_specs
+        from moyo.llm.vertex import is_vertex_openai_url
+
+        for spec_llm in get_retrieval_specs():
+            dest = spec_llm.base_url or spec_llm.provider
+            via = "vertex" if is_vertex_openai_url(spec_llm.base_url) else spec_llm.provider
+            _progress(f"retrieval LLM {spec_llm.label}: {spec_llm.model} via {via} ({dest})")
+    except Exception as exc:
+        logger.warning("Could not list retrieval LLMs: %s", exc)
 
     explore_kwargs: dict[str, Any] = {
         "fuzz_mode": spec.fuzz_mode,
