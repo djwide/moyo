@@ -4,6 +4,12 @@
 #   gcloud builds submit --config=cloudbuild.yaml --project=senteguard-website
 # Console: https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
 #          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker?project=senteguard-website
+#
+# User-managed Cloud Build SAs (project default or --service-account) require
+# an explicit log destination. CLOUD_LOGGING_ONLY writes to Cloud Logging.
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
