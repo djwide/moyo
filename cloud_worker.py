@@ -19,7 +19,9 @@ One report per prompt. A single-prompt order also writes the five contract
 files at ``reports/{order_id}/`` (the path QC already uses). Multi-prompt
 orders use ``reports/{order_id}/{nn}_{slug}/`` plus ``manifest.json``.
 
-Ollama is optional for now (deterministic seeds + unmerged clusters).
+Ollama is not used in Cloud Run. Rewording, translation, clustering, and
+summaries use a hosted utility LLM (default: OpenRouter Llama 3.1 8B Instruct
+via ``OPENROUTER_API_KEY``; override with ``MOYO_UTILITY_*``).
 """
 
 from __future__ import annotations
@@ -409,6 +411,10 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     if spec.headline:
         cfg.setdefault("render", {})
         cfg["render"]["headline"] = spec.headline
+    from moyo.llm.utility import running_in_cloud, utility_cluster_config
+
+    if running_in_cloud():
+        cfg["cluster"] = utility_cluster_config(cfg.get("cluster") or {})
     dest = work / "report_config.yaml"
     dest.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return dest

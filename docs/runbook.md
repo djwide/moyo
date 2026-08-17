@@ -238,9 +238,11 @@ else:
 
 ### Naive-prompt exploration (multi-LLM)
 
-`moyo-gather explore` rewords a plain-language prompt (local Ollama fuzzer),
-fans out each seed to every retrieval LLM in `config/retrieval_llms.json`,
-compiles/labels/translates responses, then writes `exploration.md` only.
+`moyo-gather explore` rewords a plain-language prompt (local Ollama on the
+desktop; OpenRouter Llama 3.1 8B Instruct on Cloud Run via
+`OPENROUTER_API_KEY`), fans out each seed to every retrieval LLM in
+`config/retrieval_llms.json`, compiles/labels/translates responses, then
+writes `exploration.md` only.
 
 To seed explore from black-box red-team hypotheses **without changing** the
 `explore` command, use the bridge:
@@ -286,9 +288,11 @@ strategies with ``-S``; if answers truncate mid-bullet, raise retrieval
 ``max_tokens`` on the LLM spec. The report extractor skips refusals / tiny
 stubs and can limit languages via ``reports/config.yaml`` ``chunk.*``.
 
-Rewording, foreign-response translation, and claims/narrative summary synthesis
-are local (Ollama `llama3.1:8b` by default; see `MOYO_SUMMARY_*`). Retrieval
-fan-out still uses `config/retrieval_llms.json`. ``--workers`` caps concurrent
+Rewording, foreign-response translation, clustering, and claims/narrative
+summary synthesis use a cheap utility LLM: Ollama `llama3.1:8b` on the desktop,
+or OpenRouter `meta-llama/llama-3.1-8b-instruct` on Cloud Run (override with
+`MOYO_UTILITY_*`; Moonshot Kimi is the fallback if `OPENROUTER_API_KEY` is
+missing). Retrieval fan-out still uses `config/retrieval_llms.json`. ``--workers`` caps concurrent
 retrieval *and* foreign-response translation (default: one per configured
 retrieval LLM). Full pipeline details: [`docs/crawler.md`](crawler.md).
 

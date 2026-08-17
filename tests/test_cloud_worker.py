@@ -244,3 +244,22 @@ def test_retrieval_check_storage_paths_single_and_multi(tmp_path: Path):
     assert "reports/ord_x/llm-retrieval-check.md" not in paths2
     assert "reports/ord_x/01_enron/llm-retrieval-check.md" in paths2
     assert "reports/ord_x/02_other/llm-retrieval-check.md" in paths2
+
+
+def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch):
+    from moyo.llm.testing import enable_test_mode
+
+    enable_test_mode(False)
+    monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.delenv("MOYO_TEST_MODE", raising=False)
+    spec = cw.OrderSpec(order_id="ord_x", prompts=["Who killed JFK?"], headline="Cover")
+    dest = cw._write_report_config(tmp_path, spec, "ord_x__01")
+    import yaml
+
+    cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
+    assert cfg["cluster"]["provider"] == "custom"
+    assert "openrouter" in cfg["cluster"]["base_url"]
+    assert cfg["cluster"]["api_key"] == "$OPENROUTER_API_KEY"
+    assert "sk-or-test" not in dest.read_text(encoding="utf-8")
+    assert cfg["render"]["headline"] == "Cover"

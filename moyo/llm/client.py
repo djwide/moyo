@@ -84,6 +84,25 @@ def is_retryable_llm_error(exc: BaseException) -> bool:
     return any(marker in text for marker in _RETRYABLE_MARKERS)
 
 
+def format_llm_error(exc: BaseException) -> str:
+    """Human-readable LLM failure, including the TCP/TLS cause when present.
+
+    OpenAI's ``APIConnectionError`` string is just ``Connection error.``; the
+    useful detail lives on ``__cause__`` (ConnectTimeout, NameResolutionError).
+    """
+    text = (str(exc) or "").strip() or type(exc).__name__
+    cause = exc.__cause__ or getattr(exc, "__context__", None)
+    if cause is None:
+        return text
+    cause_text = (str(cause) or "").strip()
+    cause_name = type(cause).__name__
+    if not cause_text or cause_text in text:
+        if cause_name.lower() not in text.lower():
+            return f"{text} ({cause_name})"
+        return text
+    return f"{text} ({cause_name}: {cause_text})"
+
+
 def retry_delay_seconds(exc: BaseException, attempt: int) -> float:
     """Seconds to wait before the next attempt (honours provider hints when present)."""
     text = str(exc)
@@ -434,7 +453,7 @@ class LLMClient:
             if provider in ("openai", "custom"):
                 from openai import OpenAI
 
-                kwargs: Dict[str, Any] = {}
+                kwargs: Dict[str, Any] = {"timeout": self._http_timeout()}
                 if provider == "custom":
                     if not self.spec.base_url:
                         self._init_error = (
@@ -455,7 +474,7 @@ class LLMClient:
             if provider == "anthropic":
                 from anthropic import Anthropic
 
-                kwargs = {}
+                kwargs = {"timeout": self._http_timeout()}
                 if self.spec.api_key:
                     kwargs["api_key"] = self.spec.api_key
                 return Anthropic(**kwargs)
@@ -469,6 +488,17 @@ class LLMClient:
             self._init_error = f"failed to initialize provider '{provider}': {exc}"
             logger.warning(self._init_error)
             return None
+
+    def _http_timeout(self) -> Any:
+        """SDK timeout. OpenAI's default connect=5s is too tight through Cloud NAT."""
+        read = max(float(self.spec.timeout or 120), 30.0)
+        connect = max(30.0, min(read, 60.0))
+        try:
+            from httpx import Timeout
+
+            return Timeout(connect=connect, read=read, write=read, pool=read)
+        except Exception:
+            return read
 
     # -- generation ---------------------------------------------------------
     def complete(

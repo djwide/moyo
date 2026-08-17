@@ -174,14 +174,14 @@ API keys for hosted LLM providers (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `.env.example` for the full list. The LLM layer loads `.env` into the process environment so those keys
 are available to `config/retrieval_llms.json` (`$VAR` references).
 
-### Default LLM vs retrieval LLMs vs local fuzzer
+### Default LLM vs retrieval LLMs vs utility LLM
 
 Three related configs for `moyo-gather explore`:
 
 | Role | Where | Used for |
 |------|--------|----------|
-| **Local fuzzer** | Ollama (`llama3.1:8b` @ `127.0.0.1:11434`) | Seed rewording + translating foreign answers while compiling the report |
-| **Summary LLM** | Ollama via `MOYO_SUMMARY_*` (default `llama3.1:8b`, `num_ctx=32768`) | Narrative summary + claims brief (`summary.md`); prefers points of precision |
+| **Utility LLM** | Desktop: Ollama (`llama3.1:8b` @ `127.0.0.1:11434`). Cloud Run: OpenRouter Llama 3.1 8B Instruct (`OPENROUTER_API_KEY`, override `MOYO_UTILITY_*`) | Seed rewording + translating foreign answers + claim clustering |
+| **Summary LLM** | Same utility LLM; desktop also honours `MOYO_SUMMARY_*` (default `llama3.1:8b`, `num_ctx=32768`) | Narrative summary + claims brief (`summary.md`); prefers points of precision |
 | **Deliverable LLM** | Grok / xAI via `MOYO_DELIVERABLE_*` (default `grok-4.5`, key `XAI_API_KEY`) | Formal `deliverable.md` (exposure, evidence graph, findings, mitigation) |
 | **Default LLM** | `MOYO_LLM_*` in `.env` | Other moyo paths; explore retrieval override via CLI `--provider` |
 | **Retrieval LLMs** | `config/retrieval_llms.json` (or `MOYO_RETRIEVAL_LLMS`) | Fan-out: each seed is sent to every listed model |

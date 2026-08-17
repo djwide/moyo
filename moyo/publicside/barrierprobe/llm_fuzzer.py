@@ -751,6 +751,27 @@ class LLMFuzzer:
             )
         )
 
+    @classmethod
+    def for_runtime(cls, **kwargs) -> "LLMFuzzer":
+        """Ollama on a desktop; hosted cheap model on Cloud Run."""
+        from moyo.llm.utility import utility_llm_spec
+
+        spec = utility_llm_spec()
+        return cls(
+            LLMFuzzerConfig(
+                llm_provider=spec.provider,
+                model_name=spec.model,
+                api_key=spec.api_key,
+                base_url=spec.base_url,
+                max_tokens=int(kwargs.get("max_tokens", 800)),
+                temperature=float(kwargs.get("temperature", 0.7)),
+                fuzz_mode=str(kwargs.get("fuzz_mode") or "basic"),
+                multilingual_languages=list(
+                    kwargs.get("multilingual_languages") or []
+                ),
+            )
+        )
+
     def _initialize_llm_client(self):
         """Initialize the LLM client based on configuration."""
         try:

@@ -2,10 +2,10 @@
 
 Takes a plain-language request from a non-technical user (e.g. "give me all the
 info you can on the recipe for Coca-Cola"), rewords it into several effective
-retrieval queries via the local Ollama fuzzer (``llama3.1:8b`` through
-:mod:`moyo.publicside.barrierprobe.llm_fuzzer` — black-box, no target concept),
+retrieval queries via the runtime utility fuzzer (local Ollama on the desktop;
+a hosted cheap model on Cloud Run — black-box, no target concept),
 then explores each reworded query against every configured retrieval LLM
-(closed API, open API and local) in parallel.
+(closed API, open API) in parallel.
 
 Pipeline:
 
@@ -287,7 +287,8 @@ def reword_prompt(
     """Reword a naive ``prompt`` into distinct retrieval queries.
 
     Black-box: uses :class:`~moyo.publicside.barrierprobe.llm_fuzzer.LLMFuzzer`
-    with the locally running Ollama model ``llama3.1:8b``. No target concept is
+    with the runtime utility LLM (local Ollama ``llama3.1:8b`` on the desktop;
+    a hosted cheap model on Cloud Run). No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
     ``fuzz_mode`` ``basic`` emits ``n`` seeds rotating paraphrase / translate /
@@ -348,16 +349,16 @@ def reword_prompt_seeds(
     """Return :class:`~moyo.publicside.barrierprobe.llm_fuzzer.QuerySeed` objects."""
     from moyo.publicside.barrierprobe.llm_fuzzer import (
         LLMFuzzer,
-        LLMFuzzerConfig,
         QuerySeed,
         normalize_fuzz_mode,
     )
 
-    del llm  # explore rewording is local-fuzzer-only
+    del llm  # explore rewording uses the runtime utility fuzzer
     mode = normalize_fuzz_mode(fuzz_mode)
     if fuzzer is None:
-        fuzzer = LLMFuzzer(
-            LLMFuzzerConfig(fuzz_mode=mode, multilingual_languages=list(languages or []))
+        fuzzer = LLMFuzzer.for_runtime(
+            fuzz_mode=mode,
+            multilingual_languages=list(languages or []),
         )
     try:
         return list(
@@ -398,7 +399,7 @@ def localize_text_for_report(text: str, fuzzer: Optional[Any] = None) -> str:
     if fuzzer is None:
         from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
 
-        fuzzer = LLMFuzzer.local_ollama()
+        fuzzer = LLMFuzzer.for_runtime()
     try:
         return fuzzer.text_for_report(body)
     except Exception as exc:
@@ -473,13 +474,13 @@ def localize_results_for_report(
 
     Prefer :func:`compile_raw_responses`, which organises and labels results
     while translating. This helper remains for callers that only need localization.
-    ``workers`` caps concurrent Ollama translation calls (default: one per pending
+    ``workers`` caps concurrent translation calls (default: one per pending
     result). Pass ``workers=1`` for sequential translation.
     """
     from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
 
     if fuzzer is None:
-        fuzzer = LLMFuzzer.local_ollama()
+        fuzzer = LLMFuzzer.for_runtime()
 
     pending = [r for r in results if r.ok and _is_foreign_language(r.language)]
     _parallel_localize_results(
@@ -641,15 +642,18 @@ def retrieve(
     try:
         result.text = llm.complete(prompt, system=RETRIEVAL_SYSTEM, max_tokens=max_tokens) or ""
     except Exception as exc:
-        result.error = str(exc)
-        logger.warning("Retrieval failed for %s via %s: %s", seed[:60], llm.label, exc)
+        from moyo.llm.client import format_llm_error
+
+        result.error = format_llm_error(exc)
+        logger.warning("Retrieval failed for %s via %s: %s", seed[:60], llm.label, result.error)
     return result
 
 
 def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     """LLM used for exploration narrative + claims summaries.
 
-    Defaults to local Ollama (``llama3.1:8b``) with an enlarged ``num_ctx`` so
+    Defaults to local Ollama (``llama3.1:8b``) on the desktop, or the hosted
+    Cloud Run utility LLM, with an enlarged ``num_ctx`` so
     multi-source corpora fit. Override with a configured client (e.g. CLI
     ``--provider``), or via ``MOYO_SUMMARY_MODEL`` / ``MOYO_SUMMARY_NUM_CTX`` /
     ``MOYO_SUMMARY_BASE_URL``. Under ``--test`` / ``MOYO_TEST_MODE``, returns
@@ -669,7 +673,16 @@ def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     except Exception:
         pass
 
+    from moyo.llm.utility import running_in_cloud, utility_llm_spec
+
     ensure_env_loaded()
+
+    if running_in_cloud():
+        spec = utility_llm_spec()
+        spec.max_tokens = int(os.environ.get("MOYO_SUMMARY_MAX_TOKENS") or "2500")
+        spec.timeout = int(os.environ.get("MOYO_SUMMARY_TIMEOUT") or "600")
+        spec.temperature = 0.3
+        return LLMClient(spec)
 
     model = (os.environ.get("MOYO_SUMMARY_MODEL") or DEFAULT_SUMMARY_OLLAMA_MODEL).strip()
     base_url = (
@@ -1459,8 +1472,8 @@ def explore_topic(
     independent and run concurrently. ``workers`` caps how many run at once for
     both phases (default: one per configured retrieval LLM for retrieval; the
     same cap for translation). Pass ``workers=1`` to force sequential behaviour.
-    Rewording stays on the local fuzzer; summary synthesis stays serial on
-    local Ollama (:func:`get_summary_llm`).
+    Rewording stays on the runtime utility fuzzer; summary synthesis stays
+    serial on :func:`get_summary_llm` (Ollama locally, hosted model in cloud).
 
     ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` seeds rotating
     paraphrase / translate / summarize; ``multilingual`` emits
@@ -1520,8 +1533,8 @@ def explore_topic(
         lang_note = ""
         seed_note = f"{num_seeds} seed(s) rotating {strat_note}"
     _report(
-        f"Rewording prompt into {seed_note} via local LLMFuzzer "
-        f"(Ollama llama3.1:8b, black-box, fuzz_mode={mode}{lang_note}) ..."
+        f"Rewording prompt into {seed_note} via LLMFuzzer "
+        f"(runtime utility LLM, black-box, fuzz_mode={mode}{lang_note}) ..."
     )
     query_seeds = reword_prompt_seeds(
         prompt,
@@ -1602,9 +1615,9 @@ def explore_topic(
     try:
         from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
 
-        local_fuzzer = LLMFuzzer.local_ollama()
+        local_fuzzer = LLMFuzzer.for_runtime()
     except Exception as exc:
-        logger.warning("Local fuzzer unavailable for compile translation (%s)", exc)
+        logger.warning("Utility fuzzer unavailable for compile translation (%s)", exc)
 
     corpus = compile_raw_responses(
         prompt,

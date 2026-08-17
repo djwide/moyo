@@ -343,9 +343,9 @@ then.
 
 | Knob | Typical | Effect |
 |------|---------|--------|
-| `cluster.provider` | `ollama` | Local LLM for same-fact grouping |
-| `cluster.model` | `llama3.1:8b` | Ollama model tag |
-| `cluster.base_url` | `http://localhost:11434` | Ollama endpoint |
+| `cluster.provider` | `ollama` locally; Cloud Run overlays a hosted utility LLM | Same-fact grouping |
+| `cluster.model` | `llama3.1:8b` locally; OpenRouter `meta-llama/llama-3.1-8b-instruct` in cloud | Utility model |
+| `cluster.base_url` | `http://localhost:11434` locally; OpenRouter in cloud | Utility endpoint |
 | `cluster.batch_size` | `35` | Claims per grouping call |
 | `cluster.collapse` | `true` | Merge similar claims into one (false = annotate only) |
 | `cluster.corroboration_min_sources` | `2` | Threshold for `CORROBORATED` |

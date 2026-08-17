@@ -5,6 +5,7 @@ from moyo.llm.client import (
     LLMSpec,
     _fixed_temperature_for_model,
     _openai_extra_body_for_model,
+    format_llm_error,
     is_retryable_llm_error,
     retry_delay_seconds,
 )
@@ -97,3 +98,15 @@ def test_complete_does_not_retry_hard_failures(monkeypatch):
     except Exception as exc:
         assert "no credits remaining" in str(exc)
     assert calls["n"] == 1
+
+
+def test_format_llm_error_includes_connection_cause():
+    class ConnectTimeout(Exception):
+        pass
+
+    exc = Exception("Connection error.")
+    exc.__cause__ = ConnectTimeout("timed out")
+    text = format_llm_error(exc)
+    assert "Connection error." in text
+    assert "ConnectTimeout" in text
+    assert "timed out" in text

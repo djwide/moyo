@@ -3,6 +3,10 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV MOYO_CLOUD_WORK_DIR=/tmp/moyo
+ENV MOYO_CLOUD_RUNTIME=1
+ENV MOYO_UTILITY_PROVIDER=custom
+ENV MOYO_UTILITY_MODEL=meta-llama/llama-3.1-8b-instruct
+ENV MOYO_UTILITY_BASE_URL=https://openrouter.ai/api/v1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

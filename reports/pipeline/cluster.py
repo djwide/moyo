@@ -553,6 +553,7 @@ def _make_ollama_client(llm_config: dict | None) -> Any:
             "provider": cfg.get("provider", "ollama"),
             "model": cfg.get("model", "llama3.1:8b"),
             "base_url": cfg.get("base_url", "http://localhost:11434"),
+            "api_key": cfg.get("api_key"),
             "temperature": float(cfg.get("temperature", 0.1)),
             "max_tokens": int(cfg.get("max_tokens", 4000)),
             "num_ctx": cfg.get("num_ctx", 16000),
@@ -563,8 +564,8 @@ def _make_ollama_client(llm_config: dict | None) -> Any:
     if not client.is_available():
         raise RuntimeError(
             f"Cluster LLM unavailable ({spec.provider}/{spec.model} @ "
-            f"{spec.base_url or 'default'}). Start Ollama (`ollama serve` / "
-            f"`ollama pull {spec.model}`) or pass --dry-run."
+            f"{spec.base_url or 'default'}). For local runs start Ollama; "
+            "on Cloud Run set MOYO_UTILITY_* / OPENROUTER_API_KEY, or pass --dry-run."
         )
     return client
 
