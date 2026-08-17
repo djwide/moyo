@@ -5,11 +5,11 @@ ENV PYTHONUNBUFFERED=1
 ENV MOYO_CLOUD_WORK_DIR=/tmp/moyo
 ENV MOYO_CLOUD_RUNTIME=1
 ENV MOYO_UTILITY_PROVIDER=custom
-ENV MOYO_UTILITY_MODEL=kimi-k2.6
-ENV MOYO_UTILITY_BASE_URL=https://api.moonshot.ai/v1
+ENV MOYO_UTILITY_MODEL=google/gemini-2.5-flash
 ENV GOOGLE_CLOUD_PROJECT=senteguard-website
 ENV MOYO_VERTEX_GEMINI=1
 ENV MOYO_VERTEX_GEMINI_MODEL=google/gemini-2.5-pro
+ENV MOYO_VERTEX_UTILITY_MODEL=google/gemini-2.5-flash
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

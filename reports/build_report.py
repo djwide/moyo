@@ -492,7 +492,8 @@ def main(argv: list[str] | None = None) -> int:
 
     chunk_cfg = cfg.get("chunk") or {}
     extract_cfg = cfg.get("extract") or {}
-    # Post-cluster LLM stages (synthesize, Englishize) use Kimi — never Ollama.
+    # Post-cluster LLM stages (synthesize, Englishize) follow synthesize cfg
+    # (Kimi locally; Vertex Flash on Cloud Run). Never the Ollama cluster model.
     synthesize_cfg = cfg.get("synthesize") or extract_cfg
     cluster_cfg = cfg.get("cluster") or {}
     score_cfg = cfg.get("score") or {}

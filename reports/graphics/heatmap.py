@@ -1,8 +1,7 @@
-"""Model × finding heatmap SVG — sized for A4 graphic boxes."""
+"""Model × claim heatmap SVG — sized for A4 graphic boxes."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Iterable
 
 from .style import (
@@ -142,7 +141,7 @@ def model_heatmap_svg(
     if max_claim_lines > 1:
         claim_label_h = min(150.0, claim_label_h + (max_claim_lines - 1) * (font_axis + 2))
 
-    title_h, legend_h, right_pad, bottom_pad = 48, 34, 16, 12
+    title_h, legend_h, right_pad, bottom_pad = 48, 62, 16, 12
     top = title_h + 8 + claim_label_h
     n_models = len(model_keys)
     n_claims = len(claims)
@@ -163,24 +162,26 @@ def model_heatmap_svg(
     n_models = len(model_keys)
     width = left + n_claims * cell_w + right_pad
     height = top + n_models * cell_h + legend_h + bottom_pad
-    font_cell = 9 if min(cell_w, cell_h) >= 22 else 8
 
-    grid: dict[tuple[int, int], int] = defaultdict(int)
+    # Presence only: which models support each claim. Sensitivity lives on the
+    # claim (one value per column), not on the model.
+    supported: set[tuple[int, int]] = set()
+    claim_sens: list[int] = [
+        max(0, min(5, int(f.get("sensitivity", 0) or 0))) for f in claims
+    ]
     claim_index = {f["claim_id"]: j for j, f in enumerate(claims)}
     for f in all_findings:
         cid = f.get("claim_id")
         if cid not in claim_index:
             continue
         j = claim_index[cid]
-        sens = max(0, min(5, int(f.get("sensitivity", 1) or 0)))
         raw_models = f.get("source_models")
         if not isinstance(raw_models, list) or not raw_models:
             raw_models = [f.get("source_model") or ""]
         for raw in raw_models:
             key = short_model_name(str(raw or ""), aliases)
             if key in model_keys:
-                i = model_keys.index(key)
-                grid[(i, j)] = max(grid[(i, j)], sens)
+                supported.add((model_keys.index(key), j))
 
     panel_x = left - 8
     panel_y = top - 8
@@ -194,7 +195,8 @@ def model_heatmap_svg(
     cells = []
     for i in range(n_models):
         for j in range(n_claims):
-            v = grid.get((i, j), 0)
+            hit = (i, j) in supported
+            v = claim_sens[j] if hit else 0
             fill = HEAT_SCALE.get(v, HEAT_SCALE[0])
             x = left + j * cell_w
             y = top + i * cell_h
@@ -203,13 +205,6 @@ def model_heatmap_svg(
                 f'width="{cell_w - 3:.1f}" height="{cell_h - 3:.1f}" '
                 f'rx="3" fill="{fill}" stroke="{WHITE}" stroke-width="1"/>'
             )
-            if v:
-                ink = WHITE if v >= 3 else INK
-                cells.append(
-                    f'<text x="{x + cell_w / 2:.1f}" y="{y + cell_h / 2 + 3:.1f}" '
-                    f'text-anchor="middle" font-family="{FONT_MONO}" font-size="{font_cell}" '
-                    f'fill="{ink}">{v}</text>'
-                )
 
     # Claims across the top — vertical, wrapped at 20 chars.
     claim_base_y = top - 10
@@ -245,32 +240,36 @@ def model_heatmap_svg(
             )
         )
 
-    legend_y = top + n_models * cell_h + 22
+    # One sensitivity score per claim, aligned under that column.
+    sens_y = top + n_models * cell_h + 16
+    sens_row = [
+        f'<text x="{left - 10:.1f}" y="{sens_y:.1f}" text-anchor="end" '
+        f'font-family="{FONT}" font-size="9" fill="{MUTED}">Claim sensitivity</text>'
+    ]
+    for j, v in enumerate(claim_sens):
+        x = left + j * cell_w + cell_w / 2
+        ink = WHITE if v >= 3 else INK
+        fill = HEAT_SCALE.get(v, HEAT_SCALE[0]) if v else CREAM
+        sens_row.append(
+            f'<rect x="{x - 8:.1f}" y="{sens_y - 11:.1f}" width="16" height="14" rx="2" '
+            f'fill="{fill}" stroke="{RULE}"/>'
+            f'<text x="{x:.1f}" y="{sens_y:.1f}" text-anchor="middle" '
+            f'font-family="{FONT_MONO}" font-size="9" font-weight="600" '
+            f'fill="{ink if v else MUTED}">{v}</text>'
+        )
+
+    legend_y = sens_y + 22
     legend = [
         f'<text x="{left}" y="{legend_y:.1f}" font-family="{FONT}" font-size="9" '
-        f'fill="{MUTED}">Sensitivity</text>'
+        f'fill="{MUTED}">Filled = model supported this claim · darker = higher claim sensitivity'
+        f"{' · showing top ' + str(n_claims) if len(all_findings) > n_claims else ''}</text>"
     ]
-    lx = left + 70
-    for v in range(1, 6):
-        fill = HEAT_SCALE[v]
-        legend.append(
-            f'<rect x="{lx:.1f}" y="{legend_y - 10:.1f}" width="16" height="13" rx="2" '
-            f'fill="{fill}" stroke="{RULE}"/>'
-            f'<text x="{lx + 8:.1f}" y="{legend_y + 1:.1f}" text-anchor="middle" '
-            f'font-family="{FONT_MONO}" font-size="8" '
-            f'fill="{WHITE if v >= 3 else INK}">{v}</text>'
-        )
-        lx += 22
-    legend.append(
-        f'<text x="{lx + 6:.1f}" y="{legend_y:.1f}" font-family="{FONT}" font-size="9" '
-        f'fill="{MUTED}">empty = none'
-        f"{' · top ' + str(n_claims) if len(all_findings) > n_claims else ''}</text>"
-    )
 
     body = f"""  {title_block(width / 2, 20, "Model Heatmap")}
   {panel}
   {"".join(cells)}
   {"".join(xlabels)}
   {"".join(ylabels)}
+  {"".join(sens_row)}
   {"".join(legend)}"""
     return svg_root(width, height, body)

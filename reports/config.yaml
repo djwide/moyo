@@ -37,7 +37,7 @@ extract:
 
 cluster:
   # Local Ollama groups paraphrases of the same atomic fact (no Jaccard).
-  # Cloud Run overlays Moonshot Kimi (no Ollama on the job).
+  # Cloud Run overlays Vertex Gemini Flash (no Ollama on the job).
   provider: ollama
   model: llama3.1:8b
   base_url: http://localhost:11434

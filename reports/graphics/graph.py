@@ -194,7 +194,7 @@ def evidence_graph_svg(
             f"</g>"
         )
 
-    body = f"""  {title_block(width / 2, 20, "Evidence Graph")}
+    body = f"""  {title_block(width / 2, 20, "Claim Support Graph")}
   {"".join(bands)}
   {"".join(edges)}
   {"".join(nodes)}"""

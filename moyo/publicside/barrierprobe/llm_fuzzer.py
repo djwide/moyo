@@ -753,7 +753,7 @@ class LLMFuzzer:
 
     @classmethod
     def for_runtime(cls, **kwargs) -> "LLMFuzzer":
-        """Ollama on a desktop; Moonshot Kimi on Cloud Run."""
+        """Ollama on a desktop; Vertex Gemini Flash on Cloud Run."""
         from moyo.llm.utility import utility_llm_spec
 
         spec = utility_llm_spec()
@@ -771,6 +771,37 @@ class LLMFuzzer:
                 ),
             )
         )
+
+    def _openai_sdk_kwargs(self, *, require_base_url: bool) -> dict:
+        """OpenAI SDK kwargs; Vertex OpenAI-compat uses ADC + HTTP/1.1."""
+        kwargs: dict = {}
+        try:
+            from moyo.llm.vertex import (
+                is_vertex_openai_url,
+                openai_compatible_http_client,
+                vertex_api_key,
+                vertex_openai_headers,
+            )
+
+            if is_vertex_openai_url(self.config.base_url):
+                kwargs["api_key"] = vertex_api_key
+                kwargs["base_url"] = self.config.base_url
+                kwargs["default_headers"] = vertex_openai_headers()
+                kwargs["http_client"] = openai_compatible_http_client(
+                    120, vertex=True
+                )
+                return kwargs
+        except Exception as exc:
+            logger.warning("Could not build Vertex OpenAI client for fuzzer: %s", exc)
+
+        if self.config.api_key:
+            kwargs["api_key"] = self.config.api_key
+        elif require_base_url:
+            kwargs["api_key"] = "not-needed"
+        if require_base_url or self.config.base_url:
+            if self.config.base_url:
+                kwargs["base_url"] = self.config.base_url
+        return kwargs
 
     def _initialize_llm_client(self):
         """Initialize the LLM client based on configuration."""
@@ -813,16 +844,13 @@ class LLMFuzzer:
         elif self.config.llm_provider == "openai":
             try:
                 from openai import OpenAI
-                kwargs = {}
-                if self.config.api_key:
-                    kwargs["api_key"] = self.config.api_key
-                return OpenAI(**kwargs)
+                return OpenAI(**self._openai_sdk_kwargs(require_base_url=False))
             except ImportError:
                 logger.error("OpenAI library not installed. Install with: pip install openai")
                 return None
         elif self.config.llm_provider == "custom":
             # Any OpenAI-compatible endpoint (vLLM, LM Studio, Together, Groq,
-            # OpenRouter, DeepSeek, llama.cpp server, ...). Requires base_url.
+            # OpenRouter, DeepSeek, llama.cpp server, Vertex, ...). Requires base_url.
             if not self.config.base_url:
                 logger.error(
                     "Provider 'custom' requires a base_url pointing at an "
@@ -831,12 +859,7 @@ class LLMFuzzer:
                 return None
             try:
                 from openai import OpenAI
-                # Many self-hosted servers ignore the key but the SDK requires
-                # a non-empty value, so fall back to a placeholder.
-                return OpenAI(
-                    api_key=self.config.api_key or "not-needed",
-                    base_url=self.config.base_url,
-                )
+                return OpenAI(**self._openai_sdk_kwargs(require_base_url=True))
             except ImportError:
                 logger.error("OpenAI library not installed. Install with: pip install openai")
                 return None
@@ -903,6 +926,11 @@ class LLMFuzzer:
                     max_tokens=self.config.max_tokens,
                 )
             elif self.config.llm_provider in ("openai", "custom"):
+                from moyo.llm.client import _openai_create_extras
+
+                extras = _openai_create_extras(
+                    self.config.model_name, self.config.base_url
+                )
                 response = self.llm_client.chat.completions.create(
                     model=self.config.model_name,
                     messages=[
@@ -911,6 +939,7 @@ class LLMFuzzer:
                     ],
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
+                    **extras,
                 )
                 text = (response.choices[0].message.content or "").strip()
             elif self.config.llm_provider == "anthropic":

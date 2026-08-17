@@ -565,7 +565,7 @@ def _make_ollama_client(llm_config: dict | None) -> Any:
         raise RuntimeError(
             f"Cluster LLM unavailable ({spec.provider}/{spec.model} @ "
             f"{spec.base_url or 'default'}). For local runs start Ollama; "
-            "on Cloud Run set MOONSHOT_API_KEY, or pass --dry-run."
+            "on Cloud Run the job SA needs roles/aiplatform.user, or pass --dry-run."
         )
     return client
 

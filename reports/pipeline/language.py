@@ -312,7 +312,7 @@ def englishize_findings(
 
 
 def kimi_translate_fn(llm_config: dict[str, Any] | None = None) -> TranslateFn | None:
-    """Translate via Kimi / Moonshot API (post-cluster report stages)."""
+    """Translate via the report LLM config (Kimi locally; Vertex Flash on Cloud Run)."""
     cfg = dict(llm_config or {})
     try:
         from moyo.llm.client import LLMClient, LLMSpec
@@ -324,18 +324,25 @@ def kimi_translate_fn(llm_config: dict[str, Any] | None = None) -> TranslateFn |
         return None
 
     try:
+        from moyo.llm.client import llm_spec_has_auth
+        from moyo.llm.vertex import is_vertex_openai_url
+
+        base_url = cfg.get("base_url") or "https://api.moonshot.ai/v1"
+        api_key = cfg.get("api_key")
+        if "api_key" not in cfg and not is_vertex_openai_url(base_url):
+            api_key = "$MOONSHOT_API_KEY"
         spec = LLMSpec.from_dict(
             {
                 "provider": cfg.get("provider", "custom"),
                 "model": cfg.get("model", "kimi-k2.6"),
-                "base_url": cfg.get("base_url", "https://api.moonshot.ai/v1"),
-                "api_key": cfg.get("api_key", "$MOONSHOT_API_KEY"),
+                "base_url": base_url,
+                "api_key": api_key,
                 "temperature": float(cfg.get("temperature", 0.1)),
                 "max_tokens": int(cfg.get("max_tokens", 2000)),
                 "timeout": int(cfg.get("timeout", 120)),
             }
         )
-        if not spec.api_key:
+        if not llm_spec_has_auth(spec):
             return None
         client = LLMClient(spec)
         if not client.is_available():
@@ -365,7 +372,7 @@ def default_translate_fn(
 ) -> TranslateFn | None:
     """Best-effort translator for report Englishization.
 
-    Prefers the Kimi API (``llm_config`` / extract defaults). Does not use
-    local Ollama — clustering is the only Ollama stage.
+    Prefers the report ``llm_config`` (Kimi locally, Vertex Flash on Cloud Run).
+    Does not use local Ollama — clustering is the only Ollama stage.
     """
     return kimi_translate_fn(llm_config)

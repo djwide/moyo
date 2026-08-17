@@ -228,7 +228,7 @@ def synthesize(
         return report_data
 
     try:
-        from moyo.llm.client import LLMClient, LLMSpec
+        from moyo.llm.client import LLMClient, LLMSpec, llm_spec_has_auth
     except ImportError:
         return report_data
 
@@ -237,18 +237,24 @@ def synthesize(
 
     llm = llm_config or {}
     try:
+        from moyo.llm.vertex import is_vertex_openai_url
+
+        base_url = llm.get("base_url") or "https://api.moonshot.ai/v1"
+        api_key = llm.get("api_key")
+        if "api_key" not in llm and not is_vertex_openai_url(base_url):
+            api_key = "$MOONSHOT_API_KEY"
         spec = LLMSpec.from_dict(
             {
                 "provider": llm.get("provider", "custom"),
                 "model": llm.get("model", "kimi-k2.6"),
-                "base_url": llm.get("base_url", "https://api.moonshot.ai/v1"),
-                "api_key": llm.get("api_key", "$MOONSHOT_API_KEY"),
+                "base_url": base_url,
+                "api_key": api_key,
                 "temperature": float(llm.get("temperature", 0.3)),
                 "max_tokens": int(llm.get("max_tokens", 1200)),
                 "timeout": int(llm.get("timeout", 120)),
             }
         )
-        if not spec.api_key:
+        if not llm_spec_has_auth(spec):
             return report_data
         client = LLMClient(spec)
         if not client.is_available():

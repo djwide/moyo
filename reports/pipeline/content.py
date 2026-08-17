@@ -623,12 +623,13 @@ def build_content_doc(
                 ),
                 "chart_captions": {
                     "sensitivity_distribution": (
-                        "Sensitivity distribution: how many findings fall into "
+                        "Findings by sensitivity: how many findings fall into "
                         "high, medium, low, and informational sensitivity bands."
                     ),
                     "exposure_radar": (
-                        "Exposure radar: average specificity, sensitivity, "
-                        "corroboration, novelty, and confidence across extracted claims."
+                        "Finding classification profile: average specificity, "
+                        "sensitivity, corroboration, novelty, and confidence "
+                        "across extracted claims."
                     ),
                 },
             },

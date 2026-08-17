@@ -16,6 +16,9 @@ VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 # AI Studio preview ids 404 on Vertex us-central1. Override with
 # ``MOYO_VERTEX_GEMINI_MODEL`` (e.g. ``google/gemini-1.5-pro``).
 VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
+# Hosted Ollama-replacement jobs (reword / extract / cluster / …). Retrieval
+# Gemini stays on VERTEX_DEFAULT_GEMINI_MODEL unless MOYO_VERTEX_GEMINI_MODEL.
+VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-2.5-flash"
 
 
 def vertex_enabled() -> bool:
@@ -82,14 +85,29 @@ def vertex_api_key() -> str:
     return token
 
 
+def _prefixed_gemini_id(model: str) -> str:
+    text = (model or "").strip()
+    if not text:
+        return VERTEX_DEFAULT_GEMINI_MODEL
+    if text.startswith("google/") or "/" in text:
+        return text
+    return f"google/{text}"
+
+
 def vertex_gemini_model(_current: str = "") -> str:
-    """Stable Vertex model id. AI Studio preview names are not used as-is."""
+    """Stable Vertex model id for the Gemini *retrieval* slot."""
     override = (os.environ.get("MOYO_VERTEX_GEMINI_MODEL") or "").strip()
     if override:
-        if override.startswith("google/") or "/" in override:
-            return override
-        return f"google/{override}"
+        return _prefixed_gemini_id(override)
     return VERTEX_DEFAULT_GEMINI_MODEL
+
+
+def vertex_utility_model() -> str:
+    """Vertex model for Cloud Run reword / summary / extract / cluster / synthesize."""
+    override = (os.environ.get("MOYO_VERTEX_UTILITY_MODEL") or "").strip()
+    if override:
+        return _prefixed_gemini_id(override)
+    return VERTEX_UTILITY_GEMINI_MODEL
 
 
 def rewrite_gemini_spec_for_vertex(spec: LLMSpec) -> LLMSpec:

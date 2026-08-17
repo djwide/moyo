@@ -114,7 +114,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
             f"{escape_xml(label)}</text>"
         )
 
-    body = f"""  {title_block(cx, 20, "Exposure Radar")}
+    body = f"""  {title_block(cx, 20, "Finding Classification Profile")}
   {panel}
   {"".join(rings)}
   {"".join(spokes)}
@@ -203,7 +203,7 @@ def sensitivity_bars_svg(bins: Mapping[str, int], width: int = 520, height: int 
             f'font-family="{FONT}" font-size="11" fill="{MUTED}">{escape_xml(label)}</text>'
         )
 
-    body = f"""  {title_block(width / 2, 20, "Sensitivity Distribution")}
+    body = f"""  {title_block(width / 2, 20, "Findings by Sensitivity")}
   {panel}
   {"".join(grid)}
   {"".join(bars)}"""

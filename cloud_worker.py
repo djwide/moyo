@@ -15,13 +15,15 @@ Storefront order fields used here::
     generationStartedAt  ISO-8601 UTC, set when work begins
     generationFinishedAt ISO-8601 UTC, set on success or failure
 
-One report per prompt. A single-prompt order also writes the five contract
-files at ``reports/{order_id}/`` (the path QC already uses). Multi-prompt
-orders use ``reports/{order_id}/{nn}_{slug}/`` plus ``manifest.json``.
+One report per prompt. A single-prompt order writes artifacts at
+``reports/{order_id}/`` (the path QC already uses). Multi-prompt orders
+use ``reports/{order_id}/{nn}_{slug}/`` plus ``manifest.json``.
 
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
-summaries, extract, and synthesize use Moonshot Kimi (``kimi-k2.6`` via
-``$MOONSHOT_API_KEY``). Retrieval fan-out still uses each provider's own key.
+summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
+(``google/gemini-2.5-flash`` via the job service account). Retrieval
+fan-out still uses each provider's own key (Gemini retrieval stays on
+Vertex Pro).
 """
 
 from __future__ import annotations
@@ -408,9 +410,10 @@ def retrieval_check_storage_paths(order_id: str, work: Path) -> list[tuple[str, 
         if path.suffix not in {".md", ".json"}:
             continue
         slug = path.parent.name
-        dest.append((f"reports/{order_id}/{slug}/{path.name}", path))
         if single:
             dest.append((f"reports/{order_id}/{path.name}", path))
+        else:
+            dest.append((f"reports/{order_id}/{slug}/{path.name}", path))
     return dest
 
 
@@ -425,16 +428,13 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     if spec.headline:
         cfg.setdefault("render", {})
         cfg["render"]["headline"] = spec.headline
-    from moyo.llm.utility import kimi_hosted_config, running_in_cloud
+    from moyo.llm.utility import running_in_cloud, vertex_flash_hosted_config
 
     if running_in_cloud():
-        # Desktop YAML still names Ollama for cluster (and could for other
-        # stages). Cloud Run has no Ollama — swap those stages to Kimi.
+        # Desktop YAML uses Ollama (cluster) and Kimi (extract/synthesize).
+        # Cloud Run uses Vertex Flash for all of those stages.
         for key in ("extract", "cluster", "synthesize"):
-            stage = cfg.get(key) or {}
-            provider = str(stage.get("provider") or "").lower()
-            if key == "cluster" or provider == "ollama":
-                cfg[key] = kimi_hosted_config(stage)
+            cfg[key] = vertex_flash_hosted_config(cfg.get(key) or {})
         cfg["cluster"].setdefault("temperature", 0.1)
         cfg["cluster"].setdefault("max_tokens", 4000)
     dest = work / "report_config.yaml"
@@ -628,15 +628,21 @@ def artifact_manifest(order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
 def storage_destinations(
     order_id: str, runs: list[PromptRun]
 ) -> list[tuple[str, Path]]:
-    """(object path, local file) pairs. Single-prompt also writes the flat QC prefix."""
+    """(object path, local file) pairs. One copy per file.
+
+    Single-prompt orders land at ``reports/{order_id}/`` (QC path).
+    Multi-prompt orders land at ``reports/{order_id}/{slug}/``.
+    """
     dest: list[tuple[str, Path]] = []
     single = len(runs) == 1
     for run in runs:
-        prefix = f"reports/{order_id}/{run.slug}"
+        prefix = (
+            f"reports/{order_id}"
+            if single
+            else f"reports/{order_id}/{run.slug}"
+        )
         for name, path in run.artifacts.items():
             dest.append((f"{prefix}/{name}", path))
-            if single:
-                dest.append((f"reports/{order_id}/{name}", path))
     return dest
 
 

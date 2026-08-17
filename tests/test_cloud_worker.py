@@ -169,7 +169,7 @@ def test_collect_artifacts_basis_falls_back(tmp_path: Path):
     assert found["report.html"].name == "basis-report.html"
 
 
-def test_storage_destinations_single_prompt_also_writes_flat_qc_path(tmp_path: Path):
+def test_storage_destinations_single_prompt_writes_flat_qc_path_only(tmp_path: Path):
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"%PDF")
     run = cw.PromptRun(
@@ -180,8 +180,35 @@ def test_storage_destinations_single_prompt_also_writes_flat_qc_path(tmp_path: P
         artifacts={"report.pdf": pdf},
     )
     dest = dict(cw.storage_destinations("ord", [run]))
-    assert dest["reports/ord/report.pdf"] == pdf
-    assert dest["reports/ord/01_who_killed_jfk/report.pdf"] == pdf
+    assert dest == {"reports/ord/report.pdf": pdf}
+
+
+def test_storage_destinations_multi_prompt_uses_slug_folders(tmp_path: Path):
+    a = tmp_path / "a.pdf"
+    b = tmp_path / "b.pdf"
+    a.write_bytes(b"%PDF")
+    b.write_bytes(b"%PDF")
+    runs = [
+        cw.PromptRun(
+            index=1,
+            prompt="Enron",
+            slug="01_enron",
+            run_id="ord__01_enron",
+            artifacts={"report.pdf": a},
+        ),
+        cw.PromptRun(
+            index=2,
+            prompt="Other",
+            slug="02_other",
+            run_id="ord__02_other",
+            artifacts={"report.pdf": b},
+        ),
+    ]
+    dest = dict(cw.storage_destinations("ord", runs))
+    assert dest == {
+        "reports/ord/01_enron/report.pdf": a,
+        "reports/ord/02_other/report.pdf": b,
+    }
 
 
 def test_note_explore_gaps_when_empty(tmp_path: Path):
@@ -252,7 +279,7 @@ def test_retrieval_check_storage_paths_single_and_multi(tmp_path: Path):
     js.write_text("{}\n", encoding="utf-8")
     paths = dict(cw.retrieval_check_storage_paths("ord_x", tmp_path))
     assert paths["reports/ord_x/llm-retrieval-check.md"] == md
-    assert paths["reports/ord_x/01_enron/llm-retrieval-check.md"] == md
+    assert "reports/ord_x/01_enron/llm-retrieval-check.md" not in paths
     assert "reports/ord_x/llm-retrieval-check.json" in paths
 
     other = tmp_path / "02_other"
@@ -277,16 +304,17 @@ def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch
 
     cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
     assert cfg["extract"]["provider"] == "custom"
-    assert cfg["extract"]["model"] == "kimi-k2.6"
-    assert cfg["extract"]["api_key"] == "$MOONSHOT_API_KEY"
-    assert cfg["extract"].get("base_url") == "https://api.moonshot.ai/v1"
+    assert cfg["extract"]["model"] == "google/gemini-2.5-flash"
+    assert "api_key" not in cfg["extract"]
+    assert "aiplatform.googleapis.com" in (cfg["extract"].get("base_url") or "")
     assert cfg["extract"].get("prompt") == "prompts/extract_claims.md"
     assert cfg["synthesize"]["provider"] == "custom"
-    assert cfg["synthesize"]["model"] == "kimi-k2.6"
-    assert cfg["synthesize"]["api_key"] == "$MOONSHOT_API_KEY"
+    assert cfg["synthesize"]["model"] == "google/gemini-2.5-flash"
+    assert "api_key" not in cfg["synthesize"]
+    assert "aiplatform.googleapis.com" in (cfg["synthesize"].get("base_url") or "")
     assert cfg["cluster"]["provider"] == "custom"
-    assert cfg["cluster"]["model"] == "kimi-k2.6"
-    assert cfg["cluster"]["api_key"] == "$MOONSHOT_API_KEY"
-    assert cfg["cluster"].get("base_url") == "https://api.moonshot.ai/v1"
+    assert cfg["cluster"]["model"] == "google/gemini-2.5-flash"
+    assert "api_key" not in cfg["cluster"]
+    assert "aiplatform.googleapis.com" in (cfg["cluster"].get("base_url") or "")
     assert "sk-test-openai" not in dest.read_text(encoding="utf-8")
     assert cfg["render"]["headline"] == "Cover"

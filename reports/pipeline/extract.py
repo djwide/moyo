@@ -593,14 +593,20 @@ def extract_all(
         _heuristic_pending()
         return _finalize(claims, issues)
 
-    from moyo.llm.client import LLMClient, LLMSpec
+    from moyo.llm.client import LLMClient, LLMSpec, llm_spec_has_auth
+    from moyo.llm.vertex import is_vertex_openai_url
+
+    base_url = config.get("base_url") or "https://api.moonshot.ai/v1"
+    api_key = config.get("api_key")
+    if "api_key" not in config and not is_vertex_openai_url(base_url):
+        api_key = "$MOONSHOT_API_KEY"
 
     spec = LLMSpec.from_dict(
         {
             "provider": config.get("provider", "custom"),
             "model": config.get("model", "kimi-k2.6"),
-            "base_url": config.get("base_url", "https://api.moonshot.ai/v1"),
-            "api_key": config.get("api_key", "$MOONSHOT_API_KEY"),
+            "base_url": base_url,
+            "api_key": api_key,
             "temperature": float(config.get("temperature", 0.2)),
             "max_tokens": int(config.get("max_tokens", 2500)),
             "num_ctx": config.get("num_ctx"),
@@ -608,7 +614,7 @@ def extract_all(
         }
     )
     client: Any = None
-    if not spec.api_key:
+    if not llm_spec_has_auth(spec):
         print(
             f"  warn: extractor LLM has no API key for {spec.provider}/{spec.model}; "
             "using heuristic extract",

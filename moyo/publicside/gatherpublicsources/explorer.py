@@ -288,7 +288,7 @@ def reword_prompt(
 
     Black-box: uses :class:`~moyo.publicside.barrierprobe.llm_fuzzer.LLMFuzzer`
     with the runtime utility LLM (local Ollama ``llama3.1:8b`` on the desktop;
-    a hosted cheap model on Cloud Run). No target concept is
+    Vertex Gemini Flash on Cloud Run). No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
     ``fuzz_mode`` ``basic`` emits ``n`` seeds rotating paraphrase / translate /
@@ -652,8 +652,8 @@ def retrieve(
 def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     """LLM used for exploration narrative + claims summaries.
 
-    Defaults to local Ollama (``llama3.1:8b``) on the desktop, or the hosted
-    Cloud Run utility LLM, with an enlarged ``num_ctx`` so
+    Defaults to local Ollama (``llama3.1:8b``) on the desktop, or Vertex
+    Gemini Flash on Cloud Run, with an enlarged ``num_ctx`` so
     multi-source corpora fit. Override with a configured client (e.g. CLI
     ``--provider``), or via ``MOYO_SUMMARY_MODEL`` / ``MOYO_SUMMARY_NUM_CTX`` /
     ``MOYO_SUMMARY_BASE_URL``. Under ``--test`` / ``MOYO_TEST_MODE``, returns
@@ -1473,7 +1473,7 @@ def explore_topic(
     both phases (default: one per configured retrieval LLM for retrieval; the
     same cap for translation). Pass ``workers=1`` to force sequential behaviour.
     Rewording stays on the runtime utility fuzzer; summary synthesis stays
-    serial on :func:`get_summary_llm` (Ollama locally, hosted model in cloud).
+    serial on :func:`get_summary_llm` (Ollama locally, Vertex Flash in cloud).
 
     ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` seeds rotating
     paraphrase / translate / summarize; ``multilingual`` emits

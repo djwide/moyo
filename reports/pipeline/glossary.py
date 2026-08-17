@@ -146,12 +146,12 @@ _GROUPS: list[dict[str, Any]] = [
         "title": "Charts and metrics",
         "terms": [
             (
-                "Exposure radar",
+                "Finding classification profile",
                 "Average specificity, sensitivity, corroboration, novelty, and "
                 "confidence across all extracted claims.",
             ),
             (
-                "Sensitivity distribution",
+                "Findings by sensitivity",
                 "How many findings fall into the high, medium, low, and "
                 "informational bands.",
             ),
@@ -160,7 +160,7 @@ _GROUPS: list[dict[str, Any]] = [
                 "Which models produced disclosures in which categories.",
             ),
             (
-                "Evidence graph",
+                "Claim support graph",
                 "How model outputs connect to claims and how claims group into "
                 "higher-level exposures.",
             ),

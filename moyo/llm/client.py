@@ -425,6 +425,18 @@ class LLMSpec:
         )
 
 
+def llm_spec_has_auth(spec: LLMSpec) -> bool:
+    """True when the spec can authenticate (API key or Vertex ADC)."""
+    if (spec.api_key or "").strip():
+        return True
+    try:
+        from moyo.llm.vertex import is_vertex_openai_url
+
+        return is_vertex_openai_url(spec.base_url)
+    except Exception:
+        return False
+
+
 class LLMClient:
     """A uniform wrapper over one LLM endpoint described by an :class:`LLMSpec`."""
 
