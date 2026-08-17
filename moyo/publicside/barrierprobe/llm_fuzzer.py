@@ -753,7 +753,7 @@ class LLMFuzzer:
 
     @classmethod
     def for_runtime(cls, **kwargs) -> "LLMFuzzer":
-        """Ollama on a desktop; hosted cheap model on Cloud Run."""
+        """Ollama on a desktop; Moonshot Kimi on Cloud Run."""
         from moyo.llm.utility import utility_llm_spec
 
         spec = utility_llm_spec()

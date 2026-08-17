@@ -1,8 +1,8 @@
 """Cheap utility LLM for rewording, translation, clustering, and summaries.
 
 Local desktop runs keep Ollama (``llama3.1:8b``). Cloud Run has no Ollama, so
-the same jobs use a hosted OpenAI-compatible model (default: OpenRouter
-Llama 3.1 8B Instruct).
+those jobs use Moonshot Kimi (``kimi-k2.6`` via ``$MOONSHOT_API_KEY``).
+Override with ``MOYO_UTILITY_*``.
 """
 
 from __future__ import annotations
@@ -18,13 +18,9 @@ logger = logging.getLogger(__name__)
 LOCAL_UTILITY_MODEL = "llama3.1:8b"
 LOCAL_UTILITY_BASE_URL = "http://localhost:11434"
 
-# Closest cheap hosted analogue of the local 8B Ollama model.
-CLOUD_UTILITY_PROVIDER = "custom"
-CLOUD_UTILITY_MODEL = "meta-llama/llama-3.1-8b-instruct"
-CLOUD_UTILITY_BASE_URL = "https://openrouter.ai/api/v1"
-
-MOONSHOT_FALLBACK_MODEL = "kimi-k2.6"
-MOONSHOT_FALLBACK_BASE_URL = "https://api.moonshot.ai/v1"
+CLOUD_KIMI_PROVIDER = "custom"
+CLOUD_KIMI_MODEL = "kimi-k2.6"
+CLOUD_KIMI_BASE_URL = "https://api.moonshot.ai/v1"
 
 
 def running_in_cloud() -> bool:
@@ -65,26 +61,27 @@ def utility_llm_spec() -> LLMSpec:
             timeout=120,
         )
 
-    provider = (os.environ.get("MOYO_UTILITY_PROVIDER") or "").strip()
-    model = (os.environ.get("MOYO_UTILITY_MODEL") or "").strip()
-    base_url = (os.environ.get("MOYO_UTILITY_BASE_URL") or "").strip()
+    provider = (os.environ.get("MOYO_UTILITY_PROVIDER") or "").strip() or CLOUD_KIMI_PROVIDER
+    model = (os.environ.get("MOYO_UTILITY_MODEL") or "").strip() or CLOUD_KIMI_MODEL
+    base_url = (os.environ.get("MOYO_UTILITY_BASE_URL") or "").strip() or CLOUD_KIMI_BASE_URL
     explicit_key = (os.environ.get("MOYO_UTILITY_API_KEY") or "").strip()
-    openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     moonshot_key = (os.environ.get("MOONSHOT_API_KEY") or "").strip()
-    api_key = explicit_key or openrouter_key
+    openrouter_key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
 
-    # Dockerfile pins OpenRouter. If that key is missing, use Moonshot
-    # (already required for extract) rather than calling OpenRouter unauthenticated.
-    openrouter_like = (not base_url) or ("openrouter.ai" in base_url)
-    if not api_key and moonshot_key and openrouter_like and not explicit_key:
-        provider = "custom"
-        model = MOONSHOT_FALLBACK_MODEL
-        base_url = MOONSHOT_FALLBACK_BASE_URL
-        api_key = moonshot_key
+    moonshot_like = "moonshot.ai" in base_url or model.lower().startswith("kimi")
+    openrouter_like = "openrouter.ai" in base_url
+    if moonshot_like:
+        api_key = explicit_key or moonshot_key
+    elif openrouter_like:
+        api_key = explicit_key or openrouter_key or moonshot_key
+        # Pinned OpenRouter without a key → Kimi (same secret as extract).
+        if not explicit_key and not openrouter_key and moonshot_key:
+            provider = CLOUD_KIMI_PROVIDER
+            model = CLOUD_KIMI_MODEL
+            base_url = CLOUD_KIMI_BASE_URL
+            api_key = moonshot_key
     else:
-        provider = provider or CLOUD_UTILITY_PROVIDER
-        model = model or CLOUD_UTILITY_MODEL
-        base_url = base_url or CLOUD_UTILITY_BASE_URL
+        api_key = explicit_key or moonshot_key or openrouter_key
 
     spec = LLMSpec(
         provider=provider,
@@ -117,8 +114,8 @@ def _utility_api_key_env_ref(spec: LLMSpec) -> Optional[str]:
         return None
     pairs = (
         ("MOYO_UTILITY_API_KEY", "$MOYO_UTILITY_API_KEY"),
-        ("OPENROUTER_API_KEY", "$OPENROUTER_API_KEY"),
         ("MOONSHOT_API_KEY", "$MOONSHOT_API_KEY"),
+        ("OPENROUTER_API_KEY", "$OPENROUTER_API_KEY"),
     )
     for env_name, ref in pairs:
         if key == (os.environ.get(env_name) or "").strip():
@@ -142,16 +139,26 @@ def utility_cluster_config(base: Optional[dict] = None) -> dict:
     cfg.setdefault("temperature", 0.1)
     cfg.setdefault("max_tokens", 4000)
     cfg.setdefault("timeout", 180)
+    cfg.pop("num_ctx", None)
+    return cfg
+
+
+def kimi_hosted_config(base: Optional[dict] = None) -> dict:
+    """Moonshot Kimi overlay for Cloud Run report stages that are Ollama locally."""
+    cfg = dict(base or {})
+    cfg["provider"] = CLOUD_KIMI_PROVIDER
+    cfg["model"] = (
+        os.environ.get("MOYO_CLOUD_KIMI_MODEL") or CLOUD_KIMI_MODEL
+    ).strip()
+    cfg["base_url"] = CLOUD_KIMI_BASE_URL
+    cfg["api_key"] = "$MOONSHOT_API_KEY"
+    cfg.pop("num_ctx", None)
+    cfg.setdefault("timeout", 180)
     return cfg
 
 
 def cloud_paid_llm_config(base: Optional[dict] = None) -> dict:
-    """OpenAI (default) or Anthropic for Cloud Run cluster / synthesize.
-
-    Claim extract stays on Kimi (``reports/config.yaml``) so cloud matches
-    local. Cluster still needs this overlay because Cloud Run has no Ollama.
-    Override with ``MOYO_CLOUD_REPORT_PROVIDER=anthropic``.
-    """
+    """Optional OpenAI/Anthropic overlay (unused by the worker; Kimi is default)."""
     cfg = dict(base or {})
     choice = (os.environ.get("MOYO_CLOUD_REPORT_PROVIDER") or "openai").strip().lower()
     cfg.pop("base_url", None)

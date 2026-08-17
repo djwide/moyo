@@ -1,6 +1,7 @@
 from moyo.llm.client import LLMSpec, ensure_env_loaded
 from moyo.llm.utility import (
     cloud_paid_llm_config,
+    kimi_hosted_config,
     running_in_cloud,
     utility_cluster_config,
     utility_llm_spec,
@@ -51,27 +52,27 @@ def test_local_utility_is_ollama(monkeypatch):
     assert "llama3.1" in spec.model
 
 
-def test_cloud_utility_uses_openrouter(monkeypatch):
+def test_cloud_utility_uses_kimi(monkeypatch):
     _clear_runtime(monkeypatch)
     monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon-test")
     spec = utility_llm_spec()
     assert spec.provider == "custom"
-    assert spec.model == "meta-llama/llama-3.1-8b-instruct"
-    assert "openrouter" in (spec.base_url or "")
-    assert spec.api_key == "sk-or-test"
+    assert spec.model == "kimi-k2.6"
+    assert "moonshot" in (spec.base_url or "")
+    assert spec.api_key == "sk-moon-test"
 
 
-def test_cloud_dockerfile_env_keeps_openrouter(monkeypatch):
+def test_cloud_dockerfile_env_keeps_kimi(monkeypatch):
     _clear_runtime(monkeypatch)
     monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
     monkeypatch.setenv("MOYO_UTILITY_PROVIDER", "custom")
-    monkeypatch.setenv("MOYO_UTILITY_MODEL", "meta-llama/llama-3.1-8b-instruct")
-    monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://openrouter.ai/api/v1")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("MOYO_UTILITY_MODEL", "kimi-k2.6")
+    monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://api.moonshot.ai/v1")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon-test")
     spec = utility_llm_spec()
-    assert spec.model == "meta-llama/llama-3.1-8b-instruct"
-    assert spec.api_key == "sk-or-test"
+    assert spec.model == "kimi-k2.6"
+    assert spec.api_key == "sk-moon-test"
 
 
 def test_cloud_utility_falls_back_to_moonshot(monkeypatch):
@@ -99,12 +100,32 @@ def test_cloud_falls_back_when_dockerfile_pins_openrouter_without_key(monkeypatc
 def test_utility_cluster_config_uses_env_ref(monkeypatch):
     _clear_runtime(monkeypatch)
     monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon-test")
     cfg = utility_cluster_config({"batch_size": 10, "collapse": True})
     assert cfg["provider"] == "custom"
-    assert cfg["api_key"] == "$OPENROUTER_API_KEY"
+    assert cfg["model"] == "kimi-k2.6"
+    assert cfg["api_key"] == "$MOONSHOT_API_KEY"
     assert cfg["batch_size"] == 10
-    assert "sk-or-test" not in str(cfg)
+    assert "sk-moon-test" not in str(cfg)
+
+
+def test_kimi_hosted_config_replaces_ollama_cluster(monkeypatch):
+    _clear_runtime(monkeypatch)
+    cfg = kimi_hosted_config(
+        {
+            "provider": "ollama",
+            "model": "llama3.1:8b",
+            "base_url": "http://localhost:11434",
+            "num_ctx": 16000,
+            "collapse": True,
+        }
+    )
+    assert cfg["provider"] == "custom"
+    assert cfg["model"] == "kimi-k2.6"
+    assert cfg["base_url"] == "https://api.moonshot.ai/v1"
+    assert cfg["api_key"] == "$MOONSHOT_API_KEY"
+    assert cfg["collapse"] is True
+    assert "num_ctx" not in cfg
 
 
 def test_cloud_paid_llm_defaults_to_openai(monkeypatch):

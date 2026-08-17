@@ -19,9 +19,9 @@ One report per prompt. A single-prompt order also writes the five contract
 files at ``reports/{order_id}/`` (the path QC already uses). Multi-prompt
 orders use ``reports/{order_id}/{nn}_{slug}/`` plus ``manifest.json``.
 
-Ollama is not used in Cloud Run. Rewording, translation, clustering, and
-summaries use a hosted utility LLM (default: OpenRouter Llama 3.1 8B Instruct
-via ``OPENROUTER_API_KEY``; override with ``MOYO_UTILITY_*``).
+Ollama is not used in Cloud Run. Rewording, translation, clustering,
+summaries, extract, and synthesize use Moonshot Kimi (``kimi-k2.6`` via
+``$MOONSHOT_API_KEY``). Retrieval fan-out still uses each provider's own key.
 """
 
 from __future__ import annotations
@@ -425,15 +425,18 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     if spec.headline:
         cfg.setdefault("render", {})
         cfg["render"]["headline"] = spec.headline
-    from moyo.llm.utility import cloud_paid_llm_config, running_in_cloud
+    from moyo.llm.utility import kimi_hosted_config, running_in_cloud
 
     if running_in_cloud():
-        # Cluster has no Ollama on Cloud Run. Extract stays on Kimi
-        # (reports/config.yaml) — same model as local claim extraction.
-        cfg["cluster"] = cloud_paid_llm_config(cfg.get("cluster") or {})
+        # Desktop YAML still names Ollama for cluster (and could for other
+        # stages). Cloud Run has no Ollama — swap those stages to Kimi.
+        for key in ("extract", "cluster", "synthesize"):
+            stage = cfg.get(key) or {}
+            provider = str(stage.get("provider") or "").lower()
+            if key == "cluster" or provider == "ollama":
+                cfg[key] = kimi_hosted_config(stage)
         cfg["cluster"].setdefault("temperature", 0.1)
         cfg["cluster"].setdefault("max_tokens", 4000)
-        cfg["synthesize"] = cloud_paid_llm_config(cfg.get("synthesize") or {})
     dest = work / "report_config.yaml"
     dest.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return dest
