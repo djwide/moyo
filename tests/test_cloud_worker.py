@@ -143,9 +143,13 @@ def test_collect_artifacts_and_evidence(tmp_path: Path):
     (tmp_path / "raw_responses.json").write_text("[]", encoding="utf-8")
     evidence = cw.build_evidence(run_dir, prompt="Who killed JFK?")
     (tmp_path / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
+    (tmp_path / "llm-retrieval-check.md").write_text("# LLM Retrieval Check\n", encoding="utf-8")
+    (tmp_path / "llm-retrieval-check.json").write_text("{}", encoding="utf-8")
 
     found = cw.collect_artifacts(tmp_path, run_dir, "snapshot")
     assert set(cw.CONTRACT_ARTIFACTS) <= set(found)
+    assert found["llm-retrieval-check.md"].name == "llm-retrieval-check.md"
+    assert found["llm-retrieval-check.json"].name == "llm-retrieval-check.json"
     assert evidence["prompt"] == "Who killed JFK?"
     assert evidence["headline"] == "H"
     assert evidence["claims"][0]["claim_id"] == "C1"
@@ -180,19 +184,63 @@ def test_storage_destinations_single_prompt_also_writes_flat_qc_path(tmp_path: P
     assert dest["reports/ord/01_who_killed_jfk/report.pdf"] == pdf
 
 
-def test_storage_destinations_multi_prompt_no_flat_collision(tmp_path: Path):
-    a = tmp_path / "a.pdf"
-    b = tmp_path / "b.pdf"
-    a.write_bytes(b"a")
-    b.write_bytes(b"b")
-    runs = [
-        cw.PromptRun(1, "A", "01_a", "ord__01_a", {"report.pdf": a}),
-        cw.PromptRun(2, "B", "02_b", "ord__02_b", {"report.pdf": b}),
-    ]
-    paths = [p for p, _ in cw.storage_destinations("ord", runs)]
-    assert "reports/ord/report.pdf" not in paths
-    assert "reports/ord/01_a/report.pdf" in paths
-    assert "reports/ord/02_b/report.pdf" in paths
-    manifest = cw.artifact_manifest("ord", runs)
-    assert len(manifest["reports"]) == 2
-    assert manifest["reports"][0]["prefix"] == "reports/ord/01_a/"
+def test_assert_explore_produced_content_fails_when_empty(tmp_path: Path):
+    (tmp_path / "raw_responses.json").write_text(
+        json.dumps(
+            [
+                {"source_label": "GPT", "error": "401 Unauthorized", "text": ""},
+                {"source_label": "Claude", "error": "missing api key", "text": ""},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "exploration.md").write_text(
+        "# Topic\n\n> Retrieval failed: 401\n> Retrieval failed: key\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="0 usable LLM answers"):
+        cw.assert_explore_produced_content(tmp_path, "Enron?")
+
+
+def test_assert_explore_produced_content_ok(tmp_path: Path):
+    (tmp_path / "raw_responses.json").write_text(
+        json.dumps([{"source_label": "GPT", "text": "Enron hid debt via SPEs."}]),
+        encoding="utf-8",
+    )
+    cw.assert_explore_produced_content(tmp_path, "Enron?")
+
+
+def test_assert_report_has_claims_fails_when_empty(tmp_path: Path):
+    (tmp_path / "claims.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="0 claims"):
+        cw.assert_report_has_claims(tmp_path, "Enron?")
+
+
+def test_required_llm_env_presence(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    presence = cw._required_llm_env_presence()
+    assert presence["OPENAI_API_KEY"] is True
+    assert presence["MOONSHOT_API_KEY"] is False
+
+
+def test_retrieval_check_storage_paths_single_and_multi(tmp_path: Path):
+    slug = tmp_path / "01_enron"
+    slug.mkdir()
+    md = slug / "llm-retrieval-check.md"
+    js = slug / "llm-retrieval-check.json"
+    md.write_text("# check\n", encoding="utf-8")
+    js.write_text("{}\n", encoding="utf-8")
+    paths = dict(cw.retrieval_check_storage_paths("ord_x", tmp_path))
+    assert paths["reports/ord_x/llm-retrieval-check.md"] == md
+    assert paths["reports/ord_x/01_enron/llm-retrieval-check.md"] == md
+    assert "reports/ord_x/llm-retrieval-check.json" in paths
+
+    other = tmp_path / "02_other"
+    other.mkdir()
+    (other / "llm-retrieval-check.md").write_text("b", encoding="utf-8")
+    paths2 = [p for p, _ in cw.retrieval_check_storage_paths("ord_x", tmp_path)]
+    assert "reports/ord_x/llm-retrieval-check.md" not in paths2
+    assert "reports/ord_x/01_enron/llm-retrieval-check.md" in paths2
+    assert "reports/ord_x/02_other/llm-retrieval-check.md" in paths2

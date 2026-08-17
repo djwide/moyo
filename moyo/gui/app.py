@@ -703,6 +703,100 @@ def _busy(button: QPushButton, busy: bool, idle_label: str) -> None:
         button.setEnabled(True)
 
 
+def _make_compute_location_box(*, include_product: bool = True) -> tuple:
+    """Local vs Cloud Run toggle plus connection settings.
+
+    Returns ``(group_box, widgets)`` where widgets is a dict of child controls.
+    """
+    from moyo.gui.cloud_compute import CloudComputeConfig
+
+    cfg = CloudComputeConfig.from_env()
+    box = QGroupBox("Compute location")
+    outer = QVBoxLayout()
+
+    radios = QHBoxLayout()
+    local_radio = QRadioButton("Local (this machine)")
+    cloud_radio = QRadioButton("Cloud (Cloud Run worker)")
+    local_radio.setChecked(True)
+    local_radio.setToolTip(
+        "Run explore / report build in this GUI process using local Ollama "
+        "and API keys from your environment."
+    )
+    cloud_radio.setToolTip(
+        "Create a Firestore order and execute moyo-report-worker. "
+        "The worker explores the prompts and builds report PDFs in GCP."
+    )
+    group = QButtonGroup(box)
+    group.addButton(local_radio)
+    group.addButton(cloud_radio)
+    radios.addWidget(local_radio)
+    radios.addWidget(cloud_radio)
+    radios.addStretch(1)
+    outer.addLayout(radios)
+
+    note = QLabel(
+        "Cloud runs the full worker (explore → extract → cluster → PDFs) "
+        "and writes artifacts under gs://senteguard-website-moyo-reports/"
+        "reports/<order-id>/. Requires `gcloud` auth to this project."
+    )
+    note.setWordWrap(True)
+    outer.addWidget(note)
+
+    settings = QWidget()
+    form = QFormLayout(settings)
+    form.setContentsMargins(0, 0, 0, 0)
+    project = QLineEdit(cfg.project)
+    region = QLineEdit(cfg.region)
+    job = QLineEdit(cfg.job)
+    wait_cb = QCheckBox("Wait until the Cloud Run execution finishes (stream logs)")
+    wait_cb.setChecked(True)
+    form.addRow("GCP project:", project)
+    form.addRow("Region:", region)
+    form.addRow("Job name:", job)
+    product_combo = None
+    if include_product:
+        product_combo = QComboBox()
+        product_combo.addItem("Exposure Snapshot", "snapshot")
+        product_combo.addItem("Basis Report", "basis")
+        product_combo.addItem("Both", "both")
+        product_combo.setCurrentIndex(0)
+        form.addRow("Cloud report product:", product_combo)
+    form.addRow(wait_cb)
+    settings.setVisible(False)
+    outer.addWidget(settings)
+
+    def _sync():
+        settings.setVisible(cloud_radio.isChecked())
+
+    local_radio.toggled.connect(lambda *_: _sync())
+    cloud_radio.toggled.connect(lambda *_: _sync())
+
+    box.setLayout(outer)
+    widgets = {
+        "local_radio": local_radio,
+        "cloud_radio": cloud_radio,
+        "settings": settings,
+        "project": project,
+        "region": region,
+        "job": job,
+        "wait_cb": wait_cb,
+        "product_combo": product_combo,
+        "note": note,
+    }
+    return box, widgets
+
+
+def _cloud_cfg_from_widgets(widgets: dict):
+    from moyo.gui.cloud_compute import CloudComputeConfig
+
+    return CloudComputeConfig(
+        project=widgets["project"].text().strip() or CloudComputeConfig.from_env().project,
+        region=widgets["region"].text().strip() or "us-central1",
+        job=widgets["job"].text().strip() or "moyo-report-worker",
+        wait=bool(widgets["wait_cb"].isChecked()),
+    )
+
+
 def _ollama_base_url(url: Optional[str] = None) -> str:
     return (url or "http://localhost:11434").rstrip("/")
 
@@ -888,6 +982,12 @@ class GatherPublicSourcesTab(QWidget):
         layout.addWidget(self.explore_fuzz_row)
         self._sync_explore_strategy_checks()
 
+        self.compute_box, self._compute = _make_compute_location_box(
+            include_product=True
+        )
+        self.compute_box.setVisible(False)
+        layout.addWidget(self.compute_box)
+
         self.impact_definition_input = QTextEdit()
         self.impact_definition_input.setPlaceholderText(
             "Optional: additional high-impact criteria (for summarize command) "
@@ -950,6 +1050,9 @@ class GatherPublicSourcesTab(QWidget):
         self.run_btn = QPushButton("Start Crawl")
         self.run_btn.clicked.connect(self._start_crawl)
         action_row.addWidget(self.run_btn)
+        self._compute["cloud_radio"].toggled.connect(
+            lambda *_: self._refresh_mode()
+        )
         self.open_results_btn = QPushButton("Open Last Output Dir")
         self.open_results_btn.setEnabled(False)
         self.open_results_btn.clicked.connect(self._open_last_output)
@@ -976,8 +1079,18 @@ class GatherPublicSourcesTab(QWidget):
         self.prompt_input.setEnabled(is_prompt)
         self.explore_note.setVisible(is_prompt)
         self.explore_fuzz_row.setVisible(is_prompt)
+        if hasattr(self, "compute_box"):
+            self.compute_box.setVisible(is_prompt)
         self.impact_definition_input.setVisible(is_prompt)
-        self.run_btn.setText("Explore" if is_prompt else "Start Crawl")
+        cloud = (
+            is_prompt
+            and hasattr(self, "_compute")
+            and self._compute["cloud_radio"].isChecked()
+        )
+        if cloud:
+            self.run_btn.setText("Run in Cloud")
+        else:
+            self.run_btn.setText("Explore" if is_prompt else "Start Crawl")
         self._on_explore_fuzz_mode_changed()
 
     def _sync_explore_strategy_checks(self) -> None:
@@ -1047,7 +1160,10 @@ class GatherPublicSourcesTab(QWidget):
             return
 
         if self.prompt_radio.isChecked():
-            self._start_explore()
+            if self._compute["cloud_radio"].isChecked():
+                self._start_cloud_explore()
+            else:
+                self._start_explore()
             return
 
         topic_mode = self.topic_radio.isChecked()
@@ -1109,18 +1225,80 @@ class GatherPublicSourcesTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
-    def _start_explore(self):
+    def _explore_inputs(self):
         prompts = [
             line.strip()
             for line in self.prompt_input.toPlainText().splitlines()
             if line.strip()
         ]
         if not prompts:
-            QMessageBox.warning(
-                self,
-                "Missing input",
-                "Enter one or more naive prompts (one per line).",
+            raise ValueError("Enter one or more naive prompts (one per line).")
+        fuzz_mode = self.explore_fuzz_mode_combo.currentData() or "basic"
+        strategies = self._selected_explore_strategies()
+        if not strategies:
+            raise ValueError("Select at least one fuzz strategy.")
+        extra_languages = (
+            [s.strip() for s in self.explore_languages_input.text().split(",") if s.strip()]
+            if fuzz_mode == "multilingual"
+            else None
+        )
+        return prompts, fuzz_mode, strategies, extra_languages
+
+    def _start_cloud_explore(self):
+        try:
+            prompts, fuzz_mode, strategies, extra_languages = self._explore_inputs()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Missing input", str(exc))
+            return
+
+        from moyo.gui.cloud_compute import submit_cloud_compute
+
+        cfg = _cloud_cfg_from_widgets(self._compute)
+        product = "snapshot"
+        combo = self._compute.get("product_combo")
+        if combo is not None:
+            product = combo.currentData() or "snapshot"
+
+        holder = {"worker": None}
+
+        def job():
+            def progress(msg: str) -> None:
+                worker = holder["worker"]
+                if worker is not None:
+                    worker.log.emit(msg)
+                else:
+                    print(msg)
+
+            return submit_cloud_compute(
+                prompts=prompts,
+                product=product,
+                fuzz_mode=fuzz_mode,
+                strategies=strategies,
+                languages=extra_languages or [],
+                cfg=cfg,
+                progress=progress,
             )
+
+        self.log.clear()
+        self.log.append(
+            f"Submitting {len(prompts)} prompt(s) to Cloud Run job {cfg.job} "
+            f"(product={product}, fuzz_mode={fuzz_mode})…"
+        )
+        self.progress_bar.setVisible(True)
+        _busy(self.run_btn, True, "Run in Cloud")
+
+        self._worker = BackgroundWorker(job)
+        holder["worker"] = self._worker
+        self._worker.log.connect(self.log.append)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
+    def _start_explore(self):
+        try:
+            prompts, fuzz_mode, strategies, extra_languages = self._explore_inputs()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Missing input", str(exc))
             return
 
         try:
@@ -1134,20 +1312,6 @@ class GatherPublicSourcesTab(QWidget):
 
         output_dir = self.output_dir_input.text().strip() or "data/public_sources"
         impact_extra = self.impact_definition_input.toPlainText().strip() or None
-        fuzz_mode = self.explore_fuzz_mode_combo.currentData() or "basic"
-        strategies = self._selected_explore_strategies()
-        if not strategies:
-            QMessageBox.warning(
-                self,
-                "Missing strategies",
-                "Select at least one fuzz strategy.",
-            )
-            return
-        extra_languages = (
-            [s.strip() for s in self.explore_languages_input.text().split(",") if s.strip()]
-            if fuzz_mode == "multilingual"
-            else None
-        )
 
         holder = {"worker": None}
 
@@ -1192,6 +1356,17 @@ class GatherPublicSourcesTab(QWidget):
 
     def _on_done(self, result):
         try:
+            from moyo.gui.cloud_compute import CloudSubmitResult
+
+            if isinstance(result, CloudSubmitResult):
+                self.log.append(
+                    f"✅ Cloud job submitted. order={result.order_id} "
+                    f"execution={result.execution_name or '(async)'}"
+                )
+                self.log.append(f"Firestore: {result.firestore_path}")
+                self.log.append(f"GCS prefix: {result.gcs_prefix}")
+                return
+
             # Multi-prompt explore returns a list of ExploreResult.
             if isinstance(result, list) and result and hasattr(result[0], "seeds"):
                 self.log.append(f"✅ Done. explored {len(result)} prompts.")
@@ -1245,7 +1420,12 @@ class GatherPublicSourcesTab(QWidget):
     def _cleanup_worker(self):
         self._worker = None
         self.progress_bar.setVisible(False)
-        label = "Explore" if self.prompt_radio.isChecked() else "Start Crawl"
+        if self.prompt_radio.isChecked() and self._compute["cloud_radio"].isChecked():
+            label = "Run in Cloud"
+        elif self.prompt_radio.isChecked():
+            label = "Explore"
+        else:
+            label = "Start Crawl"
         _busy(self.run_btn, False, label)
 
     def _open_last_output(self):
@@ -2781,7 +2961,25 @@ class BuildReportTab(QWidget):
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
+        self.compute_box, self._compute = _make_compute_location_box(
+            include_product=False
+        )
+        self._compute["note"].setText(
+            "Local builds from exploration.md on this machine. Cloud re-runs "
+            "explore + report on moyo-report-worker (it does not upload the "
+            "local markdown). Set the prompt below; if exploration.md is "
+            "chosen, its topic is used as the default prompt."
+        )
+        self._compute["cloud_radio"].toggled.connect(self._sync_report_compute)
+        layout.addWidget(self.compute_box)
+
         form = QFormLayout()
+
+        self.cloud_prompt_input = QLineEdit()
+        self.cloud_prompt_input.setPlaceholderText(
+            "Prompt for the cloud worker (defaults to the exploration topic)"
+        )
+        form.addRow("Cloud prompt:", self.cloud_prompt_input)
 
         expl_row = QHBoxLayout()
         self.expl_input = QLineEdit()
@@ -2842,6 +3040,7 @@ class BuildReportTab(QWidget):
         self.run_btn = QPushButton("Build Report")
         self.run_btn.clicked.connect(self._build)
         layout.addWidget(self.run_btn)
+        self._sync_report_compute()
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)  # indeterminate
@@ -2860,8 +3059,38 @@ class BuildReportTab(QWidget):
         )
         if path:
             self.expl_input.setText(path)
+            self._fill_cloud_prompt_from_exploration()
+
+    def _sync_report_compute(self):
+        cloud = self._compute["cloud_radio"].isChecked()
+        self.cloud_prompt_input.setEnabled(cloud)
+        self.stage_combo.setEnabled(not cloud)
+        self.dry_run_cb.setEnabled(not cloud)
+        self.keep_graphics_cb.setEnabled(not cloud)
+        self.runid_input.setEnabled(not cloud)
+        self.run_btn.setText("Run in Cloud" if cloud else "Build Report")
+
+    def _fill_cloud_prompt_from_exploration(self):
+        path = self.expl_input.text().strip()
+        if not path or not Path(path).is_file():
+            return
+        if self.cloud_prompt_input.text().strip():
+            return
+        try:
+            import sys as _sys
+            reports_root = Path(__file__).resolve().parents[2] / "reports"
+            if str(reports_root) not in _sys.path:
+                _sys.path.insert(0, str(reports_root))
+            from pipeline.parse import topic_from_exploration
+
+            self.cloud_prompt_input.setText(topic_from_exploration(Path(path)))
+        except Exception:
+            pass
 
     def _build(self):
+        if self._compute["cloud_radio"].isChecked():
+            self._build_cloud()
+            return
         exploration = self.expl_input.text().strip()
         if not exploration:
             QMessageBox.warning(
@@ -2915,14 +3144,78 @@ class BuildReportTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
-    def _on_done(self, _result):
+    def _build_cloud(self):
+        self._fill_cloud_prompt_from_exploration()
+        prompt = self.cloud_prompt_input.text().strip()
+        if not prompt:
+            QMessageBox.warning(
+                self,
+                "Missing prompt",
+                "Enter a cloud prompt, or choose an exploration.md whose "
+                "topic can be used as the prompt.",
+            )
+            return
+
+        from moyo.gui.cloud_compute import submit_cloud_compute
+
+        cfg = _cloud_cfg_from_widgets(self._compute)
+        product = self.report_combo.currentData() or "snapshot"
+        include_remediation = self.include_remediation_cb.isChecked()
+        holder = {"worker": None}
+
+        def job():
+            def progress(msg: str) -> None:
+                worker = holder["worker"]
+                if worker is not None:
+                    worker.log.emit(msg)
+                else:
+                    print(msg)
+
+            return submit_cloud_compute(
+                prompts=[prompt],
+                product=product,
+                include_remediation=include_remediation,
+                cfg=cfg,
+                progress=progress,
+            )
+
+        self.log.clear()
+        self.log.append(
+            f"Submitting cloud report ({self.report_combo.currentText()}) "
+            f"for prompt: {prompt}"
+        )
+        self.progress_bar.setVisible(True)
+        _busy(self.run_btn, True, "Run in Cloud")
+        self._worker = BackgroundWorker(job)
+        holder["worker"] = self._worker
+        self._worker.log.connect(self.log.append)
+        self._worker.done.connect(self._on_done)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
+    def _idle_label(self) -> str:
+        if self._compute["cloud_radio"].isChecked():
+            return "Run in Cloud"
+        return "Build Report"
+
+    def _on_done(self, result):
         self.progress_bar.setVisible(False)
-        _busy(self.run_btn, False, "Build Report")
+        _busy(self.run_btn, False, self._idle_label())
+        from moyo.gui.cloud_compute import CloudSubmitResult
+
+        if isinstance(result, CloudSubmitResult):
+            self.log.append(
+                f"✅ Cloud job submitted. order={result.order_id} "
+                f"execution={result.execution_name or '(async)'}"
+            )
+            self.log.append(f"Firestore: {result.firestore_path}")
+            self.log.append(f"GCS prefix: {result.gcs_prefix}")
+            return
         self.log.append("Done. PDFs are under reports/build/<run-id>/output/.")
 
     def _on_failed(self, message: str):
         self.progress_bar.setVisible(False)
-        _busy(self.run_btn, False, "Build Report")
+        _busy(self.run_btn, False, self._idle_label())
         self.log.append(f"Failed: {message}")
 
 

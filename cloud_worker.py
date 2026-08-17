@@ -243,6 +243,90 @@ def build_evidence(run_dir: Path, *, prompt: str | None = None) -> dict[str, Any
     }
 
 
+def _count_usable_raw_responses(raw_path: Path) -> tuple[int, int, list[str]]:
+    """Return (ok, total, sample_errors) from raw_responses.json."""
+    if not raw_path.is_file():
+        return 0, 0, ["raw_responses.json missing"]
+    try:
+        rows = json.loads(raw_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return 0, 0, [f"invalid raw_responses.json: {exc}"]
+    if not isinstance(rows, list):
+        return 0, 0, ["raw_responses.json is not a list"]
+    ok = 0
+    errors: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        err = (row.get("error") or "").strip()
+        text = (row.get("text") or "").strip()
+        if err or not text:
+            label = row.get("source_label") or row.get("label") or "unknown"
+            reason = err or "(no content returned)"
+            if len(errors) < 8:
+                errors.append(f"{label}: {reason[:160]}")
+        else:
+            ok += 1
+    return ok, len(rows), errors
+
+
+def _required_llm_env_presence() -> dict[str, bool]:
+    """Which provider env vars the cloud job needs (True = set, not values)."""
+    keys = (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "XAI_API_KEY",
+        "GEMINI_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "MOONSHOT_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "OPENROUTER_API_KEY",
+    )
+    return {k: bool(os.environ.get(k, "").strip()) for k in keys}
+
+
+def assert_explore_produced_content(prompt_dir: Path, prompt: str) -> None:
+    """Fail loudly when explore wrote a shell report with no usable answers."""
+    ok, total, errors = _count_usable_raw_responses(prompt_dir / "raw_responses.json")
+    if ok > 0:
+        return
+    exploration = prompt_dir / "exploration.md"
+    failed_lines = 0
+    if exploration.is_file():
+        text = exploration.read_text(encoding="utf-8")
+        failed_lines = text.count("Retrieval failed")
+    sample = "; ".join(errors[:5]) if errors else "no error detail"
+    raise RuntimeError(
+        f"Explore produced 0 usable LLM answers for {prompt!r} "
+        f"({ok}/{total} raw responses; exploration 'Retrieval failed' "
+        f"markers={failed_lines}). Typical cause: missing provider API keys "
+        f"on the Cloud Run job. Sample: {sample}"
+    )
+
+
+def assert_report_has_claims(run_dir: Path, prompt: str) -> None:
+    """Fail when build_report finishes with an empty claims inventory."""
+    claims_path = run_dir / "claims.jsonl"
+    n = 0
+    if claims_path.is_file():
+        n = sum(1 for line in claims_path.read_text(encoding="utf-8").splitlines() if line.strip())
+    if n > 0:
+        return
+    chunks_path = run_dir / "chunks.jsonl"
+    n_chunks = 0
+    if chunks_path.is_file():
+        n_chunks = sum(
+            1 for line in chunks_path.read_text(encoding="utf-8").splitlines() if line.strip()
+        )
+    raise RuntimeError(
+        f"build_report produced 0 claims for {prompt!r} "
+        f"(chunks.jsonl rows={n_chunks}). If chunks are also 0, explore "
+        "answers were empty/failed and were filtered before extract. "
+        "If chunks > 0, extract/API (MOONSHOT_API_KEY) likely failed or "
+        "every chunk was gated as refusal/tiny."
+    )
+
+
 def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path]:
     """Resolve the five contract names plus useful extras."""
     found: dict[str, Path] = {}
@@ -273,6 +357,8 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
 
     extras = {
         "exploration.md": work / "exploration.md",
+        "llm-retrieval-check.md": work / "llm-retrieval-check.md",
+        "llm-retrieval-check.json": work / "llm-retrieval-check.json",
         "one-page.pdf": output / "one-page.pdf",
         "one-page.html": output / "one-page.html",
         "basis-report.pdf": output / "basis-report.pdf",
@@ -285,6 +371,31 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         if path.exists() and name not in found:
             found[name] = path
     return found
+
+
+def _stage_retrieval_check(prompt_dir: Path, result: Any) -> None:
+    """Write LLM Retrieval Check docs next to the per-report artifacts."""
+    from moyo.publicside.gatherpublicsources.explorer import write_llm_retrieval_check
+
+    write_llm_retrieval_check(result, prompt_dir)
+
+def retrieval_check_storage_paths(order_id: str, work: Path) -> list[tuple[str, Path]]:
+    """GCS object paths for any llm-retrieval-check files under the work dir."""
+    dest: list[tuple[str, Path]] = []
+    slugs = [
+        p.name
+        for p in work.iterdir()
+        if p.is_dir() and (p / "llm-retrieval-check.md").exists()
+    ]
+    single = len(slugs) == 1
+    for path in work.rglob("llm-retrieval-check.*"):
+        if path.suffix not in {".md", ".json"}:
+            continue
+        slug = path.parent.name
+        dest.append((f"reports/{order_id}/{slug}/{path.name}", path))
+        if single:
+            dest.append((f"reports/{order_id}/{path.name}", path))
+    return dest
 
 
 def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
@@ -334,10 +445,12 @@ def _run_one_prompt(
         Path(result.output_path).read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    _stage_retrieval_check(prompt_dir, result)
     (prompt_dir / "raw_responses.json").write_text(
         json.dumps(serialize_raw_responses([result]), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    assert_explore_produced_content(prompt_dir, prompt)
 
     cfg_path = _write_report_config(prompt_dir, spec, run_id)
     argv = [
@@ -361,6 +474,8 @@ def _run_one_prompt(
         raise RuntimeError(f"build_report exited with {rc} for {prompt!r}")
 
     run_dir = prompt_dir / "report_runs" / run_id
+    if not test_mode:
+        assert_report_has_claims(run_dir, prompt)
     (prompt_dir / "evidence.json").write_text(
         json.dumps(build_evidence(run_dir, prompt=prompt), indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -402,6 +517,19 @@ def run_moyo(
         logger.info(msg)
         if progress:
             progress(msg)
+
+    key_presence = _required_llm_env_presence()
+    missing_keys = [k for k, present in key_presence.items() if not present]
+    _progress(
+        "LLM API key env presence: "
+        + ", ".join(f"{k}={'yes' if v else 'NO'}" for k, v in key_presence.items())
+    )
+    if missing_keys:
+        logger.warning(
+            "Missing LLM API key env vars (explore/extract will fail for those "
+            "providers): %s",
+            ", ".join(missing_keys),
+        )
 
     explore_kwargs: dict[str, Any] = {
         "fuzz_mode": spec.fuzz_mode,
@@ -571,12 +699,7 @@ def _load_order_data(order_id: str) -> tuple[dict[str, Any], Any | None]:
 
 
 def _upload_runs(bucket, order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
-    urls: dict[str, str] = {}
-    for object_path, path in storage_destinations(order_id, runs):
-        blob = bucket.blob(object_path)
-        blob.upload_from_filename(str(path))
-        urls[object_path] = f"gs://{bucket.name}/{object_path}"
-        logger.info("uploaded %s", urls[object_path])
+    urls = _upload_files(bucket, storage_destinations(order_id, runs))
     manifest = artifact_manifest(order_id, runs)
     manifest_blob = bucket.blob(f"reports/{order_id}/manifest.json")
     manifest_blob.upload_from_string(
@@ -587,6 +710,18 @@ def _upload_runs(bucket, order_id: str, runs: list[PromptRun]) -> dict[str, Any]
         f"gs://{bucket.name}/reports/{order_id}/manifest.json"
     )
     return {"manifest": manifest, "urls": urls}
+
+
+def _upload_files(bucket, pairs: list[tuple[str, Path]]) -> dict[str, str]:
+    urls: dict[str, str] = {}
+    for object_path, path in pairs:
+        if not path.exists():
+            continue
+        blob = bucket.blob(object_path)
+        blob.upload_from_filename(str(path))
+        urls[object_path] = f"gs://{bucket.name}/{object_path}"
+        logger.info("uploaded %s", urls[object_path])
+    return urls
 
 
 def main() -> int:
@@ -654,6 +789,21 @@ def main() -> int:
         return 0
     except Exception as exc:
         logger.exception("order %s failed", order_id)
+        if not _skip_firebase():
+            try:
+                work = work_dir_for(order_id)
+                _db, bucket, _fs = _init_firebase()
+                if bucket is not None:
+                    urls = _upload_files(
+                        bucket, retrieval_check_storage_paths(order_id, work)
+                    )
+                    if urls:
+                        logger.info(
+                            "uploaded %d retrieval-check object(s) after failure",
+                            len(urls),
+                        )
+            except Exception:
+                logger.exception("failed to upload retrieval check after error")
         if order_ref is not None:
             try:
                 order_ref.update(

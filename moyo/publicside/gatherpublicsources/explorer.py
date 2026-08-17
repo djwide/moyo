@@ -26,6 +26,7 @@ Public entry points:
 from __future__ import annotations
 
 import logging
+import json
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -244,6 +245,8 @@ class ExploreResult:
     output_path: Optional[str] = None
     summary_path: Optional[str] = None
     llm_labels: List[str] = field(default_factory=list)
+    llm_statuses: List[LLMStatus] = field(default_factory=list)
+    retrieval_check_path: Optional[str] = None
 
 
 # --- Prompt rewording -------------------------------------------------------
@@ -1178,8 +1181,18 @@ def format_llm_status_table(statuses: List[LLMStatus]) -> str:
     return "\n".join(lines)
 
 
-def format_retrieval_table(result: ExploreResult) -> str:
-    """Back-compat post-run table; prefer :func:`format_llm_status_table`."""
+RETRIEVAL_CHECK_BASENAME = "llm-retrieval-check"
+
+
+def llm_status_rows(statuses: List[LLMStatus]) -> List[Dict[str, str]]:
+    return [
+        {"name": s.name, "status": s.status, "reason": s.reason}
+        for s in statuses
+    ]
+
+
+def retrieval_statuses_from_result(result: ExploreResult) -> List[LLMStatus]:
+    """Post-run ok/fail/partial per LLM from actual retrievals."""
     from collections import OrderedDict
 
     by_label: OrderedDict[str, List[RetrievalResult]] = OrderedDict()
@@ -1217,7 +1230,71 @@ def format_retrieval_table(result: ExploreResult) -> str:
                     ),
                 )
             )
-    return format_llm_status_table(statuses)
+    return statuses
+
+
+def format_retrieval_table(result: ExploreResult) -> str:
+    """Back-compat post-run table; prefer :func:`format_llm_status_table`."""
+    return format_llm_status_table(retrieval_statuses_from_result(result))
+
+
+def render_llm_retrieval_check(result: ExploreResult) -> tuple[str, dict]:
+    """Markdown + JSON payload for the LLM Retrieval Check document."""
+    preflight = list(result.llm_statuses or [])
+    retrieval = retrieval_statuses_from_result(result)
+    n_ok = sum(1 for s in preflight if s.status == "ok")
+    n_ret_ok = sum(1 for s in retrieval if s.status == "ok")
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    payload = {
+        "prompt": result.prompt,
+        "generated_at": generated,
+        "preflight": llm_status_rows(preflight),
+        "preflight_ok": n_ok,
+        "preflight_total": len(preflight),
+        "retrieval": llm_status_rows(retrieval),
+        "retrieval_ok": n_ret_ok,
+        "retrieval_total": len(retrieval),
+    }
+    lines = [
+        "# LLM Retrieval Check",
+        "",
+        f"_Generated {generated}_",
+        "",
+        f"**Prompt:** {result.prompt}",
+        "",
+        f"**Preflight:** {n_ok}/{len(preflight)} working",
+        f"**Retrieval this run:** {n_ret_ok}/{len(retrieval)} fully successful",
+        "",
+        "## Preflight probe",
+        "",
+        "```",
+        format_llm_status_table(preflight) if preflight else "(no preflight statuses)",
+        "```",
+        "",
+        "## Retrieval results",
+        "",
+        "```",
+        format_llm_status_table(retrieval) if retrieval else "(no retrievals)",
+        "```",
+        "",
+    ]
+    return "\n".join(lines), payload
+
+
+def write_llm_retrieval_check(result: ExploreResult, directory: Path) -> Path:
+    """Write ``llm-retrieval-check.md`` and ``.json`` under ``directory``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    markdown, payload = render_llm_retrieval_check(result)
+    md_path = directory / f"{RETRIEVAL_CHECK_BASENAME}.md"
+    json_path = directory / f"{RETRIEVAL_CHECK_BASENAME}.json"
+    md_path.write_text(markdown, encoding="utf-8")
+    json_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    result.retrieval_check_path = str(md_path)
+    logger.info("Wrote LLM retrieval check to %s", md_path)
+    return md_path
 
 
 # --- Markdown rendering -----------------------------------------------------
@@ -1575,6 +1652,7 @@ def explore_topic(
         summary=summary,
         claims_summary=claims_summary,
         llm_labels=list(corpus.llm_labels),
+        llm_statuses=list(llm_statuses),
     )
 
 
@@ -1917,6 +1995,7 @@ def explore_and_save(
     target.write_text(result.markdown, encoding="utf-8")
     result.output_path = str(target)
     logger.info("Wrote exploration report to %s", target)
+    write_llm_retrieval_check(result, target.parent)
     result.summary_path = None
 
     return result
