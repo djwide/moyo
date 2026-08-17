@@ -276,9 +276,10 @@ def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch
     import yaml
 
     cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
-    assert cfg["extract"]["provider"] == "openai"
-    assert cfg["extract"]["model"] == "gpt-4o"
-    assert cfg["extract"]["api_key"] == "$OPENAI_API_KEY"
+    assert cfg["extract"]["provider"] == "custom"
+    assert cfg["extract"]["model"] == "kimi-k2.6"
+    assert cfg["extract"]["api_key"] == "$MOONSHOT_API_KEY"
+    assert cfg["extract"].get("base_url") == "https://api.moonshot.ai/v1"
     assert cfg["extract"].get("prompt") == "prompts/extract_claims.md"
     assert cfg["synthesize"]["provider"] == "openai"
     assert cfg["synthesize"]["api_key"] == "$OPENAI_API_KEY"

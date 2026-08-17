@@ -146,10 +146,10 @@ def utility_cluster_config(base: Optional[dict] = None) -> dict:
 
 
 def cloud_paid_llm_config(base: Optional[dict] = None) -> dict:
-    """OpenAI (default) or Anthropic for Cloud Run extract / synthesize / cluster.
+    """OpenAI (default) or Anthropic for Cloud Run cluster / synthesize.
 
-    Moonshot, OpenRouter, and other custom endpoints currently RST from the
-    worker NAT IP; OpenAI and Anthropic are the two that return HTTP 200.
+    Claim extract stays on Kimi (``reports/config.yaml``) so cloud matches
+    local. Cluster still needs this overlay because Cloud Run has no Ollama.
     Override with ``MOYO_CLOUD_REPORT_PROVIDER=anthropic``.
     """
     cfg = dict(base or {})

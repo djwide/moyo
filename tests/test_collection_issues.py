@@ -132,10 +132,10 @@ def test_extract_blank_api_is_noted(tmp_path: Path, monkeypatch):
         dry_run=False,
         chunk_config={"min_tokens": 0, "skip_refusals": False},
     )
-    assert claims == []
+    assert claims
     issues = json.loads((tmp_path / "extract_issues.json").read_text(encoding="utf-8"))
     assert issues
-    assert "empty" in issues[0]["reason"]
+    assert "heuristic" in issues[0]["reason"]
 
 
 def test_extract_unavailable_llm_falls_back_to_heuristic(tmp_path: Path, monkeypatch):

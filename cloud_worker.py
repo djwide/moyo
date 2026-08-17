@@ -378,6 +378,9 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         "basis-report.html": output / "basis-report.html",
         "report_data.json": run_dir / "report_data.json",
         "claims.jsonl": run_dir / "claims.jsonl",
+        "chunks.jsonl": run_dir / "chunks.jsonl",
+        "extract_issues.json": run_dir / "extract_issues.json",
+        "extract_done.jsonl": run_dir / "extract_done.jsonl",
         "report.yaml": run_dir / "report.yaml",
     }
     for name, path in extras.items():
@@ -425,10 +428,11 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     from moyo.llm.utility import cloud_paid_llm_config, running_in_cloud
 
     if running_in_cloud():
+        # Cluster has no Ollama on Cloud Run. Extract stays on Kimi
+        # (reports/config.yaml) — same model as local claim extraction.
         cfg["cluster"] = cloud_paid_llm_config(cfg.get("cluster") or {})
         cfg["cluster"].setdefault("temperature", 0.1)
         cfg["cluster"].setdefault("max_tokens", 4000)
-        cfg["extract"] = cloud_paid_llm_config(cfg.get("extract") or {})
         cfg["synthesize"] = cloud_paid_llm_config(cfg.get("synthesize") or {})
     dest = work / "report_config.yaml"
     dest.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")

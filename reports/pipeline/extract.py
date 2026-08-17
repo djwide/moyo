@@ -292,10 +292,12 @@ def heuristic_extract(chunk: Chunk, start_id: int) -> list[dict]:
             cleaned = re.sub(r"\*\*", "", cleaned).strip()
             if 40 <= len(cleaned) <= 400:
                 candidates.append(cleaned)
-    # Also capture dense paragraphs with numbers / recipe cues
-    for para in re.split(r"\n{2,}", chunk.text):
+    body = _strip_for_extract_prompt(chunk.text)
+    # Dense paragraphs with numbers / recipe cues, then any substantial prose
+    # so a blank extractor LLM still yields an inventory from exploration.md.
+    for para in re.split(r"\n{2,}", body):
         p = " ".join(para.split())
-        if len(p) < 80:
+        if len(p) < 80 or p.startswith(">") or p.lower().startswith("sources"):
             continue
         if re.search(
             r"\b(7X|Merchandise|mg|oil|formula|cocaine|Stepan| Pemberton|\d+\s*g)\b",
@@ -303,6 +305,15 @@ def heuristic_extract(chunk: Chunk, start_id: int) -> list[dict]:
             re.I,
         ):
             candidates.append(p[:350])
+    if not candidates:
+        for para in re.split(r"\n{2,}", body):
+            p = " ".join(para.split())
+            if 80 <= len(p) <= 800 and not p.startswith(">"):
+                candidates.append(p[:400])
+    if not candidates:
+        compact = " ".join(body.split())
+        if len(compact) >= 40:
+            candidates.append(compact[:400])
 
     seen: set[str] = set()
     n = start_id
@@ -481,8 +492,38 @@ def extract_all(
         _write_issues(issues)
         return result
 
+    issues: list[dict] = []
     total = len(selected)
     if total == 0:
+        salvage = [
+            ch
+            for ch in chunks
+            if not ch.failed and len(_strip_for_extract_prompt(ch.text).strip()) >= 40
+        ]
+        if salvage and not claims:
+            print(
+                f"  no chunks left after gates; heuristic salvage on "
+                f"{len(salvage)}/{len(chunks)} unfailed chunk(s)",
+                file=sys.stderr,
+            )
+            issues.append(
+                {
+                    "stage": "extract",
+                    "reason": (
+                        f"gates dropped all {len(chunks)} chunks; "
+                        f"heuristic salvage n={len(salvage)}"
+                    ),
+                }
+            )
+            n = _max_claim_counter(claims) + 1
+            for ch in salvage:
+                for raw in heuristic_extract(ch, n):
+                    raw = dict(raw)
+                    raw.pop("claim_id", None)
+                    raw["claim_id"] = f"C{n:04d}"
+                    n += 1
+                    claims.append(raw)
+            return _finalize(claims, issues)
         if not claims:
             print(
                 "  no chunks left after gates; writing empty claims.jsonl",
@@ -490,11 +531,11 @@ def extract_all(
             )
             out_path.write_text("", encoding="utf-8")
             done_path.write_text("", encoding="utf-8")
-        return _finalize(claims)
+        return _finalize(claims, issues)
 
     if not pending:
         print("  resume: all selected chunks already extracted", file=sys.stderr)
-        return _finalize(claims)
+        return _finalize(claims, issues)
 
     write_lock = threading.Lock()
     # Ensure files exist for append; keep prior content when resuming
@@ -535,8 +576,6 @@ def extract_all(
             dry_run = True
     except Exception:
         pass
-
-    issues: list[dict] = []
 
     def _heuristic_pending() -> None:
         finished = already_n
@@ -606,6 +645,7 @@ def extract_all(
         return _finalize(claims, issues)
 
     def _work(ch: Chunk) -> tuple[str, list[dict], str | None]:
+        reason: str | None = None
         try:
             batch = extract_chunk_llm(
                 ch,
@@ -615,12 +655,27 @@ def extract_all(
                 start_id=1,
             )
         except Exception as exc:
-            return ch.chunk_id, [], f"extractor error: {exc}"[:240]
+            batch = []
+            reason = f"extractor error: {exc}"[:240]
         for b in batch:
             b.pop("claim_id", None)
-        if not batch:
-            return ch.chunk_id, [], "empty or unparseable extractor response"
-        return ch.chunk_id, batch, None
+        if batch:
+            return ch.chunk_id, batch, reason
+        salvaged = heuristic_extract(ch, 1)
+        for b in salvaged:
+            b.pop("claim_id", None)
+        if salvaged:
+            note = reason or "empty or unparseable extractor response"
+            return (
+                ch.chunk_id,
+                salvaged,
+                f"{note}; heuristic fallback ({len(salvaged)} claim(s))",
+            )
+        return (
+            ch.chunk_id,
+            [],
+            reason or "empty or unparseable extractor response",
+        )
 
     finished = already_n
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
