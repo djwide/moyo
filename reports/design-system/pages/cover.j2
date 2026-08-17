@@ -31,6 +31,9 @@
     </div>
 
     <h1 class="cover-title">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
+    {% if content.meta.coverage_note %}
+    <p class="coverage-note coverage-note--cover">{{ content.meta.coverage_note }}</p>
+    {% endif %}
 
     <div class="cover-meta">
       <section class="cover-meta__block">

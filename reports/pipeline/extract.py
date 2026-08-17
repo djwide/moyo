@@ -460,13 +460,25 @@ def extract_all(
             file=sys.stderr,
         )
 
-    def _finalize(result: list[dict]) -> list[dict]:
+    def _write_issues(rows: list[dict]) -> None:
+        issues_path = out_path.with_name("extract_issues.json")
+        if rows:
+            issues_path.write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        elif issues_path.exists():
+            issues_path.unlink()
+
+    def _finalize(result: list[dict], extra_issues: list[dict] | None = None) -> list[dict]:
         """Attach chunk Sources/URLs onto claims and rewrite claims.jsonl."""
         attach_chunk_citations(result, chunks)
         if result:
             with out_path.open("w", encoding="utf-8") as f:
                 for c in result:
                     f.write(json.dumps(c, ensure_ascii=False) + "\n")
+        issues = list(extra_issues or [])
+        _write_issues(issues)
         return result
 
     total = len(selected)
@@ -524,11 +536,12 @@ def extract_all(
     except Exception:
         pass
 
-    if dry_run:
+    issues: list[dict] = []
+
+    def _heuristic_pending() -> None:
         finished = already_n
         for chunk in pending:
             batch = heuristic_extract(chunk, 1)
-            # Drop temp ids; _commit_chunk renumbers
             for b in batch:
                 b.pop("claim_id", None)
             numbered = _commit_chunk(chunk.chunk_id, batch)
@@ -536,35 +549,64 @@ def extract_all(
             _progress_bar(
                 finished, total, extra=f"{chunk.chunk_id} +{len(numbered)}"
             )
-    else:
-        # Import here so dry-run works without LLM stack quirks
-        from moyo.llm.client import LLMClient, LLMSpec
 
-        spec = LLMSpec.from_dict(
+    if dry_run:
+        _heuristic_pending()
+        return _finalize(claims, issues)
+
+    from moyo.llm.client import LLMClient, LLMSpec
+
+    spec = LLMSpec.from_dict(
+        {
+            "provider": config.get("provider", "custom"),
+            "model": config.get("model", "kimi-k2.6"),
+            "base_url": config.get("base_url", "https://api.moonshot.ai/v1"),
+            "api_key": config.get("api_key", "$MOONSHOT_API_KEY"),
+            "temperature": float(config.get("temperature", 0.2)),
+            "max_tokens": int(config.get("max_tokens", 2500)),
+            "num_ctx": config.get("num_ctx"),
+            "timeout": int(config.get("timeout", 120)),
+        }
+    )
+    client: Any = None
+    if not spec.api_key:
+        print(
+            f"  warn: extractor LLM has no API key for {spec.provider}/{spec.model}; "
+            "using heuristic extract",
+            file=sys.stderr,
+        )
+        issues.append(
             {
-                "provider": config.get("provider", "custom"),
-                "model": config.get("model", "kimi-k2.6"),
-                "base_url": config.get("base_url", "https://api.moonshot.ai/v1"),
-                "api_key": config.get("api_key", "$MOONSHOT_API_KEY"),
-                "temperature": float(config.get("temperature", 0.2)),
-                "max_tokens": int(config.get("max_tokens", 2500)),
-                "num_ctx": config.get("num_ctx"),
-                "timeout": int(config.get("timeout", 120)),
+                "stage": "extract",
+                "source": f"{spec.provider}/{spec.model}",
+                "reason": "extractor API key missing; heuristic fallback",
             }
         )
-        if not spec.api_key:
-            raise RuntimeError(
-                f"Extractor LLM needs an API key for {spec.provider}/{spec.model}. "
-                "Set MOONSHOT_API_KEY (or extract.api_key) or pass --dry-run."
-            )
+        _heuristic_pending()
+        return _finalize(claims, issues)
+    try:
         client = LLMClient(spec)
         if not client.is_available():
             raise RuntimeError(
-                f"Extractor LLM unavailable ({spec.provider}/{spec.model}). "
-                "Check extract.base_url / API key, or pass --dry-run for heuristic extraction."
+                f"Extractor LLM unavailable ({spec.provider}/{spec.model})"
             )
+    except Exception as exc:
+        print(
+            f"  warn: extractor LLM unavailable ({exc}); using heuristic extract",
+            file=sys.stderr,
+        )
+        issues.append(
+            {
+                "stage": "extract",
+                "source": f"{spec.provider}/{spec.model}",
+                "reason": f"extractor unavailable ({exc}); heuristic fallback"[:240],
+            }
+        )
+        _heuristic_pending()
+        return _finalize(claims, issues)
 
-        def _work(ch: Chunk) -> tuple[str, list[dict]]:
+    def _work(ch: Chunk) -> tuple[str, list[dict], str | None]:
+        try:
             batch = extract_chunk_llm(
                 ch,
                 client=client,
@@ -572,22 +614,44 @@ def extract_all(
                 require_raw_excerpt=require_raw,
                 start_id=1,
             )
-            for b in batch:
-                b.pop("claim_id", None)
-            return ch.chunk_id, batch
+        except Exception as exc:
+            return ch.chunk_id, [], f"extractor error: {exc}"[:240]
+        for b in batch:
+            b.pop("claim_id", None)
+        if not batch:
+            return ch.chunk_id, [], "empty or unparseable extractor response"
+        return ch.chunk_id, batch, None
 
-        finished = already_n
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futs = {pool.submit(_work, ch): ch.chunk_id for ch in pending}
-            for fut in as_completed(futs):
-                cid, batch = fut.result()
-                numbered = _commit_chunk(cid, batch)
-                finished += 1
-                _progress_bar(
-                    finished, total, extra=f"{cid} +{len(numbered)}"
+    finished = already_n
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futs = {pool.submit(_work, ch): ch.chunk_id for ch in pending}
+        for fut in as_completed(futs):
+            cid = futs[fut]
+            try:
+                cid, batch, reason = fut.result()
+            except Exception as exc:
+                batch = []
+                reason = f"extractor worker crashed: {exc}"[:240]
+            if reason:
+                issues.append(
+                    {
+                        "stage": "extract",
+                        "chunk_id": cid,
+                        "source": next(
+                            (c.source_model for c in pending if c.chunk_id == cid),
+                            "",
+                        ),
+                        "reason": reason,
+                    }
                 )
+                print(f"  warn: extract {cid}: {reason}", file=sys.stderr)
+            numbered = _commit_chunk(cid, batch)
+            finished += 1
+            _progress_bar(
+                finished, total, extra=f"{cid} +{len(numbered)}"
+            )
 
-    return _finalize(claims)
+    return _finalize(claims, issues)
 
 
 def load_claims(path: Path) -> list[dict]:

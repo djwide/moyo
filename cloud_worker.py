@@ -289,46 +289,55 @@ def _required_llm_env_presence() -> dict[str, bool]:
     return {k: bool(os.environ.get(k, "").strip()) for k in keys}
 
 
-def assert_explore_produced_content(prompt_dir: Path, prompt: str) -> None:
-    """Fail loudly when explore wrote a shell report with no usable answers."""
+def note_explore_gaps(prompt_dir: Path, prompt: str) -> list[str]:
+    """Log failed/empty retrievals; never abort — the report uses what succeeded."""
     ok, total, errors = _count_usable_raw_responses(prompt_dir / "raw_responses.json")
-    if ok > 0:
-        return
-    exploration = prompt_dir / "exploration.md"
-    failed_lines = 0
-    if exploration.is_file():
-        text = exploration.read_text(encoding="utf-8")
-        failed_lines = text.count("Retrieval failed")
+    if not errors and ok > 0:
+        return []
     sample = "; ".join(errors[:5]) if errors else "no error detail"
-    raise RuntimeError(
-        f"Explore produced 0 usable LLM answers for {prompt!r} "
-        f"({ok}/{total} raw responses; exploration 'Retrieval failed' "
-        f"markers={failed_lines}). Typical cause: missing provider API keys "
-        f"on the Cloud Run job. Sample: {sample}"
+    note = (
+        f"Explore: {ok}/{total} usable LLM answers for {prompt!r}. "
+        f"Failed/empty: {sample}"
     )
+    logger.warning(note)
+    return [note]
 
 
-def assert_report_has_claims(run_dir: Path, prompt: str) -> None:
-    """Fail when build_report finishes with an empty claims inventory."""
+def note_report_gaps(run_dir: Path, prompt: str) -> list[str]:
+    """Log an empty claims inventory; still allow the report to be delivered."""
     claims_path = run_dir / "claims.jsonl"
     n = 0
     if claims_path.is_file():
-        n = sum(1 for line in claims_path.read_text(encoding="utf-8").splitlines() if line.strip())
+        n = sum(
+            1
+            for line in claims_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
     if n > 0:
-        return
+        return []
     chunks_path = run_dir / "chunks.jsonl"
     n_chunks = 0
     if chunks_path.is_file():
         n_chunks = sum(
-            1 for line in chunks_path.read_text(encoding="utf-8").splitlines() if line.strip()
+            1
+            for line in chunks_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
         )
-    raise RuntimeError(
+    note = (
         f"build_report produced 0 claims for {prompt!r} "
-        f"(chunks.jsonl rows={n_chunks}). If chunks are also 0, explore "
-        "answers were empty/failed and were filtered before extract. "
-        "If chunks > 0, extract/API (MOONSHOT_API_KEY) likely failed or "
-        "every chunk was gated as refusal/tiny."
+        f"(chunks.jsonl rows={n_chunks}); report built from remaining artifacts."
     )
+    logger.warning(note)
+    return [note]
+
+
+# Back-compat aliases used by older tests / callers.
+def assert_explore_produced_content(prompt_dir: Path, prompt: str) -> list[str]:
+    return note_explore_gaps(prompt_dir, prompt)
+
+
+def assert_report_has_claims(run_dir: Path, prompt: str) -> list[str]:
+    return note_report_gaps(run_dir, prompt)
 
 
 def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path]:
@@ -462,7 +471,7 @@ def _run_one_prompt(
         json.dumps(serialize_raw_responses([result]), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    assert_explore_produced_content(prompt_dir, prompt)
+    pipeline_notes = note_explore_gaps(prompt_dir, prompt)
 
     cfg_path = _write_report_config(prompt_dir, spec, run_id)
     argv = [
@@ -487,9 +496,12 @@ def _run_one_prompt(
 
     run_dir = prompt_dir / "report_runs" / run_id
     if not test_mode:
-        assert_report_has_claims(run_dir, prompt)
+        pipeline_notes.extend(note_report_gaps(run_dir, prompt))
+    evidence = build_evidence(run_dir, prompt=prompt)
+    if pipeline_notes:
+        evidence["pipeline_notes"] = pipeline_notes
     (prompt_dir / "evidence.json").write_text(
-        json.dumps(build_evidence(run_dir, prompt=prompt), indent=2, ensure_ascii=False),
+        json.dumps(evidence, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)

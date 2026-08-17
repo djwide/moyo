@@ -184,7 +184,7 @@ def test_storage_destinations_single_prompt_also_writes_flat_qc_path(tmp_path: P
     assert dest["reports/ord/01_who_killed_jfk/report.pdf"] == pdf
 
 
-def test_assert_explore_produced_content_fails_when_empty(tmp_path: Path):
+def test_note_explore_gaps_when_empty(tmp_path: Path):
     (tmp_path / "raw_responses.json").write_text(
         json.dumps(
             [
@@ -198,23 +198,41 @@ def test_assert_explore_produced_content_fails_when_empty(tmp_path: Path):
         "# Topic\n\n> Retrieval failed: 401\n> Retrieval failed: key\n",
         encoding="utf-8",
     )
-    with pytest.raises(RuntimeError, match="0 usable LLM answers"):
-        cw.assert_explore_produced_content(tmp_path, "Enron?")
+    notes = cw.note_explore_gaps(tmp_path, "Enron?")
+    assert notes
+    assert "0/2 usable" in notes[0]
 
 
-def test_assert_explore_produced_content_ok(tmp_path: Path):
+def test_note_explore_gaps_partial_failures_does_not_raise(tmp_path: Path):
+    (tmp_path / "raw_responses.json").write_text(
+        json.dumps(
+            [
+                {"source_label": "GPT", "text": "Enron hid debt via SPEs."},
+                {"source_label": "Grok", "error": "Connection error.", "text": ""},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    notes = cw.note_explore_gaps(tmp_path, "Enron?")
+    assert notes
+    assert "1/2 usable" in notes[0]
+    assert "Grok" in notes[0]
+
+
+def test_note_explore_gaps_ok(tmp_path: Path):
     (tmp_path / "raw_responses.json").write_text(
         json.dumps([{"source_label": "GPT", "text": "Enron hid debt via SPEs."}]),
         encoding="utf-8",
     )
-    cw.assert_explore_produced_content(tmp_path, "Enron?")
+    assert cw.note_explore_gaps(tmp_path, "Enron?") == []
 
 
-def test_assert_report_has_claims_fails_when_empty(tmp_path: Path):
+def test_note_report_gaps_when_empty(tmp_path: Path):
     (tmp_path / "claims.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="0 claims"):
-        cw.assert_report_has_claims(tmp_path, "Enron?")
+    notes = cw.note_report_gaps(tmp_path, "Enron?")
+    assert notes
+    assert "0 claims" in notes[0]
 
 
 def test_required_llm_env_presence(monkeypatch):

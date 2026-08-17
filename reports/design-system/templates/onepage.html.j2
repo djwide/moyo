@@ -37,6 +37,9 @@
     </p>
     <p class="date-line">{{ content.meta.report_date }}</p>
     <h1 class="headline">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
+    {% if content.meta.coverage_note %}
+    <p class="coverage-note">{{ content.meta.coverage_note }}</p>
+    {% endif %}
 
     <div class="metrics{% if content.meta.counts.languages %} metrics--langs{% endif %}">
       <div class="metric">

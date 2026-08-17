@@ -1,6 +1,9 @@
 {% from "components/macros.j2" import metric_card, quote_box %}
 <section class="page page--executive-summary">
   <h2>Executive Summary</h2>
+  {% if content.pages.executive_summary.coverage_note or content.meta.coverage_note %}
+  <p class="coverage-note">{{ content.pages.executive_summary.coverage_note or content.meta.coverage_note }}</p>
+  {% endif %}
   <p class="section-lede">{{ content.pages.executive_summary.body }}</p>
   {% if content.pages.executive_summary.pull_quote %}
     {{ quote_box(content.pages.executive_summary.pull_quote) }}

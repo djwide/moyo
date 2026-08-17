@@ -26,6 +26,7 @@ from pipeline.language import (
     languages_from_findings,
     looks_like_english,
 )
+from pipeline.parse import summarize_collection_issues
 from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
 
@@ -449,6 +450,16 @@ def _build_executive_page(
             f"corroboration {top_claim.get('corroboration') or 1})."
         )
 
+    coverage_note = summarize_collection_issues(
+        report_data.get("collection_issues")
+        or (report_data.get("explore_meta") or {}).get("collection_issues")
+    )
+    if coverage_note and not body:
+        body = (
+            "This report is based on the model answers that returned usable "
+            "content. Some retrieval or extract calls failed or came back empty."
+        )
+
     return {
         "body": strip_markdown(body),
         "pull_quote": plain_text(pull),
@@ -460,6 +471,7 @@ def _build_executive_page(
         "why_it_matters": strip_markdown(why),
         "defensive_action": strip_markdown(defensive),
         "exposure_teaser": plain_text(teaser),
+        "coverage_note": coverage_note,
     }
 
 
@@ -535,6 +547,13 @@ def build_content_doc(
     if not strategies:
         strategies = ["paraphrase", "translate", "summarize"]
 
+    collection_issues = list(report_data.get("collection_issues") or [])
+    if not collection_issues:
+        collection_issues = list(explore_meta.get("collection_issues") or [])
+    coverage_note = summarize_collection_issues(collection_issues)
+    if coverage_note:
+        exec_page = {**exec_page, "coverage_note": coverage_note}
+
     prompt_languages = _prompt_languages(report_data, findings)
     foreign_languages = [x for x in prompt_languages if is_foreign_language(x)]
     languages_count = len(prompt_languages) if foreign_languages else 0
@@ -582,6 +601,8 @@ def build_content_doc(
             "models_tested": models_tested,
             "languages": prompt_languages,
             "include_remediation": bool(include_remediation),
+            "collection_issues": collection_issues,
+            "coverage_note": coverage_note,
             "counts": {
                 "findings": counts.get("findings", len(findings)),
                 "llms_tested": counts.get("llms_tested", 0),
@@ -688,6 +709,11 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
     ]
     exec_page = pages["executive_summary"]
+    if exec_page.get("coverage_note") or meta.get("coverage_note"):
+        lines += [
+            f"*{(exec_page.get('coverage_note') or meta.get('coverage_note')).strip()}*",
+            "",
+        ]
     if exec_page.get("pull_quote"):
         lines += [f"> {exec_page['pull_quote']}", ""]
     if exec_page.get("public_sources"):

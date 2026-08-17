@@ -15,7 +15,10 @@ QUERY_HEADING_RE = re.compile(
 )
 MODEL_HEADING_RE = re.compile(r"^#####\s+(.+?)\s*$")
 LANG_HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
-FAILED_RE = re.compile(r"retrieval failed|request failed|error calling", re.I)
+FAILED_RE = re.compile(
+    r"retrieval failed|request failed|error calling|no content returned",
+    re.I,
+)
 
 
 @dataclass
@@ -325,12 +328,76 @@ def exploration_run_meta(path: Path) -> dict:
                 ):
                     models.append(cleaned)
 
+    issues = collection_issues_from_exploration(text)
     return {
         "fuzz_mode": fuzz_mode,
         "strategies": strategies,
         "languages": languages,
         "models_tested": models,
+        "collection_issues": issues,
     }
+
+
+def collection_issues_from_exploration(text: str) -> list[dict]:
+    """Collect failed or blank retrievals from exploration.md findings."""
+    issues: list[dict] = []
+    current_model = ""
+    current_query = ""
+    for line in (text or "").splitlines():
+        qm = QUERY_HEADING_RE.match(line)
+        if qm:
+            current_query = (qm.group(2) or "").strip()
+            continue
+        mm = MODEL_HEADING_RE.match(line)
+        if mm:
+            current_model = _clean_model_label(mm.group(1))
+            continue
+        stripped = line.strip()
+        if stripped.startswith("> Retrieval failed:"):
+            reason = stripped.split(":", 1)[1].strip()[:240] or "retrieval failed"
+            issues.append(
+                {
+                    "stage": "retrieval",
+                    "source": current_model or "unknown",
+                    "query": current_query,
+                    "reason": reason,
+                }
+            )
+        elif stripped == "> (no content returned)":
+            issues.append(
+                {
+                    "stage": "retrieval",
+                    "source": current_model or "unknown",
+                    "query": current_query,
+                    "reason": "no content returned",
+                }
+            )
+    return issues
+
+
+def summarize_collection_issues(issues: list[dict] | None) -> str:
+    """One paragraph for the PDF: failed/empty API calls, report still complete."""
+    if not issues:
+        return ""
+    by_source: dict[str, list[str]] = {}
+    for item in issues:
+        src = str(item.get("source") or item.get("source_model") or "unknown").strip()
+        src = src or "unknown"
+        reason = str(item.get("reason") or "failed").strip() or "failed"
+        by_source.setdefault(src, []).append(reason)
+    bits: list[str] = []
+    for src, reasons in by_source.items():
+        sample = reasons[0]
+        if len(reasons) == 1:
+            bits.append(f"{src}: {sample}")
+        else:
+            bits.append(f"{src}: {len(reasons)} failed/empty calls ({sample})")
+    return (
+        "Some API calls returned no usable content; this report is built from "
+        "the responses that succeeded. Incomplete sources: "
+        + "; ".join(bits)
+        + "."
+    )
 
 
 _EXPLORATION_PTR = "exploration.path"

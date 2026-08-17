@@ -86,6 +86,44 @@ def _resolve_isvf_path(cfg: dict) -> Path | None:
     return p if p.exists() else None
 
 
+def _merge_collection_issues(report_data: dict, run_dir: Path) -> list[dict]:
+    """Retrieval failures from exploration.md plus extract blanks from this run."""
+    issues: list[dict] = []
+    seen: set[tuple] = set()
+
+    def _add(item: dict) -> None:
+        key = (
+            str(item.get("stage") or ""),
+            str(item.get("source") or item.get("source_model") or ""),
+            str(item.get("chunk_id") or ""),
+            str(item.get("query") or ""),
+            str(item.get("reason") or ""),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        issues.append(item)
+
+    for item in report_data.get("collection_issues") or []:
+        if isinstance(item, dict):
+            _add(item)
+    meta = report_data.get("explore_meta") or {}
+    for item in meta.get("collection_issues") or []:
+        if isinstance(item, dict):
+            _add(item)
+    extract_path = run_dir / "extract_issues.json"
+    if extract_path.is_file():
+        try:
+            extra = json.loads(extract_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            extra = []
+        if isinstance(extra, list):
+            for item in extra:
+                if isinstance(item, dict):
+                    _add(item)
+    return issues
+
+
 def render_pdfs(
     report_data: dict,
     graphics: dict[str, str],
@@ -589,6 +627,9 @@ def main(argv: list[str] | None = None) -> int:
             report_data["headline"] = render_cfg["headline"]
         if exploration and exploration.exists():
             report_data["explore_meta"] = exploration_run_meta(exploration)
+        report_data["collection_issues"] = _merge_collection_issues(
+            report_data, run_dir
+        )
         report_data_path.write_text(json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"  → {report_data_path}", file=sys.stderr)
     elif start > stage_index("score"):
@@ -600,6 +641,9 @@ def main(argv: list[str] | None = None) -> int:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
         if exploration and exploration.exists() and not report_data.get("explore_meta"):
             report_data["explore_meta"] = exploration_run_meta(exploration)
+        report_data["collection_issues"] = _merge_collection_issues(
+            report_data, run_dir
+        )
         if exploration and exploration.exists():
             prompts = prompts_from_exploration(exploration)
             if prompts:
@@ -647,6 +691,9 @@ def main(argv: list[str] | None = None) -> int:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
         if exploration and exploration.exists() and not report_data.get("explore_meta"):
             report_data["explore_meta"] = exploration_run_meta(exploration)
+        report_data["collection_issues"] = _merge_collection_issues(
+            report_data, run_dir
+        )
         if exploration and exploration.exists():
             prompts = prompts_from_exploration(exploration)
             if prompts and (
