@@ -801,6 +801,7 @@ def write_content_package(
     graphics_svgs: dict[str, str] | None = None,
     aliases: dict[str, str] | None = None,
     overwrite_graphics: bool = True,
+    keep_content: bool = False,
     isvf_path: Path | None = None,
     include_remediation: bool = False,
     llm_config: dict[str, Any] | None = None,
@@ -816,15 +817,23 @@ def write_content_package(
 
     When ``overwrite_graphics`` is false, existing ``assets/*.svg`` are left
     untouched (use after hand-editing charts before PDF rebuild).
+    When ``keep_content`` is true and ``report.yaml`` already exists, reuse it
+    (and ``report.md``) instead of regenerating from ``report_data.json``.
     """
-    content = build_content_doc(
-        report_data,
-        report_date=report_date,
-        aliases=aliases,
-        isvf_path=isvf_path,
-        include_remediation=include_remediation,
-        llm_config=llm_config,
-    )
+    yaml_path = run_dir / "report.yaml"
+    md_path = run_dir / "report.md"
+    if keep_content and yaml_path.is_file():
+        loaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        content = loaded if isinstance(loaded, dict) else {}
+    else:
+        content = build_content_doc(
+            report_data,
+            report_date=report_date,
+            aliases=aliases,
+            isvf_path=isvf_path,
+            include_remediation=include_remediation,
+            llm_config=llm_config,
+        )
     assets_dir = run_dir / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
     (assets_dir / "screenshots").mkdir(exist_ok=True)
@@ -853,9 +862,10 @@ def write_content_package(
             if svg:
                 (assets_dir / filename).write_text(svg, encoding="utf-8")
 
-    (run_dir / "report.yaml").write_text(
-        yaml.safe_dump(content, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
-    (run_dir / "report.md").write_text(render_report_md(content), encoding="utf-8")
+    if not (keep_content and yaml_path.is_file()):
+        yaml_path.write_text(
+            yaml.safe_dump(content, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        md_path.write_text(render_report_md(content), encoding="utf-8")
     return content

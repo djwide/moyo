@@ -3,21 +3,33 @@
 Triggered with ``ORDER_ID`` set. Reads ``reports/{ORDER_ID}`` (storefront
 collection; override with ``FIRESTORE_ORDERS_COLLECTION``), runs the same
 ``moyo-gather explore`` + ``reports/build_report.py`` path used locally, then
-uploads artifacts and marks the order ``qc_pending``.
+uploads artifacts to the dedicated reports bucket and writes storefront
+output paths.
 
 Storefront order fields used here::
 
     prompts              list[str] | JSON string   required, non-empty
     product              snapshot | basis | both   e.g. "basis"
+    productId            moyo_snapshot | moyo_basis (optional)
     paymentStatus        informational
-    reportStatus         queued / awaiting_prompts → generating → qc_pending | failed
-    qcStatus             left as pending (checkout default)
+    reportStatus         queued → generating → awaiting_qc | delivered | failed
+    qcRequired           false skips human QC (agent orders → delivered)
+    qcStatus             pending | not_required
+    generationMode       full | pdf_from_markdown | rebuild_graphics
     generationStartedAt  ISO-8601 UTC, set when work begins
     generationFinishedAt ISO-8601 UTC, set on success or failure
+    output.pdfPath       reports/{orderId}/report.pdf
+    output.jsonPath      reports/{orderId}/report.json
+    output.markdownPath  reports/{orderId}/report.md
+    output.htmlPath      reports/{orderId}/report.html
+
+``awaiting_qc`` is the canonical human-QC state. ``qc_pending`` is accepted
+only as a legacy alias when reading status.
 
 One report per prompt. A single-prompt order writes artifacts at
 ``reports/{order_id}/`` (the path QC already uses). Multi-prompt orders
-use ``reports/{order_id}/{nn}_{slug}/`` plus ``manifest.json``.
+use ``reports/{order_id}/{nn}_{slug}/`` plus a canonical root ``report.json``
+and ``manifest.json``.
 
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
 summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
@@ -31,6 +43,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -65,9 +78,47 @@ CONTRACT_ARTIFACTS = (
     "report.md",
     "report.html",
     "report.pdf",
+    "report.json",
     "raw_responses.json",
     "evidence.json",
 )
+
+REBUILD_ARTIFACTS = ("report.md", "report.html", "report.pdf", "report.json")
+
+REBUILD_MODES = frozenset({"pdf_from_markdown", "rebuild_graphics"})
+GENERATION_MODE_ALIASES = {
+    "full": "full",
+    "explore": "full",
+    "pdf_from_markdown": "pdf_from_markdown",
+    "pdf": "pdf_from_markdown",
+    "render": "pdf_from_markdown",
+    "rebuild_graphics": "rebuild_graphics",
+    "graphics_only": "rebuild_graphics",
+    "graphics": "rebuild_graphics",
+}
+
+# Dedicated worker/QC bucket. Not the Firebase Auth app bucket.
+DEFAULT_MOYO_REPORTS_BUCKET = "senteguard-website-moyo-reports"
+CANONICAL_AWAITING_QC = "awaiting_qc"
+LEGACY_AWAITING_QC = "qc_pending"
+AWAITING_QC_STATUSES = frozenset({CANONICAL_AWAITING_QC, LEGACY_AWAITING_QC})
+HUMAN_QC_SOURCES = frozenset({"stripe_checkout", "admin"})
+PRODUCT_IDS = {
+    "snapshot": "moyo_snapshot",
+    "basis": "moyo_basis",
+    "both": "moyo_basis",
+    "moyo_snapshot": "moyo_snapshot",
+    "moyo_basis": "moyo_basis",
+    "moyo_deep": "moyo_deep",
+    "deep": "moyo_deep",
+}
+OUTPUT_PATH_FILES = {
+    "pdfPath": ("report.pdf", "basis-report.pdf", "one-page.pdf"),
+    "jsonPath": ("report.json",),
+    "markdownPath": ("report.md",),
+    "htmlPath": ("report.html", "basis-report.html"),
+    "summaryPath": ("one-page.pdf",),
+}
 
 
 @dataclass
@@ -84,6 +135,10 @@ class OrderSpec:
     workers: int | None = None
     payment_status: str | None = None
     customer_email: str | None = None
+    generation_mode: str = "full"
+    qc_required: bool = True
+    product_id: str = "moyo_snapshot"
+    source: str | None = None
 
 
 @dataclass
@@ -104,6 +159,51 @@ def _first(data: dict[str, Any], *keys: str, default: Any = None) -> Any:
         if key in data and data[key] is not None:
             return data[key]
     return default
+
+
+def normalize_generation_mode(raw: Any) -> str:
+    """Map storefront generationMode to explore vs PDF/picture rebuild."""
+    key = str(raw or "full").strip().lower().replace("-", "_")
+    return GENERATION_MODE_ALIASES.get(key, "full")
+
+
+def normalize_product_id(raw: Any, product: str) -> str:
+    key = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key in PRODUCT_IDS:
+        return PRODUCT_IDS[key]
+    return PRODUCT_IDS.get(product, "moyo_snapshot")
+
+
+def _coerce_bool(raw: Any) -> bool | None:
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return None
+    key = str(raw).strip().lower()
+    if key in {"true", "1", "yes", "on"}:
+        return True
+    if key in {"false", "0", "no", "off"}:
+        return False
+    return None
+
+
+def order_requires_human_qc(source: Any) -> bool:
+    """Match moyomapwebpage orderRequiresHumanQc: Checkout + admin only."""
+    return str(source or "stripe_checkout").strip().lower() in HUMAN_QC_SOURCES
+
+
+def normalize_qc_required(raw: Any, source: Any = None) -> bool:
+    """Honor qcRequired; fall back to source when the field is missing."""
+    parsed = _coerce_bool(raw)
+    if parsed is not None:
+        return parsed
+    return order_requires_human_qc(source)
+
+
+def is_awaiting_qc_status(raw: Any) -> bool:
+    """True for canonical awaiting_qc and legacy qc_pending."""
+    key = str(raw or "").strip().lower().replace("-", "_")
+    return key in AWAITING_QC_STATUSES
 
 
 def normalize_product(raw: Any) -> str:
@@ -187,12 +287,17 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if email is not None:
         email = str(email).strip() or None
 
+    product = normalize_product(_first(data, "product", default="snapshot"))
+    source = _first(data, "source", default=None)
+    if source is not None:
+        source = str(source).strip() or None
+
     return OrderSpec(
         order_id=order_id,
         prompts=normalize_prompts(
             _first(data, "prompts", "customerPrompts", "customer_prompts", "prompt")
         ),
-        product=normalize_product(_first(data, "product", default="snapshot")),
+        product=product,
         fuzz_mode=fuzz_mode,
         seeds=seeds,
         languages=[str(x) for x in languages],
@@ -204,6 +309,16 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         workers=workers,
         payment_status=_first(data, "paymentStatus", "payment_status", default=None),
         customer_email=email,
+        generation_mode=normalize_generation_mode(
+            _first(data, "generationMode", "generation_mode", default="full")
+        ),
+        qc_required=normalize_qc_required(
+            _first(data, "qcRequired", "qc_required", default=None), source
+        ),
+        product_id=normalize_product_id(
+            _first(data, "productId", "product_id", default=None), product
+        ),
+        source=source,
     )
 
 
@@ -247,6 +362,218 @@ def build_evidence(run_dir: Path, *, prompt: str | None = None) -> dict[str, Any
         "claims": claims,
         "explore_meta": report_data.get("explore_meta") or {},
     }
+
+
+def _load_json_file(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def compact_finding(row: dict[str, Any]) -> dict[str, Any]:
+    """Agent-facing finding: claim, citations, scores — not pipeline internals."""
+    claim = row.get("claim") or row.get("text")
+    out: dict[str, Any] = {}
+    if row.get("claim_id"):
+        out["claim_id"] = row["claim_id"]
+    if claim:
+        out["claim"] = claim
+    for key in (
+        "status",
+        "sensitivity",
+        "specificity",
+        "novelty",
+        "confidence",
+        "category",
+        "language",
+    ):
+        if row.get(key) is not None:
+            out[key] = row[key]
+    models = list(row.get("source_models") or [])
+    if not models and row.get("source_model"):
+        models = [row["source_model"]]
+    if models:
+        out["source_models"] = models
+    citations = list(row.get("citations") or [])
+    if citations:
+        out["citations"] = citations
+    return out
+
+
+def collect_citations(findings: list[dict[str, Any]]) -> list[Any]:
+    seen: set[str] = set()
+    out: list[Any] = []
+    for finding in findings:
+        for cite in finding.get("citations") or []:
+            key = json.dumps(cite, sort_keys=True, default=str) if isinstance(cite, dict) else str(cite)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(cite)
+    return out
+
+
+def prompt_report_section(
+    spec: OrderSpec,
+    run: PromptRun,
+    *,
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    artifacts = run.artifacts
+    evidence = evidence or _load_json_file(artifacts.get("evidence.json"))
+    report_data = _load_json_file(artifacts.get("report_data.json"))
+    findings_raw = evidence.get("findings") or report_data.get("findings") or []
+    findings = [
+        compact_finding(row)
+        for row in findings_raw
+        if isinstance(row, dict)
+    ]
+    findings = [row for row in findings if row.get("claim") or row.get("claim_id")]
+    return {
+        "index": run.index,
+        "prompt": run.prompt,
+        "slug": run.slug,
+        "headline": evidence.get("headline") or report_data.get("headline"),
+        "topic": evidence.get("topic") or report_data.get("topic"),
+        "counts": evidence.get("counts") or report_data.get("counts") or {},
+        "findings": findings,
+        "citations": collect_citations(findings),
+    }
+
+
+def build_canonical_report(
+    spec: OrderSpec,
+    runs: list[PromptRun],
+    *,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Machine-readable report.json for agents: findings, citations, ids."""
+    sections = [prompt_report_section(spec, run) for run in runs]
+    findings: list[dict[str, Any]] = []
+    citations: list[Any] = []
+    seen_cites: set[str] = set()
+    for section in sections:
+        findings.extend(section.get("findings") or [])
+        for cite in section.get("citations") or []:
+            key = json.dumps(cite, sort_keys=True, default=str) if isinstance(cite, dict) else str(cite)
+            if key in seen_cites:
+                continue
+            seen_cites.add(key)
+            citations.append(cite)
+    payload: dict[str, Any] = {
+        "orderId": spec.order_id,
+        "product": spec.product,
+        "productId": spec.product_id,
+        "prompts": list(spec.prompts),
+        "generationMode": spec.generation_mode,
+        "generatedAt": generated_at or utc_now(),
+        "counts": {"findings": len(findings), "reports": len(runs)},
+        "findings": findings,
+        "citations": citations,
+    }
+    if len(sections) == 1:
+        payload["prompt"] = sections[0].get("prompt")
+        payload["headline"] = sections[0].get("headline")
+        payload["topic"] = sections[0].get("topic")
+        if sections[0].get("counts"):
+            payload["counts"] = {
+                **sections[0]["counts"],
+                "findings": len(findings),
+                "reports": 1,
+            }
+    else:
+        payload["reports"] = sections
+    return payload
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def write_prompt_report_json(
+    prompt_dir: Path,
+    spec: OrderSpec,
+    run: PromptRun,
+    *,
+    evidence: dict[str, Any] | None = None,
+) -> Path:
+    section = prompt_report_section(spec, run, evidence=evidence)
+    payload = {
+        "orderId": spec.order_id,
+        "product": spec.product,
+        "productId": spec.product_id,
+        "prompts": list(spec.prompts),
+        "generationMode": spec.generation_mode,
+        "generatedAt": utc_now(),
+        **section,
+    }
+    path = write_json(prompt_dir / "report.json", payload)
+    run.artifacts["report.json"] = path
+    return path
+
+
+def write_canonical_report_json(
+    spec: OrderSpec, runs: list[PromptRun], dest: Path
+) -> Path:
+    return write_json(dest, build_canonical_report(spec, runs))
+
+
+def output_paths(order_id: str, urls: dict[str, str]) -> dict[str, str | None]:
+    """Storefront output.pdfPath / jsonPath / markdownPath / htmlPath."""
+    prefix = f"reports/{order_id}/"
+
+    def pick(filenames: tuple[str, ...]) -> str | None:
+        for name in filenames:
+            key = f"{prefix}{name}"
+            if key in urls:
+                return key
+        for name in filenames:
+            suffix = f"/{name}"
+            nested = [
+                key
+                for key in urls
+                if key.startswith(prefix) and key.endswith(suffix)
+            ]
+            if nested:
+                nested.sort(key=lambda item: (item.count("/"), item))
+                return nested[0]
+        return None
+
+    return {field: pick(names) for field, names in OUTPUT_PATH_FILES.items()}
+
+
+def success_update_fields(
+    spec: OrderSpec,
+    *,
+    started: str,
+    finished: str,
+    urls: dict[str, str],
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "generationStartedAt": started,
+        "generationFinishedAt": finished,
+        "generationMode": spec.generation_mode,
+        "artifactPaths": urls,
+        "reportManifest": manifest,
+        "output": output_paths(spec.order_id, urls),
+        "qcRequired": spec.qc_required,
+        "error": None,
+    }
+    if spec.qc_required:
+        fields["reportStatus"] = CANONICAL_AWAITING_QC
+        fields["qcStatus"] = "pending"
+    else:
+        fields["reportStatus"] = "delivered"
+        fields["qcStatus"] = "not_required"
+        fields["deliveredAt"] = finished
+    return fields
 
 
 def _count_usable_raw_responses(raw_path: Path) -> tuple[int, int, list[str]]:
@@ -369,6 +696,9 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
     evidence = work / "evidence.json"
     if evidence.exists():
         found["evidence.json"] = evidence
+    report_json = work / "report.json"
+    if report_json.exists():
+        found["report.json"] = report_json
 
     extras = {
         "exploration.md": work / "exploration.md",
@@ -388,6 +718,11 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
     for name, path in extras.items():
         if path.exists() and name not in found:
             found[name] = path
+    assets = run_dir / "assets"
+    if assets.is_dir():
+        for path in assets.rglob("*"):
+            if path.is_file():
+                found[f"assets/{path.relative_to(assets).as_posix()}"] = path
     return found
 
 
@@ -512,18 +847,182 @@ def _run_one_prompt(
         encoding="utf-8",
     )
     artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
-    missing = [name for name in CONTRACT_ARTIFACTS if name not in artifacts]
-    if missing:
-        raise RuntimeError(
-            f"Missing required artifacts for {prompt!r}: {', '.join(missing)}"
-        )
-    return PromptRun(
+    run = PromptRun(
         index=index,
         prompt=prompt,
         slug=slug,
         run_id=run_id,
         artifacts=artifacts,
     )
+    write_prompt_report_json(prompt_dir, spec, run, evidence=evidence)
+    missing = [name for name in CONTRACT_ARTIFACTS if name not in run.artifacts]
+    if missing:
+        raise RuntimeError(
+            f"Missing required artifacts for {prompt!r}: {', '.join(missing)}"
+        )
+    return run
+
+
+REBUILD_STAGE_FILES = (
+    "report.md",
+    "report.yaml",
+    "report_data.json",
+    "claims.jsonl",
+    "chunks.jsonl",
+    "exploration.md",
+    "extract_done.jsonl",
+    "raw_responses.json",
+    "evidence.json",
+)
+
+
+def download_order_prefix(bucket, order_id: str, dest: Path) -> Path:
+    """Copy gs://…/reports/{orderId}/** into dest."""
+    prefix = f"reports/{order_id}/"
+    dest.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for blob in bucket.list_blobs(prefix=prefix):
+        rel = blob.name[len(prefix) :]
+        if not rel or rel.endswith("/"):
+            continue
+        path = dest / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(str(path))
+        count += 1
+    if count == 0:
+        raise RuntimeError(
+            f"No artifacts in gs://{bucket.name}/{prefix} to rebuild from."
+        )
+    return dest
+
+
+def copy_rebuild_sources(src: Path, run_dir: Path, prompt_dir: Path) -> None:
+    """Stage existing QC files into the build_report run directory."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    for name in REBUILD_STAGE_FILES:
+        item = src / name
+        if not item.is_file():
+            continue
+        shutil.copy2(item, run_dir / name)
+        if name in {"raw_responses.json", "evidence.json", "exploration.md"}:
+            shutil.copy2(item, prompt_dir / name)
+    assets_src = src / "assets"
+    if assets_src.is_dir():
+        shutil.copytree(assets_src, run_dir / "assets", dirs_exist_ok=True)
+    images_src = src / "images"
+    if images_src.is_dir():
+        shots = run_dir / "assets" / "screenshots"
+        shots.mkdir(parents=True, exist_ok=True)
+        for img in images_src.iterdir():
+            if img.is_file():
+                shutil.copy2(img, shots / img.name)
+
+
+def rebuild_topic_dirs(gcs_root: Path, spec: OrderSpec) -> list[tuple[int, str, Path]]:
+    if (
+        (gcs_root / "report.md").is_file()
+        or (gcs_root / "report.yaml").is_file()
+        or (gcs_root / "report_data.json").is_file()
+    ):
+        prompt = spec.prompts[0] if spec.prompts else "report"
+        return [(1, prompt, gcs_root)]
+
+    topics: list[tuple[int, str, Path]] = []
+    for i, prompt in enumerate(spec.prompts, start=1):
+        folder = gcs_root / prompt_slug(i, prompt)
+        if folder.is_dir():
+            topics.append((i, prompt, folder))
+    if topics:
+        return topics
+    for child in sorted(p for p in gcs_root.iterdir() if p.is_dir()):
+        if (child / "report.md").is_file() or (child / "report_data.json").is_file():
+            topics.append((len(topics) + 1, child.name, child))
+    if not topics:
+        raise RuntimeError("No report.md / report_data.json found to rebuild.")
+    return topics
+
+
+def run_rebuild(
+    spec: OrderSpec,
+    *,
+    bucket,
+    work: Path | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> list[PromptRun]:
+    """Re-render from existing Storage artifacts. Does not re-run explore."""
+    from reports.build_report import main as build_report_main
+
+    work = work or work_dir_for(spec.order_id)
+    work.mkdir(parents=True, exist_ok=True)
+
+    def _progress(msg: str) -> None:
+        logger.info(msg)
+        if progress:
+            progress(msg)
+
+    gcs_root = download_order_prefix(bucket, spec.order_id, work / "gcs")
+    _progress(
+        f"rebuild mode={spec.generation_mode} from "
+        f"gs://{bucket.name}/reports/{spec.order_id}/"
+    )
+    runs: list[PromptRun] = []
+    for index, prompt, src in rebuild_topic_dirs(gcs_root, spec):
+        slug = prompt_slug(index, prompt)
+        run_id = f"{spec.order_id}__{slug}"
+        prompt_dir = work / slug
+        run_dir = prompt_dir / "report_runs" / run_id
+        copy_rebuild_sources(src, run_dir, prompt_dir)
+        if spec.generation_mode == "rebuild_graphics" and not (
+            run_dir / "report_data.json"
+        ).is_file():
+            raise RuntimeError(
+                f"report_data.json missing for {prompt!r}; cannot rebuild pictures."
+            )
+        if not (run_dir / "report.yaml").is_file() and not (run_dir / "report.md").is_file():
+            raise RuntimeError(
+                f"report.yaml / report.md missing for {prompt!r}; cannot rebuild PDF."
+            )
+        cfg_path = _write_report_config(prompt_dir, spec, run_id)
+        common = [
+            "--run-id",
+            run_id,
+            "--config",
+            str(cfg_path),
+            "--report",
+            spec.product,
+        ]
+        if spec.include_remediation:
+            common.append("--include-remediation")
+        if spec.generation_mode == "rebuild_graphics":
+            _progress(f"[{index}] rebuild pictures: {prompt}")
+            rc = build_report_main([*common, "--graphics-only"])
+            if rc != 0:
+                raise RuntimeError(f"graphics rebuild exited {rc} for {prompt!r}")
+            argv = [*common, "--from-stage", "render", "--keep-graphics", "--keep-content"]
+        else:
+            _progress(f"[{index}] rebuild PDF from edited text: {prompt}")
+            argv = [*common, "--from-stage", "render", "--keep-graphics", "--keep-content"]
+        rc = build_report_main(argv)
+        if rc != 0:
+            raise RuntimeError(f"PDF rebuild exited {rc} for {prompt!r}")
+        artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
+        run = PromptRun(
+            index=index,
+            prompt=prompt,
+            slug=slug,
+            run_id=run_id,
+            artifacts=artifacts,
+        )
+        write_prompt_report_json(prompt_dir, spec, run)
+        missing = [name for name in REBUILD_ARTIFACTS if name not in run.artifacts]
+        if missing:
+            raise RuntimeError(
+                f"Missing after rebuild for {prompt!r}: {', '.join(missing)}"
+            )
+        runs.append(run)
+    _progress(f"finished rebuild of {len(runs)} report(s)")
+    return runs
 
 
 def run_moyo(
@@ -663,19 +1162,23 @@ def _firebase_project_id() -> str | None:
     )
 
 
+def _normalize_storage_bucket_name(value: str) -> str:
+    text = value.strip()
+    if text.lower().startswith("gs://"):
+        text = text[5:]
+    return text.strip().strip("/")
+
+
 def _storage_bucket_name() -> str | None:
+    """Dedicated reports bucket, never the Firebase Auth app bucket."""
     explicit = (
-        os.environ.get("STORAGE_BUCKET")
-        or os.environ.get("FIREBASE_STORAGE_BUCKET")
+        os.environ.get("MOYO_REPORTS_STORAGE_BUCKET")
+        or os.environ.get("STORAGE_BUCKET")
         or ""
     ).strip()
     if explicit:
-        return explicit
-    project = _firebase_project_id()
-    if not project:
-        return None
-    # Default Firebase bucket names (new, then classic).
-    return f"{project}.firebasestorage.app"
+        return _normalize_storage_bucket_name(explicit)
+    return DEFAULT_MOYO_REPORTS_BUCKET
 
 
 def _init_firebase_app():
@@ -745,18 +1248,35 @@ def _load_order_data(order_id: str) -> tuple[dict[str, Any], Any | None]:
     )
 
 
-def _upload_runs(bucket, order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
-    urls = _upload_files(bucket, storage_destinations(order_id, runs))
-    manifest = artifact_manifest(order_id, runs)
-    manifest_blob = bucket.blob(f"reports/{order_id}/manifest.json")
+def _upload_runs(
+    bucket, spec: OrderSpec, runs: list[PromptRun], *, work: Path
+) -> dict[str, Any]:
+    canonical = write_canonical_report_json(spec, runs, work / "report.json")
+    dest = dict(storage_destinations(spec.order_id, runs))
+    dest[f"reports/{spec.order_id}/report.json"] = canonical
+    urls = _upload_files(bucket, list(dest.items()))
+    manifest = artifact_manifest(spec.order_id, runs)
+    manifest_blob = bucket.blob(f"reports/{spec.order_id}/manifest.json")
     manifest_blob.upload_from_string(
         json.dumps(manifest, indent=2, ensure_ascii=False),
         content_type="application/json",
     )
-    urls[f"reports/{order_id}/manifest.json"] = (
-        f"gs://{bucket.name}/reports/{order_id}/manifest.json"
+    urls[f"reports/{spec.order_id}/manifest.json"] = (
+        f"gs://{bucket.name}/reports/{spec.order_id}/manifest.json"
     )
     return {"manifest": manifest, "urls": urls}
+
+
+def _content_type_for(path: Path) -> str | None:
+    ext = path.suffix.lower()
+    return {
+        ".pdf": "application/pdf",
+        ".json": "application/json; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+        ".html": "text/html; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".txt": "text/plain; charset=utf-8",
+    }.get(ext)
 
 
 def _upload_files(bucket, pairs: list[tuple[str, Path]]) -> dict[str, str]:
@@ -765,7 +1285,11 @@ def _upload_files(bucket, pairs: list[tuple[str, Path]]) -> dict[str, str]:
         if not path.exists():
             continue
         blob = bucket.blob(object_path)
-        blob.upload_from_filename(str(path))
+        content_type = _content_type_for(path)
+        if content_type:
+            blob.upload_from_filename(str(path), content_type=content_type)
+        else:
+            blob.upload_from_filename(str(path))
         urls[object_path] = f"gs://{bucket.name}/{object_path}"
         logger.info("uploaded %s", urls[object_path])
     return urls
@@ -807,33 +1331,52 @@ def main() -> int:
                 "reportStatus": "generating",
                 "generationStartedAt": started,
                 "generationFinishedAt": None,
+                "error": None,
             }
         )
 
-        runs = run_moyo(spec, work=work)
         uploaded: dict[str, Any] = {}
+        bucket = None
         if not _skip_firebase():
             _db, bucket, _fs = _init_firebase()
             if bucket is None:
                 raise RuntimeError(
-                    "Storage bucket name not set. Set STORAGE_BUCKET or "
-                    "FIREBASE_STORAGE_BUCKET on the Cloud Run job "
-                    "(e.g. senteguard-website.firebasestorage.app)."
+                    "Storage bucket name not set. Set MOYO_REPORTS_STORAGE_BUCKET "
+                    "or STORAGE_BUCKET on the Cloud Run job "
+                    f"(default {DEFAULT_MOYO_REPORTS_BUCKET})."
                 )
-            uploaded = _upload_runs(bucket, spec.order_id, runs)
+        if spec.generation_mode in REBUILD_MODES:
+            if bucket is None:
+                raise RuntimeError("PDF/picture rebuild needs Storage artifacts.")
+            runs = run_rebuild(spec, bucket=bucket, work=work)
+            uploaded = _upload_runs(bucket, spec, runs, work=work)
+        else:
+            runs = run_moyo(spec, work=work)
+            if bucket is not None:
+                uploaded = _upload_runs(bucket, spec, runs, work=work)
+            else:
+                write_canonical_report_json(spec, runs, work / "report.json")
         finished = utc_now()
+        urls = uploaded.get("urls") or {}
+        manifest = uploaded.get("manifest") or artifact_manifest(spec.order_id, runs)
         _mark(
-            {
-                "reportStatus": "qc_pending",
-                "qcStatus": "pending",
-                "generationStartedAt": started,
-                "generationFinishedAt": finished,
-                "artifactPaths": uploaded.get("urls") or {},
-                "reportManifest": uploaded.get("manifest")
-                or artifact_manifest(spec.order_id, runs),
-            }
+            success_update_fields(
+                spec,
+                started=started,
+                finished=finished,
+                urls=urls,
+                manifest=manifest,
+            )
         )
-        logger.info("order %s ready for QC (%d report(s))", spec.order_id, len(runs))
+        status = CANONICAL_AWAITING_QC if spec.qc_required else "delivered"
+        logger.info(
+            "order %s %s (%d report(s) generationMode=%s qcRequired=%s)",
+            spec.order_id,
+            status,
+            len(runs),
+            spec.generation_mode,
+            spec.qc_required,
+        )
         return 0
     except Exception as exc:
         logger.exception("order %s failed", order_id)

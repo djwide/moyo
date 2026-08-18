@@ -131,6 +131,7 @@ def render_pdfs(
     run_dir: Path,
     cfg: dict,
     keep_graphics: bool = False,
+    keep_content: bool = False,
     report_type: str = "snapshot",
     include_remediation: bool = False,
 ) -> dict[str, Path]:
@@ -196,6 +197,7 @@ def render_pdfs(
         graphics_svgs=graphics,
         aliases=(cfg.get("graphics") or {}).get("model_aliases") or {},
         overwrite_graphics=not keep_graphics,
+        keep_content=keep_content,
         isvf_path=isvf_path,
         include_remediation=include_remediation,
         llm_config=(cfg.get("synthesize") or cfg.get("extract") or {}),
@@ -417,6 +419,14 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Reuse existing assets/*.svg instead of regenerating "
             "(edit charts, then: --from-stage render --keep-graphics)"
+        ),
+    )
+    ap.add_argument(
+        "--keep-content",
+        action="store_true",
+        help=(
+            "Reuse existing report.yaml / report.md instead of regenerating "
+            "them from report_data.json (edit text, then rebuild PDF)"
         ),
     )
     ap.add_argument(
@@ -721,6 +731,7 @@ def main(argv: list[str] | None = None) -> int:
             run_dir=run_dir,
             cfg=cfg,
             keep_graphics=args.keep_graphics,
+            keep_content=args.keep_content,
             report_type=args.report,
             include_remediation=bool(
                 (cfg.get("render") or {}).get("include_remediation", False)

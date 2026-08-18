@@ -95,8 +95,10 @@ python reports/build_report.py --run-id <id> --graphics-only
 Rebuild PDF after editing content (`report.yaml` / `report.md` / `report_data.json`):
 
 ```bash
-python reports/build_report.py --run-id <id> --from-stage render
+python reports/build_report.py --run-id <id> --from-stage render --keep-content --keep-graphics
 ```
+
+Rebuild charts only (overwrites `assets/*.svg` from `report_data.json`):
 
 Edit charts by hand under `assets/*.svg`, then rebuild PDF without regenerating them:
 
