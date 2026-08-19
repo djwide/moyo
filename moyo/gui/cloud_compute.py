@@ -93,6 +93,7 @@ def build_order_payload(
         "product": product,
         "paymentStatus": "paid",
         "reportStatus": "queued",
+        "qcRequired": True,
         "qcStatus": "pending",
         "fuzzMode": fuzz_mode or "basic",
         "strategies": list(strategies or []),

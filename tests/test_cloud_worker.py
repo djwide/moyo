@@ -107,6 +107,9 @@ def test_normalize_generation_mode():
     assert cw.normalize_generation_mode("pdf_from_markdown") == "pdf_from_markdown"
     assert cw.normalize_generation_mode("rebuild_graphics") == "rebuild_graphics"
     assert cw.normalize_generation_mode("graphics-only") == "rebuild_graphics"
+    assert cw.normalize_generation_mode("synthesize") == "from_stage"
+    assert cw.normalize_generation_mode("render") == "from_stage"
+    assert cw.normalize_generation_mode("from-stage") == "from_stage"
 
 
 def test_parse_order_generation_mode():
@@ -119,6 +122,111 @@ def test_parse_order_generation_mode():
         },
     )
     assert spec.generation_mode == "pdf_from_markdown"
+    assert spec.from_stage == "render"
+
+
+def test_parse_order_from_stage():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "generationMode": "from_stage",
+            "fromStage": "cluster",
+            "keepGraphics": False,
+            "keepContent": False,
+        },
+    )
+    assert spec.generation_mode == "from_stage"
+    assert spec.from_stage == "cluster"
+    assert spec.keep_graphics is False
+    assert spec.keep_content is False
+
+
+def test_resolve_rebuild_plan_legacy_modes():
+    pdf = cw.parse_order(
+        "ord_1",
+        {"product": "snapshot", "prompts": ["Enron"], "generationMode": "pdf_from_markdown"},
+    )
+    assert cw.resolve_rebuild_plan(pdf) == cw.RebuildPlan(
+        from_stage="render", keep_graphics=True, keep_content=True
+    )
+    pictures = cw.parse_order(
+        "ord_1",
+        {"product": "snapshot", "prompts": ["Enron"], "generationMode": "rebuild_graphics"},
+    )
+    assert cw.resolve_rebuild_plan(pictures) == cw.RebuildPlan(
+        from_stage="graphics", keep_graphics=False, keep_content=True
+    )
+    full = cw.parse_order(
+        "ord_1", {"product": "snapshot", "prompts": ["Enron"], "generationMode": "full"}
+    )
+    assert cw.resolve_rebuild_plan(full) is None
+
+
+def test_resolve_rebuild_plan_pipeline_stage():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "basis",
+            "prompts": ["Enron"],
+            "generationMode": "extract",
+            "keepGraphics": True,
+        },
+    )
+    plan = cw.resolve_rebuild_plan(spec)
+    assert plan == cw.RebuildPlan(
+        from_stage="extract", keep_graphics=True, keep_content=False
+    )
+
+
+def test_resolve_rebuild_plan_rejects_from_stage_without_stage():
+    spec = cw.OrderSpec(
+        order_id="ord_1",
+        prompts=["Enron"],
+        generation_mode="from_stage",
+        from_stage=None,
+    )
+    with pytest.raises(ValueError, match="fromStage"):
+        cw.resolve_rebuild_plan(spec)
+
+
+def test_rebuild_build_argv_matches_local_cli(tmp_path: Path):
+    spec = cw.OrderSpec(
+        order_id="ord_1",
+        prompts=["Enron"],
+        product="basis",
+        include_remediation=True,
+    )
+    plan = cw.RebuildPlan(from_stage="score", keep_graphics=True, keep_content=False)
+    cfg = tmp_path / "cfg.yaml"
+    exploration = tmp_path / "exploration.md"
+    argv = cw.rebuild_build_argv(
+        spec, plan, run_id="ord_1__01_enron", cfg_path=cfg, exploration=exploration
+    )
+    assert argv == [
+        "--exploration",
+        str(exploration),
+        "--run-id",
+        "ord_1__01_enron",
+        "--config",
+        str(cfg),
+        "--report",
+        "basis",
+        "--from-stage",
+        "score",
+        "--include-remediation",
+        "--keep-graphics",
+    ]
+
+
+def test_rebuild_topic_dirs_accepts_exploration_only(tmp_path: Path):
+    root = tmp_path / "gcs"
+    root.mkdir()
+    (root / "exploration.md").write_text("# topic\n", encoding="utf-8")
+    spec = cw.OrderSpec(order_id="ord_1", prompts=["Enron"])
+    topics = cw.rebuild_topic_dirs(root, spec)
+    assert topics == [(1, "Enron", root)]
 
 
 def test_parse_order_agent_source_skips_qc_when_field_missing():
@@ -146,9 +254,33 @@ def test_parse_order_agent_source_skips_qc_when_field_missing():
     assert spec.source == "x402"
 
 
+def test_parse_order_gui_source_requires_qc():
+    spec = cw.parse_order(
+        "ord_gui",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "source": "gui",
+            "qcStatus": "pending",
+        },
+    )
+    assert spec.qc_required is True
+    spec = cw.parse_order(
+        "ord_gui_alias",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "source": "gui",
+            "qcRequire": True,
+        },
+    )
+    assert spec.qc_required is True
+
+
 def test_normalize_qc_required_falls_back_to_source():
     assert cw.normalize_qc_required(None, "stripe_checkout") is True
     assert cw.normalize_qc_required(None, "admin") is True
+    assert cw.normalize_qc_required(None, "gui") is True
     assert cw.normalize_qc_required(None, "x402") is False
     assert cw.normalize_qc_required(None, "stripe_mpp") is False
     assert cw.normalize_qc_required(False, "stripe_checkout") is False

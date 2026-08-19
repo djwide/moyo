@@ -121,8 +121,10 @@ Renders MOYO report products from an `exploration.md` via
 `reports/build_report.py`. Choose Exposure Snapshot, Basis Report, or both.
 **Compute location** can be local (this machine) or **Cloud** (same Cloud Run
 worker as explore: re-runs the prompt, does not upload `exploration.md`).
-**From stage** (local only) resumes the pipeline at a chosen step (earlier stages are
-skipped if their artifacts already exist):
+**From stage** resumes the pipeline at a chosen step (earlier stages are
+skipped if their artifacts already exist). The local GUI and the website admin
+QC panel use the same list. Locally you pick an `exploration.md` on disk;
+admin QC uses the order's Storage artifacts and the existing Cloud Run worker.
 
 | Stage | What it does |
 | ----- | ------------ |

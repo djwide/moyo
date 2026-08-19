@@ -1,0 +1,112 @@
+{
+  "prompt": "Tell me about SenTeGuard Founder David Weidman",
+  "generated_at": "2026-08-18 19:46:28",
+  "preflight": [
+    {
+      "name": "ChatGPT (OpenAI gpt-4o)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Claude (Anthropic Sonnet)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Grok (xAI grok-4.5)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Gemini (Google gemini-3.1-pro-preview)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Qwen (Alibaba qwen-plus)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Kimi (Moonshot kimi-k2.6)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Perplexity (sonar-pro)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Llama 3.3 70B Instruct",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "DeepSeek Chat",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Llama 4 Maverick",
+      "status": "ok",
+      "reason": ""
+    }
+  ],
+  "preflight_ok": 10,
+  "preflight_total": 10,
+  "retrieval": [
+    {
+      "name": "ChatGPT (OpenAI gpt-4o)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Claude (Anthropic Sonnet)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Grok (xAI grok-4.5)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Gemini (Google gemini-3.1-pro-preview)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Qwen (Alibaba qwen-plus)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Kimi (Moonshot kimi-k2.6)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Perplexity (sonar-pro)",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Llama 3.3 70B Instruct",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "DeepSeek Chat",
+      "status": "ok",
+      "reason": ""
+    },
+    {
+      "name": "Llama 4 Maverick",
+      "status": "ok",
+      "reason": ""
+    }
+  ],
+  "retrieval_ok": 10,
+  "retrieval_total": 10
+}

@@ -28,6 +28,8 @@ def test_build_order_payload_shape():
     assert payload["product"] == "both"
     assert payload["paymentStatus"] == "paid"
     assert payload["reportStatus"] == "queued"
+    assert payload["qcRequired"] is True
+    assert payload["qcStatus"] == "pending"
     assert payload["source"] == "gui"
     assert payload["seeds"] == 2
     assert payload["includeRemediation"] is True

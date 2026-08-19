@@ -13,9 +13,15 @@ Storefront order fields used here::
     productId            moyo_snapshot | moyo_basis (optional)
     paymentStatus        informational
     reportStatus         queued → generating → awaiting_qc | delivered | failed
-    qcRequired           false skips human QC (agent orders → delivered)
+    qcRequired           false skips human QC (agent orders → delivered).
+                         GUI and Checkout default true when the field is missing.
     qcStatus             pending | not_required
-    generationMode       full | pdf_from_markdown | rebuild_graphics
+    generationMode       full | pdf_from_markdown | rebuild_graphics | from_stage
+                         (or a pipeline stage name: parse…render)
+    fromStage            parse | extract | cluster | score | synthesize |
+                         graphics | render  (rebuilds; same as local --from-stage)
+    keepGraphics         reuse assets/*.svg (local --keep-graphics)
+    keepContent          reuse report.yaml / report.md (local --keep-content)
     generationStartedAt  ISO-8601 UTC, set when work begins
     generationFinishedAt ISO-8601 UTC, set on success or failure
     output.pdfPath       reports/{orderId}/report.pdf
@@ -85,16 +91,34 @@ CONTRACT_ARTIFACTS = (
 
 REBUILD_ARTIFACTS = ("report.md", "report.html", "report.pdf", "report.json")
 
-REBUILD_MODES = frozenset({"pdf_from_markdown", "rebuild_graphics"})
+PIPELINE_STAGES = (
+    "parse",
+    "extract",
+    "cluster",
+    "score",
+    "synthesize",
+    "graphics",
+    "render",
+)
+REBUILD_INPUT_FILES = (
+    "report.md",
+    "report.yaml",
+    "report_data.json",
+    "exploration.md",
+    "claims.jsonl",
+    "chunks.jsonl",
+)
+
+REBUILD_MODES = frozenset({"pdf_from_markdown", "rebuild_graphics", "from_stage"})
 GENERATION_MODE_ALIASES = {
     "full": "full",
     "explore": "full",
     "pdf_from_markdown": "pdf_from_markdown",
     "pdf": "pdf_from_markdown",
-    "render": "pdf_from_markdown",
     "rebuild_graphics": "rebuild_graphics",
     "graphics_only": "rebuild_graphics",
-    "graphics": "rebuild_graphics",
+    "from_stage": "from_stage",
+    "fromstage": "from_stage",
 }
 
 # Dedicated worker/QC bucket. Not the Firebase Auth app bucket.
@@ -102,7 +126,7 @@ DEFAULT_MOYO_REPORTS_BUCKET = "senteguard-website-moyo-reports"
 CANONICAL_AWAITING_QC = "awaiting_qc"
 LEGACY_AWAITING_QC = "qc_pending"
 AWAITING_QC_STATUSES = frozenset({CANONICAL_AWAITING_QC, LEGACY_AWAITING_QC})
-HUMAN_QC_SOURCES = frozenset({"stripe_checkout", "admin"})
+HUMAN_QC_SOURCES = frozenset({"stripe_checkout", "admin", "gui"})
 PRODUCT_IDS = {
     "snapshot": "moyo_snapshot",
     "basis": "moyo_basis",
@@ -136,9 +160,21 @@ class OrderSpec:
     payment_status: str | None = None
     customer_email: str | None = None
     generation_mode: str = "full"
+    from_stage: str | None = None
+    keep_graphics: bool | None = None
+    keep_content: bool | None = None
     qc_required: bool = True
     product_id: str = "moyo_snapshot"
     source: str | None = None
+
+
+@dataclass(frozen=True)
+class RebuildPlan:
+    """How to invoke ``reports/build_report.py`` for a Storage rebuild."""
+
+    from_stage: str
+    keep_graphics: bool
+    keep_content: bool
 
 
 @dataclass
@@ -161,10 +197,122 @@ def _first(data: dict[str, Any], *keys: str, default: Any = None) -> Any:
     return default
 
 
+def _mode_key(raw: Any) -> str:
+    return str(raw or "").strip().lower().replace("-", "_")
+
+
 def normalize_generation_mode(raw: Any) -> str:
-    """Map storefront generationMode to explore vs PDF/picture rebuild."""
-    key = str(raw or "full").strip().lower().replace("-", "_")
+    """Map storefront generationMode to explore vs Storage rebuild."""
+    key = _mode_key(raw) or "full"
+    if key in PIPELINE_STAGES:
+        return "from_stage"
     return GENERATION_MODE_ALIASES.get(key, "full")
+
+
+def normalize_from_stage(raw: Any, generation_mode_raw: Any = None) -> str | None:
+    """Pipeline stage for a rebuild; same names as local ``--from-stage``."""
+    for candidate in (raw, generation_mode_raw):
+        key = _mode_key(candidate)
+        if key in PIPELINE_STAGES:
+            return key
+    mode = normalize_generation_mode(generation_mode_raw)
+    if mode == "pdf_from_markdown":
+        return "render"
+    if mode == "rebuild_graphics":
+        return "graphics"
+    return None
+
+
+def default_keep_graphics(from_stage: str) -> bool:
+    return from_stage == "render"
+
+
+def default_keep_content(from_stage: str) -> bool:
+    return from_stage in {"graphics", "render"}
+
+
+def resolve_rebuild_plan(spec: OrderSpec) -> RebuildPlan | None:
+    """None means a full explore; otherwise rebuild from existing artifacts."""
+    if spec.generation_mode == "full":
+        return None
+    from_stage = spec.from_stage
+    if from_stage not in PIPELINE_STAGES:
+        if spec.generation_mode == "pdf_from_markdown":
+            from_stage = "render"
+        elif spec.generation_mode == "rebuild_graphics":
+            from_stage = "graphics"
+        else:
+            raise ValueError(
+                f"Rebuild requested (generationMode={spec.generation_mode!r}) "
+                f"but fromStage={spec.from_stage!r} is not a pipeline stage."
+            )
+    keep_graphics = (
+        spec.keep_graphics
+        if spec.keep_graphics is not None
+        else default_keep_graphics(from_stage)
+    )
+    keep_content = (
+        spec.keep_content
+        if spec.keep_content is not None
+        else default_keep_content(from_stage)
+    )
+    if spec.generation_mode == "pdf_from_markdown":
+        keep_graphics = True if spec.keep_graphics is None else keep_graphics
+        keep_content = True if spec.keep_content is None else keep_content
+    elif spec.generation_mode == "rebuild_graphics":
+        keep_graphics = False if spec.keep_graphics is None else keep_graphics
+        keep_content = True if spec.keep_content is None else keep_content
+    return RebuildPlan(
+        from_stage=from_stage,
+        keep_graphics=bool(keep_graphics),
+        keep_content=bool(keep_content),
+    )
+
+
+def required_rebuild_files(plan: RebuildPlan) -> tuple[str, ...]:
+    stage = plan.from_stage
+    if stage in {"parse", "extract"}:
+        return ("exploration.md",)
+    if stage in {"cluster", "score"}:
+        return ("claims.jsonl",)
+    if stage in {"synthesize", "graphics"}:
+        return ("report_data.json",)
+    if plan.keep_content:
+        return ("report.md", "report.yaml")
+    return ("report_data.json",)
+
+
+def rebuild_build_argv(
+    spec: OrderSpec,
+    plan: RebuildPlan,
+    *,
+    run_id: str,
+    cfg_path: Path,
+    exploration: Path | None = None,
+) -> list[str]:
+    """CLI args for ``build_report.main``, matching the local GUI."""
+    argv: list[str] = []
+    if exploration is not None:
+        argv.extend(["--exploration", str(exploration)])
+    argv.extend(
+        [
+            "--run-id",
+            run_id,
+            "--config",
+            str(cfg_path),
+            "--report",
+            spec.product,
+            "--from-stage",
+            plan.from_stage,
+        ]
+    )
+    if spec.include_remediation:
+        argv.append("--include-remediation")
+    if plan.keep_graphics:
+        argv.append("--keep-graphics")
+    if plan.keep_content:
+        argv.append("--keep-content")
+    return argv
 
 
 def normalize_product_id(raw: Any, product: str) -> str:
@@ -312,8 +460,19 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         generation_mode=normalize_generation_mode(
             _first(data, "generationMode", "generation_mode", default="full")
         ),
+        from_stage=normalize_from_stage(
+            _first(data, "fromStage", "from_stage", default=None),
+            _first(data, "generationMode", "generation_mode", default=None),
+        ),
+        keep_graphics=_coerce_bool(
+            _first(data, "keepGraphics", "keep_graphics", default=None)
+        ),
+        keep_content=_coerce_bool(
+            _first(data, "keepContent", "keep_content", default=None)
+        ),
         qc_required=normalize_qc_required(
-            _first(data, "qcRequired", "qc_required", default=None), source
+            _first(data, "qcRequired", "qcRequire", "qc_required", default=None),
+            source,
         ),
         product_id=normalize_product_id(
             _first(data, "productId", "product_id", default=None), product
@@ -920,27 +1079,36 @@ def copy_rebuild_sources(src: Path, run_dir: Path, prompt_dir: Path) -> None:
 
 
 def rebuild_topic_dirs(gcs_root: Path, spec: OrderSpec) -> list[tuple[int, str, Path]]:
-    if (
-        (gcs_root / "report.md").is_file()
-        or (gcs_root / "report.yaml").is_file()
-        or (gcs_root / "report_data.json").is_file()
-    ):
+    def has_inputs(folder: Path) -> bool:
+        return any((folder / name).is_file() for name in REBUILD_INPUT_FILES)
+
+    if has_inputs(gcs_root):
         prompt = spec.prompts[0] if spec.prompts else "report"
         return [(1, prompt, gcs_root)]
 
     topics: list[tuple[int, str, Path]] = []
     for i, prompt in enumerate(spec.prompts, start=1):
         folder = gcs_root / prompt_slug(i, prompt)
-        if folder.is_dir():
+        if folder.is_dir() and has_inputs(folder):
             topics.append((i, prompt, folder))
     if topics:
         return topics
     for child in sorted(p for p in gcs_root.iterdir() if p.is_dir()):
-        if (child / "report.md").is_file() or (child / "report_data.json").is_file():
+        if has_inputs(child):
             topics.append((len(topics) + 1, child.name, child))
     if not topics:
-        raise RuntimeError("No report.md / report_data.json found to rebuild.")
+        raise RuntimeError(
+            "No exploration.md / claims.jsonl / report.md / report_data.json found to rebuild."
+        )
     return topics
+
+
+def _missing_rebuild_files(run_dir: Path, plan: RebuildPlan) -> list[str]:
+    missing = [name for name in required_rebuild_files(plan) if not (run_dir / name).is_file()]
+    if plan.from_stage == "render" and plan.keep_content:
+        if (run_dir / "report.yaml").is_file() or (run_dir / "report.md").is_file():
+            return [name for name in missing if name not in {"report.md", "report.yaml"}]
+    return missing
 
 
 def run_rebuild(
@@ -950,8 +1118,15 @@ def run_rebuild(
     work: Path | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
-    """Re-render from existing Storage artifacts. Does not re-run explore."""
+    """Re-run build_report from a pipeline stage. Does not re-run explore."""
     from reports.build_report import main as build_report_main
+
+    plan = resolve_rebuild_plan(spec)
+    if plan is None:
+        raise RuntimeError(
+            f"generationMode={spec.generation_mode!r} is not a rebuild "
+            "(expected from_stage, pdf_from_markdown, or rebuild_graphics)."
+        )
 
     work = work or work_dir_for(spec.order_id)
     work.mkdir(parents=True, exist_ok=True)
@@ -963,8 +1138,8 @@ def run_rebuild(
 
     gcs_root = download_order_prefix(bucket, spec.order_id, work / "gcs")
     _progress(
-        f"rebuild mode={spec.generation_mode} from "
-        f"gs://{bucket.name}/reports/{spec.order_id}/"
+        f"rebuild from-stage={plan.from_stage} keep_graphics={plan.keep_graphics} "
+        f"keep_content={plan.keep_content} gs://{bucket.name}/reports/{spec.order_id}/"
     )
     runs: list[PromptRun] = []
     for index, prompt, src in rebuild_topic_dirs(gcs_root, spec):
@@ -973,39 +1148,28 @@ def run_rebuild(
         prompt_dir = work / slug
         run_dir = prompt_dir / "report_runs" / run_id
         copy_rebuild_sources(src, run_dir, prompt_dir)
-        if spec.generation_mode == "rebuild_graphics" and not (
-            run_dir / "report_data.json"
-        ).is_file():
+        missing = _missing_rebuild_files(run_dir, plan)
+        if missing:
             raise RuntimeError(
-                f"report_data.json missing for {prompt!r}; cannot rebuild pictures."
+                f"Cannot rebuild from {plan.from_stage} for {prompt!r}; "
+                f"missing {', '.join(missing)}."
             )
-        if not (run_dir / "report.yaml").is_file() and not (run_dir / "report.md").is_file():
-            raise RuntimeError(
-                f"report.yaml / report.md missing for {prompt!r}; cannot rebuild PDF."
-            )
+        exploration = run_dir / "exploration.md"
+        if not exploration.is_file():
+            alt = prompt_dir / "exploration.md"
+            exploration = alt if alt.is_file() else None
         cfg_path = _write_report_config(prompt_dir, spec, run_id)
-        common = [
-            "--run-id",
-            run_id,
-            "--config",
-            str(cfg_path),
-            "--report",
-            spec.product,
-        ]
-        if spec.include_remediation:
-            common.append("--include-remediation")
-        if spec.generation_mode == "rebuild_graphics":
-            _progress(f"[{index}] rebuild pictures: {prompt}")
-            rc = build_report_main([*common, "--graphics-only"])
-            if rc != 0:
-                raise RuntimeError(f"graphics rebuild exited {rc} for {prompt!r}")
-            argv = [*common, "--from-stage", "render", "--keep-graphics", "--keep-content"]
-        else:
-            _progress(f"[{index}] rebuild PDF from edited text: {prompt}")
-            argv = [*common, "--from-stage", "render", "--keep-graphics", "--keep-content"]
+        argv = rebuild_build_argv(
+            spec,
+            plan,
+            run_id=run_id,
+            cfg_path=cfg_path,
+            exploration=exploration,
+        )
+        _progress(f"[{index}] rebuild from {plan.from_stage}: {prompt}")
         rc = build_report_main(argv)
         if rc != 0:
-            raise RuntimeError(f"PDF rebuild exited {rc} for {prompt!r}")
+            raise RuntimeError(f"rebuild from {plan.from_stage} exited {rc} for {prompt!r}")
         artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
         run = PromptRun(
             index=index,
@@ -1015,13 +1179,13 @@ def run_rebuild(
             artifacts=artifacts,
         )
         write_prompt_report_json(prompt_dir, spec, run)
-        missing = [name for name in REBUILD_ARTIFACTS if name not in run.artifacts]
-        if missing:
+        missing_out = [name for name in REBUILD_ARTIFACTS if name not in run.artifacts]
+        if missing_out:
             raise RuntimeError(
-                f"Missing after rebuild for {prompt!r}: {', '.join(missing)}"
+                f"Missing after rebuild for {prompt!r}: {', '.join(missing_out)}"
             )
         runs.append(run)
-    _progress(f"finished rebuild of {len(runs)} report(s)")
+    _progress(f"finished rebuild of {len(runs)} report(s) from {plan.from_stage}")
     return runs
 
 
@@ -1345,7 +1509,7 @@ def main() -> int:
                     "or STORAGE_BUCKET on the Cloud Run job "
                     f"(default {DEFAULT_MOYO_REPORTS_BUCKET})."
                 )
-        if spec.generation_mode in REBUILD_MODES:
+        if resolve_rebuild_plan(spec) is not None:
             if bucket is None:
                 raise RuntimeError("PDF/picture rebuild needs Storage artifacts.")
             runs = run_rebuild(spec, bucket=bucket, work=work)

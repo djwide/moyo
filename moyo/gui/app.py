@@ -719,12 +719,14 @@ def _make_compute_location_box(*, include_product: bool = True) -> tuple:
     cloud_radio = QRadioButton("Cloud (Cloud Run worker)")
     local_radio.setChecked(True)
     local_radio.setToolTip(
-        "Run explore / report build in this GUI process using local Ollama "
-        "and API keys from your environment."
+        "Run explore in this GUI process (local Ollama + API keys). "
+        "Writes exploration.md here; use the Build Report tab afterward "
+        "to turn that file into PDFs."
     )
     cloud_radio.setToolTip(
         "Create a Firestore order and execute moyo-report-worker. "
-        "The worker explores the prompts and builds report PDFs in GCP."
+        "One Cloud Run job does explore and report PDFs — do not use "
+        "the Build Report tab for cloud runs."
     )
     group = QButtonGroup(box)
     group.addButton(local_radio)
@@ -735,9 +737,12 @@ def _make_compute_location_box(*, include_product: bool = True) -> tuple:
     outer.addLayout(radios)
 
     note = QLabel(
-        "Cloud runs the full worker (explore → extract → cluster → PDFs) "
-        "and writes artifacts under gs://senteguard-website-moyo-reports/"
-        "reports/<order-id>/. Requires `gcloud` auth to this project."
+        "Cloud Run is a single job: explore → extract → cluster → PDFs. "
+        "Pick the report product below; do not use the Build Report tab "
+        "afterward. Artifacts land in gs://senteguard-website-moyo-reports/"
+        "reports/<order-id>/. Requires `gcloud` auth to this project.\n\n"
+        "Local explore only writes exploration.md on this machine. Then "
+        "open the Build Report tab and point it at that file."
     )
     note.setWordWrap(True)
     outer.addWidget(note)
@@ -927,15 +932,20 @@ class GatherPublicSourcesTab(QWidget):
 
         self.explore_note = QLabel(
             "Explore mode accepts one or more prompts (one per line). Each "
-            "prompt is reworded via the local Ollama fuzzer (llama3.1:8b, "
-            "black-box — no target concept) and gets its own output folder. "
+            "prompt is reworded (black-box — no target concept) and fanned "
+            "out to every retrieval LLM in config/retrieval_llms.json.\n\n"
+            "Local: uses Ollama on this machine and writes exploration.md "
+            "only. Then use the Build Report tab to turn that file into "
+            "PDFs.\n\n"
+            "Cloud: one Cloud Run job does explore and the report (extract → "
+            "cluster → PDFs). Choose the report product in Compute location. "
+            "Do not run the Build Report tab for a cloud job — it would start "
+            "a second, unrelated worker. PDFs land in the GCS bucket, not "
+            "in this GUI.\n\n"
             "Default fuzz mode is basic (English seeds). Multilingual fans "
             "out English plus Spanish / French / Mandarin Chinese (add more "
-            "below). Strategies are a la carte — checkboxes default to the "
-            "mode's set; uncheck to lean the run. Every seed is sent to every "
-            "configured retrieval LLM (config/retrieval_llms.json). Writes "
-            "exploration.md only (grouped by language → query → model). "
-            "Non-English responses are translated back to English."
+            "below). Strategies are a la carte. Non-English responses are "
+            "translated back to English."
         )
         self.explore_note.setWordWrap(True)
         self.explore_note.setVisible(False)
@@ -2952,34 +2962,20 @@ class BuildReportTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Render MOYO report products from an exploration.md. The Exposure "
-            "Snapshot is the one-pager + report; the Basis Report is the "
-            "comprehensive assessment with full findings, derivation, exposure "
-            "chain, and exploitation implications. Mitigations/remediations "
-            "are off by default — enable the checkbox below to include them."
+            "Local only: render MOYO report products from an exploration.md "
+            "on this machine. Cloud Run jobs (explore + PDFs) start from the "
+            "Gather Public Sources tab with Naive prompts + Cloud — do not "
+            "use this tab for those.\n\n"
+            "The Exposure Snapshot is the one-pager + report; the Basis "
+            "Report is the comprehensive assessment with full findings, "
+            "derivation, exposure chain, and exploitation implications. "
+            "Mitigations/remediations are off by default — enable the "
+            "checkbox below to include them."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        self.compute_box, self._compute = _make_compute_location_box(
-            include_product=False
-        )
-        self._compute["note"].setText(
-            "Local builds from exploration.md on this machine. Cloud re-runs "
-            "explore + report on moyo-report-worker (it does not upload the "
-            "local markdown). Set the prompt below; if exploration.md is "
-            "chosen, its topic is used as the default prompt."
-        )
-        self._compute["cloud_radio"].toggled.connect(self._sync_report_compute)
-        layout.addWidget(self.compute_box)
-
         form = QFormLayout()
-
-        self.cloud_prompt_input = QLineEdit()
-        self.cloud_prompt_input.setPlaceholderText(
-            "Prompt for the cloud worker (defaults to the exploration topic)"
-        )
-        form.addRow("Cloud prompt:", self.cloud_prompt_input)
 
         expl_row = QHBoxLayout()
         self.expl_input = QLineEdit()
@@ -3040,7 +3036,6 @@ class BuildReportTab(QWidget):
         self.run_btn = QPushButton("Build Report")
         self.run_btn.clicked.connect(self._build)
         layout.addWidget(self.run_btn)
-        self._sync_report_compute()
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)  # indeterminate
@@ -3059,38 +3054,8 @@ class BuildReportTab(QWidget):
         )
         if path:
             self.expl_input.setText(path)
-            self._fill_cloud_prompt_from_exploration()
-
-    def _sync_report_compute(self):
-        cloud = self._compute["cloud_radio"].isChecked()
-        self.cloud_prompt_input.setEnabled(cloud)
-        self.stage_combo.setEnabled(not cloud)
-        self.dry_run_cb.setEnabled(not cloud)
-        self.keep_graphics_cb.setEnabled(not cloud)
-        self.runid_input.setEnabled(not cloud)
-        self.run_btn.setText("Run in Cloud" if cloud else "Build Report")
-
-    def _fill_cloud_prompt_from_exploration(self):
-        path = self.expl_input.text().strip()
-        if not path or not Path(path).is_file():
-            return
-        if self.cloud_prompt_input.text().strip():
-            return
-        try:
-            import sys as _sys
-            reports_root = Path(__file__).resolve().parents[2] / "reports"
-            if str(reports_root) not in _sys.path:
-                _sys.path.insert(0, str(reports_root))
-            from pipeline.parse import topic_from_exploration
-
-            self.cloud_prompt_input.setText(topic_from_exploration(Path(path)))
-        except Exception:
-            pass
 
     def _build(self):
-        if self._compute["cloud_radio"].isChecked():
-            self._build_cloud()
-            return
         exploration = self.expl_input.text().strip()
         if not exploration:
             QMessageBox.warning(
@@ -3144,23 +3109,157 @@ class BuildReportTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
-    def _build_cloud(self):
-        self._fill_cloud_prompt_from_exploration()
-        prompt = self.cloud_prompt_input.text().strip()
-        if not prompt:
-            QMessageBox.warning(
-                self,
-                "Missing prompt",
-                "Enter a cloud prompt, or choose an exploration.md whose "
-                "topic can be used as the prompt.",
-            )
+    def _idle_label(self) -> str:
+        return "Build Report"
+
+    def _on_done(self, _result):
+        self.progress_bar.setVisible(False)
+        _busy(self.run_btn, False, self._idle_label())
+        self.log.append("Done. PDFs are under reports/build/<run-id>/output/.")
+
+    def _on_failed(self, message: str):
+        self.progress_bar.setVisible(False)
+        _busy(self.run_btn, False, self._idle_label())
+        self.log.append(f"Failed: {message}")
+
+
+def _gui_icon() -> QIcon:
+    """Return the moyo desktop logo as a QIcon (empty if the asset is missing)."""
+    icon_path = Path(__file__).resolve().parent / "assets" / "MoyoDesktopLogo.png"
+    return QIcon(str(icon_path)) if icon_path.is_file() else QIcon()
+
+
+class MoyoScanTab(QWidget):
+    """Minimal public explore: one query, fuzz options, Cloud Run Explore."""
+
+    def __init__(self):
+        super().__init__()
+        self._worker: Optional[BackgroundWorker] = None
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        title = QLabel("Moyo Scan")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+
+        self.query_input = QLineEdit()
+        self.query_input.setPlaceholderText("Enter query")
+        self.query_input.returnPressed.connect(self._explore)
+        form.addRow("Query:", self.query_input)
+
+        self.fuzz_mode_combo = QComboBox()
+        self.fuzz_mode_combo.addItem("basic (default) — EN strategies", "basic")
+        self.fuzz_mode_combo.addItem("multilingual — EN + ES / FR / ZH", "multilingual")
+        self.fuzz_mode_combo.setCurrentIndex(0)
+        self.fuzz_mode_combo.currentIndexChanged.connect(self._on_fuzz_mode_changed)
+        form.addRow("Fuzz mode:", self.fuzz_mode_combo)
+
+        self._strategy_checks: dict[str, QCheckBox] = {}
+        strategy_row = QWidget()
+        strategy_layout = QHBoxLayout(strategy_row)
+        strategy_layout.setContentsMargins(0, 0, 0, 0)
+        for name in (
+            "paraphrase",
+            "translate",
+            "summarize",
+            "typo",
+            "abstract",
+        ):
+            cb = QCheckBox(name)
+            self._strategy_checks[name] = cb
+            strategy_layout.addWidget(cb)
+        strategy_layout.addStretch(1)
+        form.addRow("Strategies:", strategy_row)
+
+        self.languages_input = QLineEdit()
+        self.languages_input.setPlaceholderText(
+            "Additional languages (comma-separated) — e.g. German, Japanese, Arabic"
+        )
+        form.addRow("Extra languages:", self.languages_input)
+
+        self.report_combo = QComboBox()
+        self.report_combo.addItem("Exposure Snapshot", "snapshot")
+        self.report_combo.addItem("Basis Report", "basis")
+        self.report_combo.addItem("Both", "both")
+        self.report_combo.setCurrentIndex(0)
+        form.addRow("Report:", self.report_combo)
+
+        layout.addLayout(form)
+
+        self.run_btn = QPushButton("Explore")
+        self.run_btn.clicked.connect(self._explore)
+        layout.addWidget(self.run_btn)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
+        self.log = _make_log_pane(min_height=180)
+        layout.addWidget(self.log)
+
+        self.setLayout(layout)
+        self._on_fuzz_mode_changed()
+
+    def _sync_strategy_checks(self) -> None:
+        from moyo.publicside.barrierprobe.llm_fuzzer import strategies_for_fuzz_mode
+
+        mode = self.fuzz_mode_combo.currentData() or "basic"
+        defaults = set(strategies_for_fuzz_mode(mode))
+        for name, cb in self._strategy_checks.items():
+            cb.setChecked(name in defaults)
+
+    def _on_fuzz_mode_changed(self, *args):
+        multilingual = self.fuzz_mode_combo.currentData() == "multilingual"
+        self.languages_input.setEnabled(multilingual)
+        self._sync_strategy_checks()
+
+    def _selected_strategies(self) -> list[str]:
+        return [
+            name for name, cb in self._strategy_checks.items() if cb.isChecked()
+        ]
+
+    def _explore(self):
+        if self._worker is not None:
+            QMessageBox.information(self, "Busy", "An explore is already running.")
             return
 
-        from moyo.gui.cloud_compute import submit_cloud_compute
+        prompt = self.query_input.text().strip()
+        if not prompt:
+            QMessageBox.warning(self, "Missing input", "Enter a query.")
+            return
 
-        cfg = _cloud_cfg_from_widgets(self._compute)
+        strategies = self._selected_strategies()
+        if not strategies:
+            QMessageBox.warning(self, "Missing input", "Select at least one fuzz strategy.")
+            return
+
+        fuzz_mode = self.fuzz_mode_combo.currentData() or "basic"
+        extra_languages = (
+            [s.strip() for s in self.languages_input.text().split(",") if s.strip()]
+            if fuzz_mode == "multilingual"
+            else None
+        )
+
+        try:
+            from moyo.gui.cloud_compute import (
+                CloudComputeConfig,
+                submit_cloud_compute,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Import error", str(exc))
+            return
+
+        cfg = CloudComputeConfig.from_env()
         product = self.report_combo.currentData() or "snapshot"
-        include_remediation = self.include_remediation_cb.isChecked()
         holder = {"worker": None}
 
         def job():
@@ -3174,18 +3273,22 @@ class BuildReportTab(QWidget):
             return submit_cloud_compute(
                 prompts=[prompt],
                 product=product,
-                include_remediation=include_remediation,
+                fuzz_mode=fuzz_mode,
+                strategies=strategies,
+                languages=extra_languages or [],
                 cfg=cfg,
                 progress=progress,
             )
 
         self.log.clear()
         self.log.append(
-            f"Submitting cloud report ({self.report_combo.currentText()}) "
-            f"for prompt: {prompt}"
+            f"Submitting query to Cloud Run job {cfg.job} "
+            f"(product={product}, fuzz_mode={fuzz_mode}, "
+            f"strategies={'/'.join(strategies)})…"
         )
         self.progress_bar.setVisible(True)
-        _busy(self.run_btn, True, "Run in Cloud")
+        _busy(self.run_btn, True, "Explore")
+
         self._worker = BackgroundWorker(job)
         holder["worker"] = self._worker
         self._worker.log.connect(self.log.append)
@@ -3193,14 +3296,10 @@ class BuildReportTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
-    def _idle_label(self) -> str:
-        if self._compute["cloud_radio"].isChecked():
-            return "Run in Cloud"
-        return "Build Report"
-
     def _on_done(self, result):
         self.progress_bar.setVisible(False)
-        _busy(self.run_btn, False, self._idle_label())
+        _busy(self.run_btn, False, "Explore")
+        self._worker = None
         from moyo.gui.cloud_compute import CloudSubmitResult
 
         if isinstance(result, CloudSubmitResult):
@@ -3211,18 +3310,14 @@ class BuildReportTab(QWidget):
             self.log.append(f"Firestore: {result.firestore_path}")
             self.log.append(f"GCS prefix: {result.gcs_prefix}")
             return
-        self.log.append("Done. PDFs are under reports/build/<run-id>/output/.")
+        self.log.append(f"✅ Done: {result}")
 
     def _on_failed(self, message: str):
         self.progress_bar.setVisible(False)
-        _busy(self.run_btn, False, self._idle_label())
+        _busy(self.run_btn, False, "Explore")
+        self._worker = None
         self.log.append(f"Failed: {message}")
-
-
-def _gui_icon() -> QIcon:
-    """Return the moyo desktop logo as a QIcon (empty if the asset is missing)."""
-    icon_path = Path(__file__).resolve().parent / "assets" / "MoyoDesktopLogo.png"
-    return QIcon(str(icon_path)) if icon_path.is_file() else QIcon()
+        QMessageBox.critical(self, "Explore failed", message)
 
 
 class MoyoGUI(QMainWindow):
@@ -3244,6 +3339,7 @@ class MoyoGUI(QMainWindow):
         central_widget.setLayout(layout)
 
         self.tab_widget = QTabWidget()
+        self.tab_widget.addTab(MoyoScanTab(), "Moyo Scan")
         self.tab_widget.addTab(DataInputTab(), "Private Data Input")
         self.tab_widget.addTab(FAISSIndexTab(), "Create Private Index")
         self.tab_widget.addTab(GatherPublicSourcesTab(), "Gather Public Sources")
