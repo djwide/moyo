@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from moyo.order_storage import order_storage_folder
+
 ProgressFn = Callable[[str], None]
 
 
@@ -334,6 +336,8 @@ def submit_cloud_compute(
         seeds=seeds,
     )
     payload["orderId"] = order_id
+    folder = order_storage_folder(order_id, prompts)
+    payload["storageFolder"] = folder
 
     def _p(msg: str) -> None:
         if progress:
@@ -348,7 +352,7 @@ def submit_cloud_compute(
     if cfg.wait:
         wait_for_execution(cfg, execution, progress=_p)
         _p("Cloud execution finished.")
-    gcs_prefix = f"gs://senteguard-website-moyo-reports/reports/{order_id}/"
+    gcs_prefix = f"gs://senteguard-website-moyo-reports/reports/{folder}/"
     _p(f"Artifacts (when complete): {gcs_prefix}")
     return CloudSubmitResult(
         order_id=order_id,

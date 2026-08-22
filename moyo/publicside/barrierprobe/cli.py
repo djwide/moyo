@@ -308,21 +308,29 @@ def search(corpus_dir, query, k, similarity_threshold):
 @click.option('--private-index', '-r', type=click.Path(exists=True), required=True, help='Path to private index')
 @click.option('--similarity-threshold', default=0.8, help='Similarity threshold for breach detection')
 @click.option('--top-k', default=10, help='Number of top matches to analyze')
+@click.option('--neighborhood-k', default=20, show_default=True, help='Public neighbors for margin / entropy')
 @click.option('--llm-top-k', default=5, help='Top results to keep after LLM refinement')
 @click.option('--output-json', type=click.Path(), help='File to write JSON report')
 @click.option('--output-html', type=click.Path(), help='File to write HTML report')
-def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k, output_json, output_html):
+def analyze(public_index, private_index, similarity_threshold, top_k, neighborhood_k, llm_top_k, output_json, output_html):
     """Run barrier analysis with optional LLM refinement and export reports."""
 
     config = BarrierProbeConfig(
         public_index_path=public_index,
         private_index_path=private_index,
         similarity_threshold=similarity_threshold,
+        neighborhood_k=neighborhood_k,
     )
     analyzer = BarrierAnalyzer(config)
     result = analyzer.analyze_barriers(top_k=top_k)
     result = refine_suspicious_pairs(result, analyzer, top_k=llm_top_k)
 
+    sep = result.semantic_separation
+    click.echo(
+        f"Semantic Separation: {sep:.2f}" if sep is not None else "Semantic Separation: n/a"
+    )
+    click.echo(f"Pairwise Exposure: {result.pairwise_exposure}")
+    click.echo(f"Concentrated Matches: {result.concentrated_matches}")
     click.echo(f"Potential breaches found: {result.breach_count}")
 
     if output_json:
@@ -332,12 +340,37 @@ def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k,
 
     if output_html:
         lines = ["<html><body>", "<h1>Barrier Probe Report</h1>"]
+        sep = result.semantic_separation
+        sep_txt = f"{sep:.2f}" if sep is not None else "n/a"
+        lines.append(
+            f"<p>Semantic Separation: {sep_txt} &nbsp; "
+            f"Pairwise Exposure: {result.pairwise_exposure} &nbsp; "
+            f"Concentrated Matches: {result.concentrated_matches}</p>"
+        )
+        lines.append(
+            "<p>High Semantic Separation is not barrier integrity — "
+            "a single leaked fact may barely move corpus occupancy.</p>"
+        )
         lines.append(f"<p>Total breaches: {result.breach_count}</p>")
         lines.append("<table border='1'>")
-        lines.append("<tr><th>Rank</th><th>Distance</th><th>Public</th><th>Private</th></tr>")
+        lines.append(
+            "<tr><th>Rank</th><th>Distance</th><th>Margin</th>"
+            "<th>Norm. entropy</th><th>Concentrated</th>"
+            "<th>Public</th><th>Private</th></tr>"
+        )
         for breach in result.potential_breaches:
+            margin = breach.get("margin")
+            ent = breach.get("normalized_entropy")
             lines.append(
-                f"<tr><td>{breach.get('rank', '')}</td><td>{breach['distance']:.4f}</td><td>{breach['public_content']}</td><td>{breach['private_content']}</td></tr>"
+                "<tr>"
+                f"<td>{breach.get('rank', '')}</td>"
+                f"<td>{breach['distance']:.4f}</td>"
+                f"<td>{'' if margin is None else f'{margin:.4f}'}</td>"
+                f"<td>{'' if ent is None else f'{ent:.3f}'}</td>"
+                f"<td>{'yes' if breach.get('concentrated') else ''}</td>"
+                f"<td>{breach['public_content']}</td>"
+                f"<td>{breach['private_content']}</td>"
+                "</tr>"
             )
         lines.append("</table>")
         lines.append("</body></html>")
@@ -345,6 +378,63 @@ def analyze(public_index, private_index, similarity_threshold, top_k, llm_top_k,
         click.echo(f"HTML report written to {output_html}")
 
     return result
+
+
+@cli.command()
+@click.option('--public-index', '-p', type=click.Path(exists=True), required=True, help='Path to public index')
+@click.option('--private-index', '-r', type=click.Path(exists=True), required=True, help='Path to private index')
+@click.option(
+    '--profile',
+    type=click.Choice(['strict', 'balanced', 'recall'], case_sensitive=False),
+    default='balanced',
+    show_default=True,
+    help='strict = closest 5% of private phrases; balanced = 10%; recall = 25%',
+)
+@click.option('--output', '-o', type=click.Path(), help='Write calibration JSON to this file')
+def calibrate(public_index, private_index, profile, output):
+    """Recommend a cosine-distance threshold from nearest-neighbor distances.
+
+    Absolute distances do not transfer across embedding models. Re-run this
+    after rebuilding indexes with a different model.
+    """
+    config = BarrierProbeConfig(
+        public_index_path=public_index,
+        private_index_path=private_index,
+    )
+    analyzer = BarrierAnalyzer(config)
+    try:
+        result = analyzer.calibrate_threshold(profile=profile.lower())
+    except Exception as exc:
+        click.echo(f"Calibration failed: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    click.echo(f"Profile: {result.profile}")
+    if result.embedding_model:
+        click.echo(f"Embedding model: {result.embedding_model}")
+    click.echo(f"Private phrases: {result.n_private}")
+    click.echo(f"Recommended cosine-distance threshold: {result.recommended_distance:.4f}")
+    click.echo(
+        f"Would flag {result.n_flagged_at_recommended} / {result.n_private} "
+        "private phrases at that cutoff"
+    )
+    click.echo(
+        f"Distance stats: min={result.min_distance:.4f}  "
+        f"median={result.median_distance:.4f}  max={result.max_distance:.4f}"
+    )
+    click.echo("Profile cutoffs:")
+    for name, value in result.profiles.items():
+        click.echo(f"  {name:9s}  {value:.4f}")
+    click.echo("Pairs that would fire at reference cutoffs:")
+    for cutoff, count in result.fire_counts.items():
+        click.echo(f"  <= {cutoff}  {count}")
+    for note in result.notes:
+        click.echo(f"• {note}")
+
+    if output:
+        Path(output).write_text(
+            json.dumps(result.to_dict(), indent=2), encoding="utf-8"
+        )
+        click.echo(f"Wrote {output}")
 
 
 @cli.command()

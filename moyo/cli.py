@@ -79,13 +79,20 @@ def info_cmd() -> None:
         click.echo(f"Embedding Dimension: {embedding_dim}")
     
     # Check for data directories
-    data_dirs = ['indexes/private', 'indexes/public', 'data/private', 'data/public']
+    data_dirs = ['projects']
     click.echo("\nData Directories:")
     for dir_path in data_dirs:
         if Path(dir_path).exists():
             click.echo(f"  ✅ {dir_path}")
         else:
             click.echo(f"  ❌ {dir_path} (not found)")
+    from moyo.project import list_projects, projects_root
+    click.echo(f"\nProjects ({projects_root()}):")
+    named = list_projects()
+    if not named:
+        click.echo("  (none — create one in the GUI or: python -c \"from moyo.project import create_project; create_project('my-case')\")")
+    for proj in named:
+        click.echo(f"  • {proj.name}  {proj.root}")
 
 
 @cli.command(name="setup")
@@ -93,10 +100,7 @@ def info_cmd() -> None:
 def setup_cmd(force: bool) -> None:
     """Set up initial directory structure and configuration."""
     dirs_to_create = [
-        'indexes/private',
-        'indexes/public', 
-        'data/private',
-        'data/public',
+        'projects',
         'logs'
     ]
     

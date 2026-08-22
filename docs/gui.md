@@ -55,11 +55,15 @@ If the window does not appear, check `/tmp/moyo-gui-launch.log` in WSL (or
 
 ## Tabs
 
-The main window exposes 8 tabs, mirroring the moyo CLI commands.
+The main window has a **Project** bar: pick an existing engagement, **New…**
+(creates `projects/<slug>/`), or **Open folder…**. Phrases, FAISS indexes, and
+public sources all live inside that project directory. Tabs search the current
+project for `phrases/corpus.jsonl`, `*.faiss`, `sources.json`, and
+`exploration.md`, and corpus / FAISS builds default to that folder.
 
 | Tab                       | Backed by                                              |
 | ------------------------- | ------------------------------------------------------ |
-| Private Data Input        | `moyo.privateside.datainput`                           |
+| Private Data Input        | `moyo.privateside.phrases` (per-project phrase store)  |
 | Create Private Index      | `shared_utils.embeddings` + `shared_utils.faiss_index` |
 | Gather Public Sources     | `moyo.publicside.gatherpublicsources.PublicSourcesCrawler` |
 | Build Public Corpus       | `moyo.publicside.barrierprobe.PublicIndexBuilder`      |
@@ -68,19 +72,42 @@ The main window exposes 8 tabs, mirroring the moyo CLI commands.
 | LLM Fuzzer                | `moyo.publicside.barrierprobe.LLMFuzzer`               |
 | Visualize Indices         | matplotlib + sklearn (+ optional UMAP / scipy)         |
 
+Each project looks like:
+
+```
+projects/<slug>/
+  phrases/                 pending.jsonl, corpus.jsonl, corpus.txt
+  indexes/private/         private FAISS
+  indexes/public/          public FAISS
+  public_sources/          crawl / explore outputs
+  compare/                 last Kimi naive-compare result
+```
+
 ### Private Data Input
 
-Chunk and prepare text from direct input, a single file, or a folder. Inputs
-are written to JSON that the **Create Private Index** tab can read.
+Chunk and prepare text from direct input, a single file, or a folder. Kimi
+extracts sensitive phrases into **this project's** `phrases/` store. Approve
+them here; **Create Private Index** embeds those approved phrases into the
+project's private FAISS index.
+
+**Naive corpus compare (Kimi)** — same pane as on Build Report. Sends
+approved phrases plus `extracted.json` (else `exploration.md` /
+`sources.json`) to Moonshot Kimi and shows how the two differ: three
+buckets (private-only / already public / public-only), a phrase table, and
+a bar of private-only phrases by label. Requires `MOONSHOT_API_KEY`. Result
+is saved to `projects/<slug>/compare/last.json`. This is a qualitative
+judgment, not Barrier Probe cosine distance.
 
 ### Create Private Index
 
-Embed prepared chunks and write a FAISS index (`flat`, `ivf`, or `hnsw`).
+Embed prepared chunks and write a FAISS index (`flat`, `ivf`, or `hnsw`) under
+the current project's `indexes/private/` (or `indexes/public/` if you switch
+the destination).
 
-Choose an **embedding model** from the shared catalog (MiniLM, MPNet, BGE,
-E5, multilingual, OpenAI) and a **device** (`Auto` / `CUDA` / `CPU`). See
-[`docs/embeddings.md`](embeddings.md) for tier recommendations. Public and
-private indices must use the same model.
+Choose an **embedding model** from the shared catalog (default **BGE-base**,
+plus MiniLM, MPNet, E5, multilingual, OpenAI) and a **device** (`Auto` /
+`CUDA` / `CPU`). See [`docs/embeddings.md`](embeddings.md) for tier
+recommendations. **Public and private indexes must use the same model.**
 
 ### Gather Public Sources
 
@@ -88,16 +115,16 @@ Two modes:
 
 1. **Crawl** — topic or token list → `sources.json` for the public corpus builder.
    Parameters: max per source, max total, request delay, source-type filters,
-   output directory. Bundled adapters may need real endpoints; see
-   [`docs/crawler.md`](crawler.md).
+   output directory. Adapters call public APIs (PatentsView/Google Patents,
+   GDELT, GitHub, arXiv/OpenAlex, NVD/GHSA); see [`docs/crawler.md`](crawler.md).
 
 2. **Naive prompt (AI explore)** — one or more plain-language prompts (one per line) → multi-LLM fan-out per prompt
    report. Pick fuzz mode **basic** or **multilingual** (extra languages when
    multilingual). Choose **Compute location**:
 
    - **Local** — runs in this GUI process. Writes `exploration.md` under
-     `data/public_sources/<slug>/`. Uses local Ollama for rewording and
-     `config/retrieval_llms.json` for fan-out.
+     the current project's `public_sources/<slug>/`. Uses local Ollama for
+     rewording and `config/retrieval_llms.json` for fan-out.
    - **Cloud** — writes a Firestore order and executes the Cloud Run job
      `moyo-report-worker` (explore → extract → cluster → PDFs). Rewording,
      translation, clustering, and summaries use OpenRouter Llama 3.1 8B
@@ -109,11 +136,31 @@ Two modes:
 
 ### Build Public Corpus
 
-Loads `sources.json` files emitted by the previous tab and builds a FAISS
-index. Exposes the full `IndexConfig`: embedding model + device, chunk
-size/overlap, min/max chunk length, source-type / relevance / confidence
-filters, deduplication and normalization toggles, and index type. Model
-tiers are documented in [`docs/embeddings.md`](embeddings.md).
+Defaults to the current project's `public_sources/` folder — the same
+directory **Gather Public Sources** writes to. Loads both artifacts gather
+produces:
+
+- `sources.json` — topic / token crawl
+- `exploration.md` — naive-prompt explore
+
+Click **Extract relevant text (Kimi)** to pull relevant passages from
+`sources.json` / `exploration.md`. A determinate progress bar counts Kimi
+windows toward completion. Optional **direction** is appended after each
+source (`direction: …`). The extracted corpus is written to
+`public_sources/extracted.json`; the GUI shows that path and tells you when
+the write finishes.
+
+CLI: `moyo-gather extract --project <slug>` (same progress bar on stderr).
+
+**Build Index** and **Naive corpus compare** both read `extracted.json`, not
+the raw gather dump. Extract first.
+
+Then builds a FAISS index. Exposes the full `IndexConfig`: embedding model +
+device, chunk size/overlap, min/max chunk length, source-type / relevance /
+confidence filters, deduplication and normalization toggles, and index type.
+**Private and public indexes must use the same embedding model.** Model tiers
+are documented in [`docs/embeddings.md`](embeddings.md). The default is
+`bge-base`.
 
 ### Build Report
 
@@ -125,6 +172,9 @@ worker as explore: re-runs the prompt, does not upload `exploration.md`).
 skipped if their artifacts already exist). The local GUI and the website admin
 QC panel use the same list. Locally you pick an `exploration.md` on disk;
 admin QC uses the order's Storage artifacts and the existing Cloud Run worker.
+
+The same **Naive corpus compare (Kimi)** pane as Private Data Input lives
+here so you can run it against the exploration.md selected for the report.
 
 | Stage | What it does |
 | ----- | ------------ |
@@ -140,10 +190,13 @@ admin QC uses the order's Storage artifacts and the existing Cloud Run worker.
 
 Compares a public and a private index. For each private chunk it finds the
 nearest public neighbour and assigns a risk level by cosine distance
-(`≤0.1` high, `≤0.3` medium, otherwise low). Results land in a sortable,
-colour-coded table, with one-click export to JSON or HTML. The probe must
-be configured with matching chunk granularity and the same embedding model
-on both sides.
+(`≤0.1` high, `≤0.3` medium, otherwise low). A second layer reports
+**Semantic Separation** (JS over cluster occupancy), **Pairwise Exposure**,
+and **Concentrated Matches** (close pairs with a large top-1/top-2 margin
+or low top-k entropy). High Semantic Separation is not barrier integrity.
+Results land in a sortable, colour-coded table, with one-click export to
+JSON or HTML. The probe must be configured with matching chunk granularity
+and the same embedding model on both sides.
 
 ### LLM Fuzzer
 

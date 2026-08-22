@@ -5,23 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from graphics.exposure_score import exposure_radar_svg, sensitivity_bars_svg
+from graphics.exposure_score import exposure_radar_svg, llm_findings_bars_svg
 from graphics.heatmap import model_heatmap_svg
 from graphics.graph import evidence_graph_svg
 from graphics.style import normalize_svg_for_embed
+from pipeline.score import aggregate_findings_by_llm
 
 # Filenames under ``<run_dir>/assets/`` (editable before PDF rebuild).
 ASSET_NAMES = {
     "exposure_radar": "exposure-radar.svg",
     "model_heatmap": "model-heatmap.svg",
-    "sensitivity_distribution": "sensitivity-distribution.svg",
+    "findings_by_llm": "findings-by-llm.svg",
     "evidence_graph": "evidence-graph.svg",
 }
 
 DEFAULT_EMIT = [
     "exposure_radar",
     "model_heatmap",
-    "sensitivity_distribution",
+    "findings_by_llm",
     "evidence_graph",
 ]
 
@@ -101,10 +102,14 @@ def generate_graphics(
             report_data.get("findings") or [], aliases=aliases
         )
 
-    if "sensitivity_distribution" in emit:
-        graphics["sensitivity_distribution"] = sensitivity_bars_svg(
-            report_data.get("sensitivity_bins") or {}
+    if "findings_by_llm" in emit:
+        findings = report_data.get("findings") or []
+        rows = (
+            aggregate_findings_by_llm(findings, aliases)
+            if findings
+            else (report_data.get("findings_by_llm") or [])
         )
+        graphics["findings_by_llm"] = llm_findings_bars_svg(rows)
 
     if "evidence_graph" in emit:
         graphics["evidence_graph"] = evidence_graph_svg(

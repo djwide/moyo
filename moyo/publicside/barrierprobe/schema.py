@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import Enum
 
 from ..gatherpublicsources.schema import PublicSource, SourceType
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 
 class IndexType(str, Enum):
@@ -19,10 +20,11 @@ class IndexType(str, Enum):
 class IndexConfig(BaseModel):
     """Configuration for building FAISS indexes."""
     index_type: IndexType = IndexType.FLAT
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = DEFAULT_MODEL_NAME
     embedding_device: str = "auto"  # auto | cuda | cpu (unused for Ollama; kept for compat)
     chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_overlap: int = 50  # ~10% of chunk_size; must match the private index
+    max_tokens: Optional[int] = None  # derived from embedding_model when unset
     normalize_embeddings: bool = True
     save_metadata: bool = True
     output_directory: str = "indexes/public"
@@ -33,7 +35,7 @@ class IndexConfig(BaseModel):
     ef_construction: int = 200  # For HNSW
     nbits: int = 8  # For PQ
     
-    # Filtering
+    # Filtering — min applies to section chunks only (sentence/item stay)
     min_chunk_length: int = 50
     max_chunk_length: int = 2000
     deduplication_enabled: bool = True
@@ -112,6 +114,10 @@ class BarrierProbeConfig(BaseModel):
     output_directory: str = "data/barrierprobe/results"
     save_detailed_results: bool = True
     include_metadata: bool = True
+    # Distribution layer (JS / entropy / margin) sits on top of cosine NN.
+    neighborhood_k: int = 20
+    softmax_temperature: float = 0.10
+    cluster_count: Optional[int] = None
 
 
 class BarrierProbeResult(BaseModel):
@@ -129,3 +135,8 @@ class BarrierProbeResult(BaseModel):
     processing_time: float = 0.0
     recommendations: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # Distribution layer headline. High semantic_separation is not integrity.
+    semantic_separation: Optional[float] = None
+    pairwise_exposure: str = "None"
+    concentrated_matches: int = 0
+    distribution_diagnostics: Dict[str, Any] = Field(default_factory=dict)

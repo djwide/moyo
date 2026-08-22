@@ -18,12 +18,16 @@ from shared_utils import (
     FAISSIndex,
     ensure_directory,
 )
+from shared_utils.chunking import keep_granular_chunk, resolve_chunk_max_tokens
+from shared_utils.index_spec import spec_from_config
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 from .validators import validate_text, validate_file_path, validate_file_content, get_file_info
 from .loaders import load_file_by_type, get_supported_extensions
 
 logger = logging.getLogger(__name__)
 
-# All private-side FAISS indexes live here, one subdirectory per corpus.
+# Private-side FAISS indexes used to live here. New indexes belong under
+# projects/<name>/indexes/private/. Callers should pass output_dir explicitly.
 PRIVATE_INDEX_ROOT = "indexes/private"
 
 
@@ -57,10 +61,15 @@ class ProcessingResult:
 class ProcessingConfig:
     """Configuration for text processing and indexing."""
     chunk_size: int = 512
-    chunk_overlap: int = 50
-    embedding_model: str = "all-MiniLM-L6-v2"
+    chunk_overlap: int = 50  # ~10% of chunk_size
+    max_tokens: Optional[int] = None
+    embedding_model: str = DEFAULT_MODEL_NAME
+    embedding_device: str = "auto"
     batch_size: int = 32
     index_type: str = "flat"  # "flat", "ivf", "hnsw"
+    normalize_embeddings: bool = True
+    min_chunk_length: int = 50
+    max_chunk_length: int = 2000
     save_index: bool = True
     output_dir: str = PRIVATE_INDEX_ROOT  # root for per-corpus index subdirectories
     
@@ -117,11 +126,35 @@ class GUIBridge:
             
             # Chunk at multiple granularities so list items, bullets, and short
             # idea lines become their own vectors (not just diluted section text).
+            max_tokens = resolve_chunk_max_tokens(
+                self.config.embedding_model, self.config.max_tokens
+            )
+            self.config.max_tokens = max_tokens
             granular = chunk_text_multi_granularity(
                 text,
                 chunk_size=self.config.chunk_size,
                 overlap=self.config.chunk_overlap,
+                max_tokens=max_tokens,
             )
+            if not granular:
+                result.message = "No valid chunks created from text"
+                return result
+
+            child_parents = {
+                gc.parent_index for gc in granular if gc.parent_index is not None
+            }
+            granular = [
+                gc
+                for gc in granular
+                if keep_granular_chunk(
+                    gc.level,
+                    gc.text,
+                    min_section_chars=self.config.min_chunk_length,
+                    max_section_chars=self.config.max_chunk_length,
+                    has_finer_children=gc.index in child_parents,
+                    keep_short_atomic=True,
+                )
+            ]
             if not granular:
                 result.message = "No valid chunks created from text"
                 return result
@@ -153,7 +186,13 @@ class GUIBridge:
                 })
             
             # Embed chunks
-            embeddings = embed(chunks, self.config.embedding_model, self.config.batch_size)
+            embeddings = embed(
+                chunks,
+                self.config.embedding_model,
+                self.config.batch_size,
+                normalize=self.config.normalize_embeddings,
+                device=getattr(self.config, "embedding_device", "auto"),
+            )
             
             # Create or update index
             if self.current_index is None:
@@ -314,7 +353,12 @@ class GUIBridge:
         
         try:
             # Embed the query
-            query_embeddings = embed([query], self.config.embedding_model)
+            query_embeddings = embed(
+                [query],
+                self.config.embedding_model,
+                normalize=self.config.normalize_embeddings,
+                device=getattr(self.config, "embedding_device", "auto"),
+            )
             if not query_embeddings:
                 return {
                     "success": False,
@@ -412,7 +456,13 @@ class GUIBridge:
             index_dir = Path(self.config.output_dir) / corpus_name
             ensure_directory(index_dir)
             
-            index_path = self.current_index.save(index_dir, name=corpus_name)
+            index_path = self.current_index.save(
+                index_dir,
+                name=corpus_name,
+                extra_info=spec_from_config(
+                    self.config, granularity="multi"
+                ).to_dict(),
+            )
             return str(index_path)
             
         except Exception as e:

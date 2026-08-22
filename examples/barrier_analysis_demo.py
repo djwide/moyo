@@ -214,6 +214,12 @@ def demonstrate_barrier_analysis(public_index_path: str, private_index_path: str
     print(f"\n=== Analysis Results ===")
     print(f"Probe ID: {result.probe_id}")
     print(f"Processing time: {result.processing_time:.2f}s")
+    sep = result.semantic_separation
+    print(
+        f"Semantic Separation: {sep:.2f}" if sep is not None else "Semantic Separation: n/a"
+    )
+    print(f"Pairwise Exposure: {result.pairwise_exposure}")
+    print(f"Concentrated Matches: {result.concentrated_matches}")
     
     # Index information
     print(f"\nIndex Information:")

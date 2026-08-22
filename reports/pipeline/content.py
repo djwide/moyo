@@ -618,13 +618,17 @@ def build_content_doc(
             "executive_summary": exec_page,
             "risk_overview": {
                 "body": (
-                    "Severity distribution and multi-axis exposure scores "
-                    "summarize how models disclosed sensitive or specific material."
+                    "Which models disclosed the most material, and how sensitive "
+                    "those findings are, plus multi-axis exposure scores across "
+                    "the run."
                 ),
                 "chart_captions": {
-                    "sensitivity_distribution": (
-                        "Findings by sensitivity: how many findings fall into "
-                        "high, medium, low, and informational sensitivity bands."
+                    "findings_by_llm": (
+                        "Findings by LLM: each tested model is scored by how "
+                        "many findings it produced and how sensitive those "
+                        "findings are. Bar height is the sum of finding "
+                        "sensitivities; color shows the high / medium / low / "
+                        "informational mix."
                     ),
                     "exposure_radar": (
                         "Finding classification profile: average specificity, "
@@ -684,6 +688,7 @@ def build_content_doc(
         "glossary": glossary_groups(),
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],
         "model_exposure": report_data.get("model_exposure") or [],
+        "findings_by_llm": report_data.get("findings_by_llm") or [],
         "chains": report_data.get("chains") or [],
         "followups": followups,
         "radar_averages": report_data.get("radar_averages") or {},

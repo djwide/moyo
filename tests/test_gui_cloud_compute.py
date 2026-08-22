@@ -35,6 +35,16 @@ def test_build_order_payload_shape():
     assert payload["includeRemediation"] is True
 
 
+def test_order_storage_folder_for_gui_id():
+    from moyo.order_storage import order_storage_folder
+
+    folder = order_storage_folder(
+        "ord_gui_20260821T085712Z_a3f9c2e1",
+        ["What happened at Enron?"],
+    )
+    assert folder == "what_happened_at_a3f9c2e1"
+
+
 def test_firestore_value_encodes_lists_and_bools():
     doc = firestore_document(
         {"prompts": ["a", "b"], "paid": True, "seeds": 3, "empty": None}

@@ -137,7 +137,7 @@ export MOYO_PIPELINE_BATCH_SIZE=2000
 export MOYO_PIPELINE_MAX_WORKERS=8
 
 # Embedding
-export MOYO_EMBEDDING_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
+export MOYO_EMBEDDING_MODEL_NAME=BAAI/bge-base-en-v1.5
 export MOYO_EMBEDDING_DEVICE=auto   # or cuda | cpu
 
 # FAISS
@@ -164,7 +164,7 @@ take precedence):
 MOYO_ENVIRONMENT=production
 MOYO_LOG_LEVEL=INFO
 MOYO_PROMETHEUS_PORT=8000
-MOYO_EMBEDDING_MODEL_NAME=sentence-transformers/all-mpnet-base-v2
+MOYO_EMBEDDING_MODEL_NAME=BAAI/bge-base-en-v1.5
 MOYO_EMBEDDING_DEVICE=cuda
 ```
 

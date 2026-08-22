@@ -8,7 +8,20 @@ The barrier analysis module provides tools to:
 
 1. **Find closest matches** between public and private information using cosine distance
 2. **Identify potential breaches** based on similarity thresholds
-3. **Generate recommendations** for information barrier management
+3. **Score neighborhood specificity** (NN margin + top-k entropy) and **semantic distribution separation** (JS over cluster occupancy)
+4. **Generate recommendations** for information barrier management
+
+Analysis is three layers on the same cosine matrix:
+
+| Level | Question | Metric |
+| --- | --- | --- |
+| Pair | Which public passage is closest? | Cosine NN distance |
+| Neighborhood | Is that match specific or generic topic overlap? | Top-1/top-2 margin; normalized entropy over *k*=20 public neighbors |
+| Corpus | How much semantic territory is shared? | JS distance over joint cluster occupancy (**Semantic Separation**) |
+
+Headline trio: `Semantic Separation`, `Pairwise Exposure`, `Concentrated Matches`. Directional KL (private→public and public→private) is stored as a diagnostic only.
+
+High Semantic Separation is **not** barrier integrity. One leaked sensitive fact can barely move global occupancy.
 
 ## Key Concepts
 
@@ -33,6 +46,14 @@ round of iterative LLM refinement on the suspicious pairs before reporting.
 
 #### Basic Analysis
 ```bash
+# Calibrate a cosine-distance cutoff from unlabeled nearest neighbors.
+# Re-run after any embedding-model change — MiniLM distances are not
+# valid on MPNet/BGE.
+moyo-probe calibrate \
+    --public-index /path/to/public/index \
+    --private-index /path/to/private/index \
+    --profile balanced
+
 # Analyze barriers between public and private indexes
 moyo-probe analyze \
     --public-index /path/to/public/index \
@@ -129,6 +150,10 @@ The analysis provides several key metrics:
 Probe ID: probe_20231201_123456
 Processing time: 2.34s
 
+Semantic Separation: 0.63
+Pairwise Exposure: High
+Concentrated Matches: 7
+
 Index Information:
   Public chunks: 150
   Private chunks: 75
@@ -164,7 +189,7 @@ Recommendations:
 |-----------|------|---------|-------------|
 | `public_index_path` | str | Required | Path to public FAISS index |
 | `private_index_path` | str | Required | Path to private FAISS index |
-| `similarity_threshold` | float | 0.8 | Threshold for breach detection |
+| `similarity_threshold` | float | 0.8 | Cosine-**distance** cutoff (smaller = closer). Calibrate with `moyo-probe calibrate`; do not reuse across embedding models. |
 | `max_comparisons` | int | 1000 | Maximum comparisons to perform |
 | `output_directory` | str | "data/barrierprobe/results" | Output directory for results |
 | `save_detailed_results` | bool | True | Save detailed results to file |
@@ -187,9 +212,13 @@ Recommendations:
 - Update similarity thresholds based on organizational needs
 
 ### 2. Threshold Tuning
-- Start with conservative thresholds (0.8-0.9)
-- Adjust based on false positive/negative rates
-- Consider different thresholds for different content types
+- Run `moyo-probe calibrate` (or **Calibrate Threshold** in the GUI) after
+  every index rebuild. Profiles: `strict` (closest 5%), `balanced` (10%),
+  `recall` (25%).
+- The field is a cosine **distance** cutoff (`distance <= threshold`), not
+  cosine similarity. The default 0.8 is intentionally loose.
+- Do not copy a MiniLM cutoff onto MPNet/BGE — absolute distances do not
+  transfer across embedding spaces.
 
 ### 3. Content Review
 - Manually review all high-risk breaches

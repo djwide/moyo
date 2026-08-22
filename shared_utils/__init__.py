@@ -10,6 +10,8 @@ from .embeddings import (
     cuda_available,
     get_device_info,
     clear_embedding_cache,
+    l2_normalize,
+    resolve_normalize,
 )
 from .chunking import (
     chunk_text,
@@ -18,6 +20,17 @@ from .chunking import (
     chunk_text_multi_granularity,
     GranularChunk,
     estimate_token_count,
+    default_chunk_overlap,
+    resolve_chunk_max_tokens,
+    keep_granular_chunk,
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_MIN_SECTION_CHARS,
+)
+from .index_spec import (
+    IndexBuildSpec,
+    spec_from_config,
+    load_index_spec,
+    compare_index_specs,
 )
 from .faiss_index import FAISSIndex, StringStore, build_index, build_index_from_text
 from .storage import ensure_directory, list_files, copy_directory, get_storage, LocalStorage
@@ -101,13 +114,24 @@ __all__ = [
     "resolve_device",
     "cuda_available",
     "get_device_info",
-    "clear_embedding_cache", 
+    "clear_embedding_cache",
+    "l2_normalize",
+    "resolve_normalize",
     "chunk_text",
     "chunk_text_simple",
     "chunk_lines",
     "chunk_text_multi_granularity",
     "GranularChunk",
     "estimate_token_count",
+    "default_chunk_overlap",
+    "resolve_chunk_max_tokens",
+    "keep_granular_chunk",
+    "DEFAULT_CHUNK_SIZE",
+    "DEFAULT_MIN_SECTION_CHARS",
+    "IndexBuildSpec",
+    "spec_from_config",
+    "load_index_spec",
+    "compare_index_specs",
     "FAISSIndex",
     "StringStore",
     "build_index",

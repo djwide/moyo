@@ -24,6 +24,8 @@ from shared_utils import (
     ensure_directory,
     generate_id,
 )
+from shared_utils.chunking import keep_granular_chunk, resolve_chunk_max_tokens
+from shared_utils.index_spec import spec_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +124,15 @@ class PublicIndexBuilder:
         # Chunk the content at multiple granularities (variable-size section
         # chunks plus their sentence sub-chunks) so short/paraphrased queries can
         # match a fine-grained unit instead of a diluted whole-chunk vector.
+        max_tokens = resolve_chunk_max_tokens(
+            self.config.embedding_model, getattr(self.config, "max_tokens", None)
+        )
+        self.config.max_tokens = max_tokens
         granular_chunks = chunk_text_multi_granularity(
             source.content,
             chunk_size=self.config.chunk_size,
             overlap=self.config.chunk_overlap,
+            max_tokens=max_tokens,
         )
         
         source_metadata = {
@@ -142,15 +149,20 @@ class PublicIndexBuilder:
         
         # Map each granular chunk's local index to the PublicChunk id we assign,
         # so sentence chunks can reference their parent section chunk.
+        child_parents = {
+            gc.parent_index for gc in granular_chunks if gc.parent_index is not None
+        }
         index_to_id: Dict[int, str] = {}
         for gc in granular_chunks:
-            # Size filters apply to section-level chunks only; sentence sub-chunks
-            # are intentionally short and are pre-filtered by the chunker.
-            if gc.level == "section":
-                if len(gc.text) < self.config.min_chunk_length:
-                    continue
-                if len(gc.text) > self.config.max_chunk_length:
-                    continue
+            if not keep_granular_chunk(
+                gc.level,
+                gc.text,
+                min_section_chars=self.config.min_chunk_length,
+                max_section_chars=self.config.max_chunk_length,
+                has_finer_children=gc.index in child_parents,
+                keep_short_atomic=False,
+            ):
+                continue
             
             # Positions are best-effort: sentence text is whitespace-normalized
             # and may not be a verbatim substring of the raw source.
@@ -263,6 +275,7 @@ class PublicIndexBuilder:
                 chunk_texts,
                 model_name=self.config.embedding_model,
                 batch_size=32,
+                normalize=self.config.normalize_embeddings,
                 device=getattr(self.config, "embedding_device", "auto"),
             )
             
@@ -362,7 +375,11 @@ class PublicIndexBuilder:
             
             # Save FAISS index, named after the public index
             if self.faiss_index:
-                self.faiss_index.save(index_dir, name=public_index.id)
+                self.faiss_index.save(
+                    index_dir,
+                    name=public_index.id,
+                    extra_info=spec_from_config(self.config).to_dict(),
+                )
             
             # Save chunks
             chunks_path = index_dir / "chunks.json"
@@ -404,6 +421,7 @@ class PublicIndexBuilder:
             query_embedding = embed(
                 [query],
                 model_name=self.config.embedding_model,
+                normalize=self.config.normalize_embeddings,
                 device=getattr(self.config, "embedding_device", "auto"),
             )[0]
             

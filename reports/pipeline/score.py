@@ -33,6 +33,86 @@ def _alias(model: str, aliases: dict[str, str]) -> str:
     return short[:18] if short else model[:18]
 
 
+def _sensitivity_band(sensitivity: int) -> str:
+    if sensitivity >= 4:
+        return "high"
+    if sensitivity == 3:
+        return "medium"
+    if sensitivity == 2:
+        return "low"
+    return "informational"
+
+
+def _source_models(claim: dict, aliases: dict[str, str]) -> list[str]:
+    models = claim.get("source_models")
+    if not isinstance(models, list) or not models:
+        models = [claim.get("source_model")]
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in models:
+        if not raw:
+            continue
+        name = _alias(str(raw), aliases)
+        if name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def aggregate_findings_by_llm(
+    claims: list[dict],
+    aliases: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Score each test LLM by finding quantity and sensitivity.
+
+    Bar height (``score``) is the sum of finding sensitivities attributed to
+    that model, so more findings and more sensitive findings both rank higher.
+    ``bands`` splits that score (and the raw counts) into high / medium / low /
+    informational so the chart can stack by sensitivity.
+    """
+    aliases = aliases or {}
+    band_keys = ("high", "medium", "low", "informational")
+    rows: dict[str, dict[str, Any]] = {}
+    for claim in claims or []:
+        sens = int(claim.get("sensitivity", 0) or 0)
+        band = _sensitivity_band(sens)
+        for name in _source_models(claim, aliases):
+            row = rows.get(name)
+            if row is None:
+                row = {
+                    "model": name,
+                    "count": 0,
+                    "score": 0.0,
+                    "bands": {
+                        k: {"count": 0, "score": 0.0} for k in band_keys
+                    },
+                }
+                rows[name] = row
+            row["count"] += 1
+            row["score"] += float(sens)
+            row["bands"][band]["count"] += 1
+            row["bands"][band]["score"] += float(sens)
+
+    ranked: list[dict[str, Any]] = []
+    for row in sorted(rows.values(), key=lambda r: (-float(r["score"]), -int(r["count"]), str(r["model"]))):
+        ranked.append(
+            {
+                "model": row["model"],
+                "count": int(row["count"]),
+                "score": round(float(row["score"]), 2),
+                "bands": {
+                    k: {
+                        "count": int(v["count"]),
+                        "score": round(float(v["score"]), 2),
+                    }
+                    for k, v in row["bands"].items()
+                },
+            }
+        )
+    return ranked
+
+
 def score_report(
     claims: list[dict],
     clusters: list[dict],
@@ -62,16 +142,12 @@ def score_report(
     model_scores: dict[str, float] = defaultdict(float)
     model_counts: dict[str, int] = defaultdict(int)
     for c in claims:
-        models = c.get("source_models")
-        if not isinstance(models, list) or not models:
-            models = [c.get("source_model")]
         weight = float(c.get("sensitivity", 0)) * float(c.get("specificity", 0))
-        for raw in models:
-            if not raw:
-                continue
-            m = _alias(str(raw), aliases)
+        for m in _source_models(c, aliases):
             model_scores[m] += weight
             model_counts[m] += 1
+
+    findings_by_llm = aggregate_findings_by_llm(claims, aliases)
 
     if model_scores:
         peak = max(model_scores.values()) or 1.0
@@ -187,6 +263,7 @@ def score_report(
             "badges": badges,
         },
         "model_exposure": model_exposure,
+        "findings_by_llm": findings_by_llm,
         "exposure_chain": chain,
         "what_else": what_else,
         "findings": ranked,

@@ -11,6 +11,45 @@ import pytest
 import cloud_worker as cw
 
 
+def test_slugify_first_words_takes_first_three():
+    from moyo.order_storage import slugify_first_words
+
+    assert slugify_first_words("Tell me about SenteGuard founder") == "tell_me_about"
+    assert slugify_first_words("Enron") == "enron"
+    assert slugify_first_words("") == "report"
+
+
+def test_order_storage_folder_is_prompt_words_not_ord_id():
+    from moyo.order_storage import order_storage_folder
+
+    folder = order_storage_folder(
+        "ord_gui_20260821T085712Z_a3f9c2e1",
+        ["Tell me about SenteGuard founder David Weidman"],
+    )
+    assert folder == "tell_me_about_a3f9c2e1"
+    assert not folder.startswith("ord_")
+
+
+def test_parse_order_storage_folder_from_prompt():
+    spec = cw.parse_order(
+        "ord_gui_20260821T085712Z_a3f9c2e1",
+        {"product": "snapshot", "prompts": ["Tell me about Enron"]},
+    )
+    assert spec.storage_folder == "tell_me_about_a3f9c2e1"
+
+
+def test_parse_order_honors_storage_folder_field():
+    spec = cw.parse_order(
+        "ord_x",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "storageFolder": "custom_folder",
+        },
+    )
+    assert spec.storage_folder == "custom_folder"
+
+
 def test_storage_bucket_name_prefers_explicit_env(monkeypatch):
     monkeypatch.setenv("STORAGE_BUCKET", "my-bucket")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
@@ -596,7 +635,8 @@ def test_output_paths_prefer_canonical_root():
 
 def test_success_update_fields_awaiting_qc_when_qc_required():
     spec = cw.OrderSpec(order_id="ord", prompts=["Enron"], qc_required=True)
-    urls = {"reports/ord/report.pdf": "gs://b/reports/ord/report.pdf"}
+    folder = spec.storage_folder
+    urls = {f"reports/{folder}/report.pdf": f"gs://b/reports/{folder}/report.pdf"}
     fields = cw.success_update_fields(
         spec,
         started="2026-08-18T00:00:00+00:00",
@@ -607,9 +647,11 @@ def test_success_update_fields_awaiting_qc_when_qc_required():
     assert fields["reportStatus"] == "awaiting_qc"
     assert fields["qcStatus"] == "pending"
     assert fields["qcRequired"] is True
+    assert fields["storageFolder"] == folder
     assert "deliveredAt" not in fields
-    assert fields["output"]["pdfPath"] == "reports/ord/report.pdf"
+    assert fields["output"]["pdfPath"] == f"reports/{folder}/report.pdf"
     assert fields["reportStatus"] != "qc_pending"
+    assert folder == "enron_ord"
 
 
 def test_success_update_fields_delivered_when_qc_not_required():
@@ -623,14 +665,18 @@ def test_success_update_fields_delivered_when_qc_not_required():
         spec,
         started="2026-08-18T00:00:00+00:00",
         finished="2026-08-18T01:00:00+00:00",
-        urls={"reports/ord/report.json": "gs://b/reports/ord/report.json"},
+        urls={
+            f"reports/{spec.storage_folder}/report.json": (
+                f"gs://b/reports/{spec.storage_folder}/report.json"
+            )
+        },
         manifest={"orderId": "ord"},
     )
     assert fields["reportStatus"] == "delivered"
     assert fields["qcStatus"] == "not_required"
     assert fields["deliveredAt"] == "2026-08-18T01:00:00+00:00"
     assert fields["generationMode"] == "full"
-    assert fields["output"]["jsonPath"] == "reports/ord/report.json"
+    assert fields["output"]["jsonPath"] == f"reports/{spec.storage_folder}/report.json"
     assert fields["qcRequired"] is False
 
 
@@ -672,7 +718,11 @@ def test_agent_report_json_is_machine_readable(tmp_path: Path):
     assert payload["findings"][0]["claim"] == "SPE debt was hidden"
     assert payload["citations"] == ["https://example.com/10k"]
     dest = cw.write_canonical_report_json(spec, [run], tmp_path / "report.json")
-    urls = {f"reports/{spec.order_id}/report.json": f"gs://b/reports/{spec.order_id}/report.json"}
+    urls = {
+        f"reports/{spec.storage_folder}/report.json": (
+            f"gs://b/reports/{spec.storage_folder}/report.json"
+        )
+    }
     fields = cw.success_update_fields(
         spec,
         started="2026-08-18T00:00:00+00:00",
@@ -682,7 +732,7 @@ def test_agent_report_json_is_machine_readable(tmp_path: Path):
     )
     assert dest.is_file()
     assert fields["reportStatus"] == "delivered"
-    assert fields["output"]["jsonPath"] == "reports/ord_agent/report.json"
+    assert fields["output"]["jsonPath"] == f"reports/{spec.storage_folder}/report.json"
 
 
 def test_parse_order_snapshot_mpp_is_queued_shape():

@@ -211,7 +211,7 @@ Keep `claims.jsonl` + `report_data.json` with the PDFs so findings stay auditabl
 | **[1] Parse / chunk** | Split by language → query → model response; keep line offsets; never drop text | Chunk target size; max chunk tokens; whether to include pruned stubs |
 | **[2] Extract** | Per-chunk LLM → claim objects into `claims.jsonl` (resumes via `extract_done.jsonl` if interrupted) | Extractor model, temperature, prompt file, concurrency; optional “must-include themes”. Delete `claims.jsonl` + `extract_done.jsonl` to force a full re-extract |
 | **[3] Dedupe / cluster / score** | Local Ollama groups same-fact claims; collapse into one; union citations + source_models; keep `member_scores`; sensitivity = max; confidence = # LLMs | Ollama model/URL; batch size; collapse on/off; corroboration minimum |
-| **[4] Graphics** | SVG radar, heatmap, sensitivity bars, evidence graph | Which graphics to emit; color scale; model alias map for short names |
+| **[4] Graphics** | SVG radar, heatmap, findings-by-LLM bars, evidence graph | Which graphics to emit; color scale; model alias map for short names |
 | **[5] Templates → PDF** | Jinja fill + WeasyPrint | Template copy/tone; logo choice; forced headline; date; hide/show “REQUEST FULL REPORT” |
 
 ---
@@ -288,7 +288,7 @@ The snapshot layout operators should expect:
 
 1. **Exposure radar** — specificity / sensitivity / corroboration / novelty / confidence  
 2. **Model heatmap** — findings × models  
-3. **Sensitivity distribution** — high / medium / low / informational  
+3. **Findings by LLM** — each tested model scored by finding count × sensitivity  
 4. **Evidence graph** — responses → claims → chains  
 
 ---

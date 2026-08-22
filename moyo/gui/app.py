@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QScrollArea, QComboBox, QLineEdit, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QCheckBox,
     QRadioButton, QButtonGroup, QSpinBox, QDoubleSpinBox, QFormLayout,
-    QListWidget, QListWidgetItem, QPlainTextEdit, QSizePolicy,
+    QListWidget, QListWidgetItem, QPlainTextEdit, QSizePolicy, QInputDialog,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QColor, QIcon
@@ -50,6 +50,7 @@ class BackgroundWorker(QThread):
     """
 
     log = pyqtSignal(str)
+    progress = pyqtSignal(int, int, str)  # current, total, message
     done = pyqtSignal(object)        # arbitrary result payload
     failed = pyqtSignal(str)         # error message
 
@@ -80,280 +81,427 @@ class BackgroundWorker(QThread):
 
 
 class DataInputTab(QWidget):
-    """Tab for data input functionality — text, file, or folder to corpus."""
+    """Private documents → Kimi sensitive phrases → approve into the index corpus."""
 
     def __init__(self):
         super().__init__()
-        self.corpus_data = []
-        self.default_corpus_path = _repo_root / "data" / "private" / "corpus.txt"
+        self._store = None
+        self._projects = None
+        self._worker: Optional[BackgroundWorker] = None
         self.init_ui()
+        self._reload_phrases()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self.compare.bind_project(controller)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        from moyo.privateside.phrases.store import PhraseStore
+
+        if project is None:
+            self._store = None
+            self.project_hint.setText("No project selected — create or open one in the toolbar.")
+            self._reload_phrases()
+            self.compare.reload()
+            return
+        project.ensure()
+        self._store = PhraseStore(project.phrases_dir)
+        self.project_hint.setText(f"This project's phrases: {project.phrases_dir}")
+        self._reload_phrases()
+        self.compare.reload()
 
     def init_ui(self):
-        layout = QVBoxLayout()
+        from moyo.privateside.phrases.schema import LABELS
 
-        title = QLabel("Data Input - Text, File, or Folder to Corpus")
+        outer = QVBoxLayout()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
+
+        title = QLabel("Private Data Input")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(title)
+        desc = QLabel(
+            "Kimi extracts sensitive phrases from a confidential document and "
+            "drops framing language. Optional direction is appended after the "
+            "source, labelled direction. Approve labels here. Create Private Index "
+            "builds the FAISS index from those approved phrases."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        self.project_hint = QLabel("No project selected.")
+        self.project_hint.setWordWrap(True)
+        self.project_hint.setStyleSheet("color: #555;")
+        layout.addWidget(self.project_hint)
 
-        # Input method selection — QButtonGroup ensures mutual exclusion.
-        method_group = QGroupBox("Input Method")
+        method_group = QGroupBox("Source")
         method_layout = QVBoxLayout()
-
         self._input_method_group = QButtonGroup(self)
-        self.text_radio = QRadioButton("Direct Text Input")
-        self.file_radio = QRadioButton("Single File")
+        self.text_radio = QRadioButton("Direct text")
+        self.file_radio = QRadioButton("Single file")
         self.folder_radio = QRadioButton("Folder")
-
-        self._input_method_group.addButton(self.text_radio)
-        self._input_method_group.addButton(self.file_radio)
-        self._input_method_group.addButton(self.folder_radio)
-
         self.text_radio.setChecked(True)
-        self.text_radio.toggled.connect(self.on_input_method_changed)
-        self.file_radio.toggled.connect(self.on_input_method_changed)
-        self.folder_radio.toggled.connect(self.on_input_method_changed)
-
-        method_layout.addWidget(self.text_radio)
-        method_layout.addWidget(self.file_radio)
-        method_layout.addWidget(self.folder_radio)
+        for radio in (self.text_radio, self.file_radio, self.folder_radio):
+            self._input_method_group.addButton(radio)
+            radio.toggled.connect(self.on_input_method_changed)
+            method_layout.addWidget(radio)
         method_group.setLayout(method_layout)
         layout.addWidget(method_group)
 
-        # Text input section
-        self.text_group = QGroupBox("Direct Text Input")
+        self.text_group = QGroupBox("text")
         text_layout = QVBoxLayout()
         self.text_input = QTextEdit()
-        self.text_input.setPlaceholderText("Enter text directly here...")
+        self.text_input.setPlaceholderText("Paste confidential text…")
+        self.text_input.setFixedHeight(120)
         text_layout.addWidget(self.text_input)
         self.text_group.setLayout(text_layout)
         layout.addWidget(self.text_group)
 
-        # File input section
-        self.file_group = QGroupBox("File Input")
-        file_layout = QVBoxLayout()
-
-        file_btn_layout = QHBoxLayout()
+        self.file_group = QGroupBox("File")
+        file_layout = QHBoxLayout()
         self.file_path_label = QLabel("No file selected")
-        select_file_btn = QPushButton("Select .txt File")
+        select_file_btn = QPushButton("Choose document…")
         select_file_btn.clicked.connect(self.select_file)
-        file_btn_layout.addWidget(self.file_path_label)
-        file_btn_layout.addWidget(select_file_btn)
-        file_layout.addLayout(file_btn_layout)
-
-        type_layout = QHBoxLayout()
-        type_layout.addWidget(QLabel("File Type:"))
-        self.file_type_combo = QComboBox()
-        self.file_type_combo.addItems(["txt", "text", "pdf", "docx", "csv", "json"])
-        self.file_type_combo.setCurrentText("txt")
-        type_layout.addWidget(self.file_type_combo)
-        file_layout.addLayout(type_layout)
-
+        file_layout.addWidget(self.file_path_label, 1)
+        file_layout.addWidget(select_file_btn)
         self.file_group.setLayout(file_layout)
         self.file_group.setVisible(False)
         layout.addWidget(self.file_group)
 
-        # Folder input section
-        self.folder_group = QGroupBox("Folder Input")
+        self.folder_group = QGroupBox("Folder")
         folder_layout = QVBoxLayout()
-
         folder_btn_layout = QHBoxLayout()
         self.folder_path_label = QLabel("No folder selected")
-        select_folder_btn = QPushButton("Select Folder")
+        select_folder_btn = QPushButton("Choose folder…")
         select_folder_btn.clicked.connect(self.select_folder)
-        folder_btn_layout.addWidget(self.folder_path_label)
+        folder_btn_layout.addWidget(self.folder_path_label, 1)
         folder_btn_layout.addWidget(select_folder_btn)
         folder_layout.addLayout(folder_btn_layout)
-
         ext_layout = QHBoxLayout()
-        ext_layout.addWidget(QLabel("File Extensions:"))
-        self.file_extensions = QLineEdit("*.txt")
+        ext_layout.addWidget(QLabel("Extensions:"))
+        self.file_extensions = QLineEdit("*.txt,*.md,*.pdf,*.docx")
         ext_layout.addWidget(self.file_extensions)
         folder_layout.addLayout(ext_layout)
-
         self.folder_group.setLayout(folder_layout)
         self.folder_group.setVisible(False)
         layout.addWidget(self.folder_group)
 
-        # Output options
-        output_group = QGroupBox("Output Options")
-        output_layout = QVBoxLayout()
-
-        self.use_default_checkbox = QCheckBox(
-            "Use default location (data/private/corpus.txt)"
+        direction_group = QGroupBox("direction")
+        direction_layout = QVBoxLayout()
+        self.direction_input = QTextEdit()
+        self.direction_input.setPlaceholderText(
+            "Optional extra direction for extraction. Appended after the source as direction: …"
         )
-        self.use_default_checkbox.setChecked(True)
-        self.use_default_checkbox.toggled.connect(self.on_output_method_changed)
-        output_layout.addWidget(self.use_default_checkbox)
+        self.direction_input.setFixedHeight(70)
+        direction_layout.addWidget(self.direction_input)
+        direction_group.setLayout(direction_layout)
+        layout.addWidget(direction_group)
 
-        custom_layout = QHBoxLayout()
-        self.custom_path_label = QLabel("No custom path selected")
-        select_output_btn = QPushButton("Select Custom Output File")
-        select_output_btn.clicked.connect(self.select_output_file)
-        custom_layout.addWidget(self.custom_path_label)
-        custom_layout.addWidget(select_output_btn)
-        output_layout.addLayout(custom_layout)
-
-        output_group.setLayout(output_layout)
-        layout.addWidget(output_group)
-
-        self.process_btn = QPushButton("Process Data and Save to Corpus")
-        self.process_btn.clicked.connect(self.process_data)
-        layout.addWidget(self.process_btn)
+        self.ingest_btn = QPushButton("Extract sensitive phrases (Kimi)")
+        self.ingest_btn.clicked.connect(self._ingest)
+        layout.addWidget(self.ingest_btn)
 
         self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
-
-        self.output_text = QTextEdit()
-        self.output_text.setReadOnly(True)
+        self.output_text = _make_log_pane(min_height=80)
         layout.addWidget(self.output_text)
 
-        self.setLayout(layout)
+        self.phrase_status = QLabel("")
+        layout.addWidget(self.phrase_status)
+
+        self.phrase_table = QTableWidget(0, 3)
+        self.phrase_table.setHorizontalHeaderLabels(["Phrase", "Label", "Why kept"])
+        self.phrase_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.phrase_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.phrase_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.phrase_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.phrase_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.phrase_table.setMinimumHeight(180)
+        layout.addWidget(self.phrase_table)
+
+        decide_row = QHBoxLayout()
+        approve_btn = QPushButton("Approve selected")
+        approve_btn.clicked.connect(lambda: self._decide_phrase(True))
+        reject_btn = QPushButton("Reject selected")
+        reject_btn.clicked.connect(lambda: self._decide_phrase(False))
+        decide_row.addWidget(approve_btn)
+        decide_row.addWidget(reject_btn)
+        decide_row.addStretch(1)
+        layout.addLayout(decide_row)
+
+        manual = QGroupBox("Add phrases without a document")
+        manual_layout = QVBoxLayout()
+        add_row = QHBoxLayout()
+        self.manual_phrase = QLineEdit()
+        self.manual_phrase.setPlaceholderText("Single phrase")
+        self.manual_label = QComboBox()
+        for name in LABELS:
+            self.manual_label.addItem(name)
+        add_one = QPushButton("Add phrase")
+        add_one.clicked.connect(self._add_one_phrase)
+        add_row.addWidget(self.manual_phrase, 1)
+        add_row.addWidget(self.manual_label)
+        add_row.addWidget(add_one)
+        manual_layout.addLayout(add_row)
+        self.manual_list = QPlainTextEdit()
+        self.manual_list.setPlaceholderText("One per line. Optional: phrase | label")
+        self.manual_list.setFixedHeight(70)
+        add_list_btn = QPushButton("Add list")
+        add_list_btn.clicked.connect(self._add_phrase_list)
+        manual_layout.addWidget(self.manual_list)
+        manual_layout.addWidget(add_list_btn)
+        manual.setLayout(manual_layout)
+        layout.addWidget(manual)
+
+        from moyo.gui.compare_widget import NaiveCompareWidget
+
+        self.compare = NaiveCompareWidget()
+        layout.addWidget(self.compare)
+
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+        self.setLayout(outer)
 
     def on_input_method_changed(self):
         self.text_group.setVisible(self.text_radio.isChecked())
         self.file_group.setVisible(self.file_radio.isChecked())
         self.folder_group.setVisible(self.folder_radio.isChecked())
 
-    def on_output_method_changed(self):
-        use_default = self.use_default_checkbox.isChecked()
-        self.custom_path_label.setEnabled(not use_default)
-
     def select_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Input File", "",
-            "Text Files (*.txt);;All Files (*);;PDF Files (*.pdf);;"
-            "Word Files (*.docx);;CSV Files (*.csv);;JSON Files (*.json)",
+            self, "Select confidential document", "",
+            "Documents (*.txt *.md *.pdf *.docx *.pptx *.xlsx *.csv *.html);;All Files (*)",
         )
         if file_path:
             self.file_path_label.setText(file_path)
 
     def select_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "Select Input Folder")
+        folder_path = QFileDialog.getExistingDirectory(self, "Select folder")
         if folder_path:
             self.folder_path_label.setText(folder_path)
 
-    def select_output_file(self):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Select Output File", "", "Text Files (*.txt)"
+    def _ingest(self):
+        if self._worker is not None:
+            QMessageBox.information(self, "Busy", "Extraction is already running.")
+            return
+        if self._store is None:
+            QMessageBox.warning(
+                self, "No project",
+                "Select or create a project in the toolbar first. "
+                "Phrases are stored per project.",
+            )
+            return
+        try:
+            jobs = self._ingest_jobs()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Missing input", str(exc))
+            return
+
+        store = self._store
+        direction = self.direction_input.toPlainText().strip() or None
+        holder = {"worker": None}
+
+        def job():
+            from moyo.privateside.phrases.ingest import ingest_document, ingest_text
+
+            def progress(msg: str) -> None:
+                worker = holder["worker"]
+                if worker is not None:
+                    worker.log.emit(msg)
+                else:
+                    print(msg)
+
+            combined = {
+                "candidates": 0,
+                "queued": 0,
+                "duplicates": 0,
+                "pending": [],
+            }
+            for kind, payload in jobs:
+                if kind == "text":
+                    result = ingest_text(
+                        payload,
+                        store,
+                        source_path="direct_text",
+                        direction=direction,
+                        progress=progress,
+                    )
+                else:
+                    result = ingest_document(
+                        payload, store, direction=direction, progress=progress
+                    )
+                combined["candidates"] += result["candidates"]
+                combined["queued"] += result["queued"]
+                combined["duplicates"] += result["duplicates"]
+                combined["pending"].extend(result["pending"])
+            return combined
+
+        self.output_text.clear()
+        self.output_text.append("Extracting sensitive phrases with Kimi…")
+        self.progress_bar.setVisible(True)
+        _busy(self.ingest_btn, True, "Extract sensitive phrases (Kimi)")
+        self._worker = BackgroundWorker(job)
+        holder["worker"] = self._worker
+        self._worker.log.connect(self.output_text.append)
+        self._worker.done.connect(self._on_ingest_done)
+        self._worker.failed.connect(self._on_ingest_failed)
+        self._worker.start()
+
+    def _ingest_jobs(self) -> list[tuple[str, str]]:
+
+        if self.text_radio.isChecked():
+            text = self.text_input.toPlainText().strip()
+            if not text:
+                raise ValueError("Paste text, or choose a file / folder.")
+            return [("text", text)]
+        if self.file_radio.isChecked():
+            path = self.file_path_label.text()
+            if path == "No file selected":
+                raise ValueError("Choose a document.")
+            return [("file", path)]
+        folder = self.folder_path_label.text()
+        if folder == "No folder selected":
+            raise ValueError("Choose a folder.")
+        jobs = []
+        root = Path(folder)
+        patterns = [p.strip() for p in self.file_extensions.text().split(",") if p.strip()]
+        for pattern in patterns or ["*.txt"]:
+            for fp in root.glob(pattern):
+                if fp.is_file():
+                    jobs.append(("file", str(fp)))
+        if not jobs:
+            raise ValueError("No matching files in that folder.")
+        return jobs
+
+    def _on_ingest_done(self, result):
+        self.progress_bar.setVisible(False)
+        _busy(self.ingest_btn, False, "Extract sensitive phrases (Kimi)")
+        self._worker = None
+        queued = result.get("queued", 0) if isinstance(result, dict) else 0
+        self.output_text.append(
+            f"Done. queued={queued} candidates={result.get('candidates', 0)} "
+            f"duplicates={result.get('duplicates', 0)}"
         )
-        if file_path:
-            self.custom_path_label.setText(file_path)
+        self._reload_phrases()
 
-    def process_data(self):
-        self.output_text.append("Processing data input...")
-        self.progress_bar.setValue(0)
+    def _on_ingest_failed(self, message: str):
+        self.progress_bar.setVisible(False)
+        _busy(self.ingest_btn, False, "Extract sensitive phrases (Kimi)")
+        self._worker = None
+        self.output_text.append(f"Failed: {message}")
+        QMessageBox.critical(self, "Extract failed", message)
 
-        try:
-            if self.text_radio.isChecked():
-                data = self.process_text_input()
-            elif self.file_radio.isChecked():
-                data = self.process_file_input()
-            elif self.folder_radio.isChecked():
-                data = self.process_folder_input()
-            else:
-                self.output_text.append("Please select an input method")
-                return
+    def _reload_phrases(self):
+        from moyo.privateside.phrases.schema import LABELS
 
-            if not data:
-                self.output_text.append("No data to process")
-                return
+        if self._store is None:
+            if hasattr(self, "phrase_status"):
+                self.phrase_status.setText("No project selected.")
+            if hasattr(self, "phrase_table"):
+                self.phrase_table.setRowCount(0)
+            return
+        pending = self._store.load_pending()
+        approved = self._store.load_approved()
+        self.phrase_status.setText(
+            f"Pending review: {len(pending)}    Approved (index source): "
+            f"{len(approved)}    {self._store.root}"
+        )
+        self.phrase_table.setRowCount(0)
+        for rec in pending:
+            row = self.phrase_table.rowCount()
+            self.phrase_table.insertRow(row)
+            phrase_item = QTableWidgetItem(rec.text)
+            phrase_item.setFlags(phrase_item.flags() & ~Qt.ItemIsEditable)
+            phrase_item.setData(Qt.UserRole, rec.id)
+            self.phrase_table.setItem(row, 0, phrase_item)
+            combo = QComboBox()
+            for name in LABELS:
+                combo.addItem(name)
+            idx = combo.findText(rec.label)
+            combo.setCurrentIndex(idx if idx >= 0 else combo.findText("other"))
+            self.phrase_table.setCellWidget(row, 1, combo)
+            why = QTableWidgetItem(rec.reason)
+            why.setFlags(why.flags() & ~Qt.ItemIsEditable)
+            self.phrase_table.setItem(row, 2, why)
 
-            self.progress_bar.setValue(50)
+    def _current_phrase(self):
+        row = self.phrase_table.currentRow()
+        if row < 0:
+            return None, None
+        item = self.phrase_table.item(row, 0)
+        combo = self.phrase_table.cellWidget(row, 1)
+        if item is None:
+            return None, None
+        label = combo.currentText() if isinstance(combo, QComboBox) else "other"
+        return item.data(Qt.UserRole), label
 
-            if self.use_default_checkbox.isChecked():
-                output_path = self.default_corpus_path
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-            else:
-                output_path = Path(self.custom_path_label.text())
+    def _decide_phrase(self, approve: bool):
+        if self._store is None:
+            QMessageBox.warning(self, "No project", "Select or create a project first.")
+            return
+        record_id, label = self._current_phrase()
+        if not record_id:
+            QMessageBox.information(self, "Select a row", "Select a pending phrase.")
+            return
+        self._store.decide(record_id, approve=approve, label=label)
+        self._reload_phrases()
 
-            self.save_corpus(data, output_path)
+    def _add_one_phrase(self):
+        if self._store is None:
+            QMessageBox.warning(self, "No project", "Select or create a project first.")
+            return
+        text = self.manual_phrase.text().strip()
+        if not text:
+            QMessageBox.warning(self, "Missing phrase", "Enter a phrase.")
+            return
+        rec = self._store.add_manual(text, self.manual_label.currentText())
+        self.manual_phrase.clear()
+        self._reload_phrases()
+        if rec is None:
+            QMessageBox.information(self, "Unchanged", "Empty or already in the corpus.")
 
-            self.progress_bar.setValue(100)
-            self.output_text.append(f"Corpus saved to: {output_path}")
-            self.output_text.append(f"Processed {len(data)} items")
-
-        except Exception as e:
-            self.output_text.append(f"Error processing data: {e}")
-            self.progress_bar.setValue(0)
-
-    def process_text_input(self):
-        text_content = self.text_input.toPlainText()
-        if not text_content.strip():
-            return []
-        lines = text_content.strip().split("\n")
-        return [
-            {"id": f"text_line_{i}", "text": line.strip(), "source": "direct_text", "chunk_id": i}
-            for i, line in enumerate(lines)
-            if line.strip()
-        ]
-
-    def process_file_input(self):
-        file_path = self.file_path_label.text()
-        if file_path == "No file selected":
-            return []
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                lines = f.readlines()
-            return [
-                {"id": f"file_line_{i}", "text": line.strip(), "source": Path(file_path).name, "chunk_id": i}
-                for i, line in enumerate(lines)
-                if line.strip()
-            ]
-        except Exception as e:
-            self.output_text.append(f"Error reading file: {e}")
-            return []
-
-    def process_folder_input(self):
-        folder_path = self.folder_path_label.text()
-        if folder_path == "No folder selected":
-            return []
-        try:
-            folder = Path(folder_path)
-            extensions = [ext.strip() for ext in self.file_extensions.text().split(",")]
-            all_items = []
-            counter = 0
-            for ext in extensions:
-                for fp in folder.glob(ext):
-                    try:
-                        with open(fp, encoding="utf-8") as f:
-                            lines = f.readlines()
-                        for line in lines:
-                            if line.strip():
-                                all_items.append({
-                                    "id": f"{fp.stem}_line_{counter}",
-                                    "text": line.strip(),
-                                    "source": fp.name,
-                                    "chunk_id": counter,
-                                })
-                                counter += 1
-                    except Exception as e:
-                        self.output_text.append(f"Error reading {fp}: {e}")
-            return all_items
-        except Exception as e:
-            self.output_text.append(f"Error processing folder: {e}")
-            return []
-
-    def save_corpus(self, data, output_path):
-        with open(output_path, "w", encoding="utf-8") as f:
-            for item in data:
-                f.write(f"ID: {item['id']}\n")
-                f.write(f"Source: {item['source']}\n")
-                f.write(f"Text: {item['text']}\n")
-                f.write("-" * 50 + "\n")
+    def _add_phrase_list(self):
+        if self._store is None:
+            QMessageBox.warning(self, "No project", "Select or create a project first.")
+            return
+        added = self._store.add_manual_lines(
+            self.manual_list.toPlainText().splitlines(),
+            default_label=self.manual_label.currentText(),
+        )
+        self.manual_list.clear()
+        self._reload_phrases()
+        QMessageBox.information(self, "Added", f"Added {len(added)} phrase(s).")
 
 
-def _populate_embedding_model_combo(combo: QComboBox, default_key: str = "mini") -> None:
+def _populate_embedding_model_combo(combo: QComboBox, default_key: Optional[str] = None) -> None:
     """Fill a combo with catalog labels; itemData stores the model key."""
-    from shared_utils.model_config import list_embedding_choices
+    from shared_utils.model_config import (
+        DEFAULT_MODEL_KEY,
+        get_current_model_key,
+        list_embedding_choices,
+    )
 
     combo.clear()
+    key = default_key or get_current_model_key() or DEFAULT_MODEL_KEY
     default_index = 0
     for i, entry in enumerate(list_embedding_choices()):
         combo.addItem(entry["label"], entry["key"])
         combo.setItemData(i, entry["description"], Qt.ToolTipRole)
-        if entry["key"] == default_key:
+        if entry["key"] == key:
             default_index = i
     combo.setCurrentIndex(default_index)
+
+
+def _embedding_match_note() -> QLabel:
+    label = QLabel(_EMBEDDING_MATCH_NOTE)
+    label.setWordWrap(True)
+    label.setStyleSheet("color: #555;")
+    return label
 
 
 def _device_status_text() -> str:
@@ -376,23 +524,56 @@ class FAISSIndexTab(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.default_corpus_path = _repo_root / "data" / "private" / "corpus.txt"
-        self.default_private_index_path = _repo_root / "indexes" / "private"
-        self.default_public_index_path = _repo_root / "indexes" / "public"
+        self._projects = None
+        self.default_corpus_path = None
+        self.default_private_index_path = None
+        self.default_public_index_path = None
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            self.default_corpus_path = None
+            self.default_private_index_path = None
+            self.default_public_index_path = None
+            self.use_default_corpus_checkbox.setText(
+                "Use this project's approved phrases"
+            )
+            self.use_default_index_checkbox.setText("Use this project's index folder")
+            return
+        project.ensure()
+        corpus = project.find_phrase_corpus()
+        self.default_corpus_path = corpus or (project.phrases_dir / "corpus.jsonl")
+        self.default_private_index_path = project.private_index_dir
+        self.default_public_index_path = project.public_index_dir
+        self.use_default_corpus_checkbox.setText(
+            f"Use this project's phrases ({project.phrases_dir})"
+        )
+        self.on_index_type_changed()
 
     def init_ui(self):
         layout = QVBoxLayout()
 
-        title = QLabel("Create FAISS Index from Corpus")
+        title = QLabel("Create Private Index")
         title.setFont(QFont("Arial", 16, QFont.Bold))
         layout.addWidget(title)
+        desc = QLabel(
+            "Builds a FAISS index from this project's approved sensitive phrases. "
+            "Use Private Data Input to extract and approve phrases first. "
+            "The index is written under the current project folder."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
 
         corpus_group = QGroupBox("Corpus Selection")
         corpus_layout = QVBoxLayout()
 
         self.use_default_corpus_checkbox = QCheckBox(
-            "Use default corpus (data/private/corpus.txt)"
+            "Use this project's approved phrases"
         )
         self.use_default_corpus_checkbox.setChecked(True)
         self.use_default_corpus_checkbox.toggled.connect(self.on_corpus_method_changed)
@@ -421,10 +602,11 @@ class FAISSIndexTab(QWidget):
         model_layout = QHBoxLayout()
         model_layout.addWidget(QLabel("Embedding Model:"))
         self.embedding_model_combo = QComboBox()
-        _populate_embedding_model_combo(self.embedding_model_combo, default_key="mini")
+        _populate_embedding_model_combo(self.embedding_model_combo)
         self.embedding_model_combo.currentIndexChanged.connect(self.on_model_changed)
         model_layout.addWidget(self.embedding_model_combo)
         index_layout.addLayout(model_layout)
+        index_layout.addWidget(_embedding_match_note())
 
         device_layout = QHBoxLayout()
         device_layout.addWidget(QLabel("Device:"))
@@ -443,7 +625,7 @@ class FAISSIndexTab(QWidget):
 
         params_layout = QHBoxLayout()
         params_layout.addWidget(QLabel("Dimension:"))
-        self.dimension_label = QLabel("384")
+        self.dimension_label = QLabel("768")
         params_layout.addWidget(self.dimension_label)
         self.model_hint_label = QLabel("")
         self.model_hint_label.setWordWrap(True)
@@ -504,7 +686,10 @@ class FAISSIndexTab(QWidget):
     def on_model_changed(self):
         from shared_utils.model_config import get_catalog_entry
 
-        model_key = self.embedding_model_combo.currentData() or "mini"
+        model_key = self.embedding_model_combo.currentData()
+        if not model_key:
+            from shared_utils.model_config import DEFAULT_MODEL_KEY
+            model_key = DEFAULT_MODEL_KEY
         entry = get_catalog_entry(model_key) or {}
         self.dimension_label.setText(str(entry.get("dimensions", 384)))
         hint = entry.get("description", "")
@@ -517,12 +702,21 @@ class FAISSIndexTab(QWidget):
 
     def on_index_type_changed(self):
         index_type = self.index_type_radio.currentText()
-        loc = "indexes/private" if index_type == "Private" else "indexes/public"
-        self.use_default_index_checkbox.setText(f"Use default location ({loc})")
+        project = self._projects.current if self._projects else None
+        if project is not None:
+            loc = (
+                project.private_index_dir
+                if index_type == "Private"
+                else project.public_index_dir
+            )
+        else:
+            loc = "indexes/private" if index_type == "Private" else "indexes/public"
+        self.use_default_index_checkbox.setText(f"Use this project's index folder ({loc})")
 
     def select_corpus(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Corpus File", "", "JSON Files (*.json);;All Files (*)"
+            self, "Select Corpus File", "",
+            "JSONL (*.jsonl);;Text (*.txt);;All Files (*)",
         )
         if file_path:
             self.corpus_path_label.setText(file_path)
@@ -537,20 +731,43 @@ class FAISSIndexTab(QWidget):
         self.progress_bar.setValue(0)
 
         try:
-            corpus_path = (
-                self.default_corpus_path
-                if self.use_default_corpus_checkbox.isChecked()
-                else Path(self.corpus_path_label.text())
-            )
+            corpus_data = []
+            if self.use_default_corpus_checkbox.isChecked():
+                from moyo.privateside.phrases.store import PhraseStore
 
-            if not corpus_path.exists():
-                self.output_text.append(f"Corpus file not found: {corpus_path}")
+                project = self._projects.current if self._projects else None
+                if project is None:
+                    self.output_text.append(
+                        "No project selected. Create or open a project in the toolbar."
+                    )
+                    return
+                store = PhraseStore(project.phrases_dir)
+                corpus_data = store.index_items()
+                corpus_path = store.corpus_path
+            else:
+                from moyo.privateside.phrases.store import load_corpus_for_index
+
+                corpus_path = Path(self.corpus_path_label.text())
+                if not corpus_path.exists():
+                    self.output_text.append(f"Corpus file not found: {corpus_path}")
+                    return
+                corpus_data = load_corpus_for_index(corpus_path)
+
+            if not corpus_data:
+                self.output_text.append(
+                    "No approved phrases yet. Extract and approve them in Private Data Input."
+                )
                 return
 
             self.progress_bar.setValue(10)
-
+            project = self._projects.current if self._projects else None
             index_type = self.index_type_radio.currentText()
             if self.use_default_index_checkbox.isChecked():
+                if project is None or self.default_private_index_path is None:
+                    self.output_text.append(
+                        "No project selected. Create or open a project in the toolbar."
+                    )
+                    return
                 index_path = (
                     self.default_private_index_path
                     if index_type == "Private"
@@ -558,25 +775,8 @@ class FAISSIndexTab(QWidget):
                 )
             else:
                 index_path = Path(self.index_output_label.text())
-
             index_path.mkdir(parents=True, exist_ok=True)
             self.progress_bar.setValue(20)
-
-            corpus_data = []
-            with open(corpus_path, encoding="utf-8") as f:
-                content = f.read()
-                for section in content.split("-" * 50):
-                    if section.strip():
-                        item = {}
-                        for line in section.strip().split("\n"):
-                            if line.startswith("ID: "):
-                                item["id"] = line[4:].strip()
-                            elif line.startswith("Source: "):
-                                item["source"] = line[8:].strip()
-                            elif line.startswith("Text: "):
-                                item["text"] = line[6:].strip()
-                        if item.get("text", "").strip():
-                            corpus_data.append(item)
 
             self.output_text.append(f"Loaded corpus with {len(corpus_data)} items")
             self.progress_bar.setValue(30)
@@ -589,7 +789,10 @@ class FAISSIndexTab(QWidget):
             self.output_text.append(f"Processing {len(texts)} text items...")
             self.progress_bar.setValue(40)
 
-            model_key = self.embedding_model_combo.currentData() or "mini"
+            model_key = self.embedding_model_combo.currentData()
+            if not model_key:
+                from shared_utils.model_config import DEFAULT_MODEL_KEY
+                model_key = DEFAULT_MODEL_KEY
             from shared_utils.model_config import get_catalog_entry, resolve_model_name
             entry = get_catalog_entry(model_key) or {}
             model_name = resolve_model_name(model_key)
@@ -642,20 +845,33 @@ class FAISSIndexTab(QWidget):
                     "id": item.get("id", f"item_{i}"),
                     "source": item.get("source", "unknown"),
                     "chunk_id": item.get("chunk_id", i),
+                    "label": item.get("label", ""),
                     "text": item["text"][:100] + "..." if len(item["text"]) > 100 else item["text"],
                 }
                 for i, item in enumerate(corpus_data)
                 if item.get("text", "").strip()
             ]
 
-            faiss_index.add_vectors(embeddings, metadata)
+            faiss_index.add_vectors_with_texts(embeddings, texts, metadata)
             self.progress_bar.setValue(90)
 
-            corpus_name = re.sub(r"[^A-Za-z0-9._-]+", "_", corpus_path.stem).strip("._-") or "corpus"
+            if project is not None and self.use_default_corpus_checkbox.isChecked():
+                corpus_name = project.name
+            else:
+                corpus_name = re.sub(r"[^A-Za-z0-9._-]+", "_", corpus_path.stem).strip("._-") or "corpus"
             index_dir = index_path / corpus_name
             index_dir.mkdir(parents=True, exist_ok=True)
             self.output_text.append(f"Saving index to {index_dir}...")
-            saved_path = faiss_index.save(index_dir, name=corpus_name)
+            saved_path = faiss_index.save(
+                index_dir,
+                name=corpus_name,
+                extra_info={
+                    "embedding_model": model_name,
+                    "normalize_embeddings": True,
+                    "granularity": "phrases",
+                    "deduplication_enabled": True,
+                },
+            )
 
             self.output_text.append("FAISS index created successfully!")
             self.output_text.append(f"Index saved to: {saved_path}")
@@ -681,7 +897,22 @@ _SOURCE_TYPES = [
     "git_commit",
     "conference_talk",
     "leaked_code",
+    "web_search",
 ]
+_SOURCE_TYPE_LABELS = {
+    "patent": "patents",
+    "press_release": "press / news",
+    "git_commit": "git commits",
+    "conference_talk": "papers / talks",
+    "leaked_code": "advisories (NVD/GHSA)",
+    "web_search": "explore reports",
+}
+
+
+_EMBEDDING_MATCH_NOTE = (
+    "Private and public indexes must use the same embedding model "
+    "(and the same chunk size / overlap). Barrier distances are meaningless otherwise."
+)
 
 
 def _make_log_pane(min_height: int = 120) -> QTextEdit:
@@ -872,7 +1103,33 @@ class GatherPublicSourcesTab(QWidget):
         super().__init__()
         self._worker: Optional[BackgroundWorker] = None
         self._last_output_dir: Optional[Path] = None
+        self._projects = None
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            return
+        project.ensure()
+        self.output_dir_input.setText(str(project.public_sources_dir))
+
+    def _output_dir(self) -> Optional[str]:
+        text = self.output_dir_input.text().strip()
+        if text:
+            return text
+        project = self._projects.current if self._projects else None
+        if project is None:
+            QMessageBox.warning(
+                self,
+                "No project",
+                "Select or create a project in the toolbar, or choose an output directory.",
+            )
+            return None
+        return str(project.public_sources_dir)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -882,9 +1139,11 @@ class GatherPublicSourcesTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Crawl public sources (patents, press releases, git commits, conferences, leaks) "
-            "by topic or token list. Output JSON is written under the chosen directory "
-            "and can be fed into the Build Public Corpus tab."
+            "Crawl public sources (USPTO/Google Patents, GDELT press, GitHub commits, "
+            "arXiv/OpenAlex papers, NVD/GHSA advisories) by topic or token list. "
+            "Crawl writes sources.json; naive-prompt explore writes exploration.md. "
+            "Both land under this project's public_sources/ folder and are what "
+            "Build Public Corpus indexes."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -1012,7 +1271,7 @@ class GatherPublicSourcesTab(QWidget):
         types_layout = QHBoxLayout()
         self._type_checks: Dict[str, QCheckBox] = {}
         for src in _SOURCE_TYPES:
-            cb = QCheckBox(src.replace("_", " "))
+            cb = QCheckBox(_SOURCE_TYPE_LABELS.get(src, src.replace("_", " ")))
             types_layout.addWidget(cb)
             self._type_checks[src] = cb
         types_group.setLayout(types_layout)
@@ -1037,7 +1296,8 @@ class GatherPublicSourcesTab(QWidget):
         self.delay_spin.setValue(1.0)
         params_layout.addRow("Delay between requests (s):", self.delay_spin)
 
-        self.output_dir_input = QLineEdit("data/public_sources")
+        self.output_dir_input = QLineEdit("")
+        self.output_dir_input.setPlaceholderText("Current project's public_sources/")
         out_pick_btn = QPushButton("Browse…")
         out_pick_btn.clicked.connect(self._pick_output_dir)
         out_row = QHBoxLayout()
@@ -1191,7 +1451,9 @@ class GatherPublicSourcesTab(QWidget):
             QMessageBox.critical(self, "Import error", str(exc))
             return
 
-        output_dir = self.output_dir_input.text().strip() or "data/public_sources"
+        output_dir = self._output_dir()
+        if not output_dir:
+            return
         source_types = self._selected_source_types()
 
         if topic_mode:
@@ -1320,7 +1582,9 @@ class GatherPublicSourcesTab(QWidget):
             QMessageBox.critical(self, "Import error", str(exc))
             return
 
-        output_dir = self.output_dir_input.text().strip() or "data/public_sources"
+        output_dir = self._output_dir()
+        if not output_dir:
+            return
         impact_extra = self.impact_definition_input.toPlainText().strip() or None
 
         holder = {"worker": None}
@@ -1451,7 +1715,24 @@ class BuildPublicCorpusTab(QWidget):
     def __init__(self):
         super().__init__()
         self._worker: Optional[BackgroundWorker] = None
+        self._projects = None
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            self._refresh_extracted_label()
+            return
+        project.ensure()
+        self.sources_dir_input.setText(str(project.public_sources_dir))
+        self.output_dir_input.setText(str(project.public_index_dir))
+        self._refresh_extracted_label()
+        if not self.name_input.text().strip() or self.name_input.text() == "public_index":
+            self.name_input.setText(project.name)
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -1460,8 +1741,11 @@ class BuildPublicCorpusTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Embed crawled public sources (sources.json files) into a FAISS index. "
-            "Inputs are typically produced by the Gather Public Sources tab."
+            "First extract relevant passages from Gather Public Sources output "
+            "(sources.json and exploration.md), the same way Private Data Input "
+            "extracts sensitive phrases. Optional direction is appended after each "
+            "source, labelled direction. Build Index and Naive corpus compare use "
+            "the extracted file, not the raw gather dump."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -1470,7 +1754,10 @@ class BuildPublicCorpusTab(QWidget):
         input_group = QGroupBox("Input Sources")
         input_layout = QFormLayout()
 
-        self.sources_dir_input = QLineEdit("data/public_sources")
+        self.sources_dir_input = QLineEdit("")
+        self.sources_dir_input.setPlaceholderText(
+            "Current project's public_sources/ (Gather Public Sources output)"
+        )
         sources_btn = QPushButton("Browse…")
         sources_btn.clicked.connect(self._pick_sources_dir)
         sources_row = QHBoxLayout()
@@ -1488,14 +1775,45 @@ class BuildPublicCorpusTab(QWidget):
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
+        extract_group = QGroupBox("Extract relevant text")
+        extract_layout = QVBoxLayout()
+        self.direction_input = QTextEdit()
+        self.direction_input.setPlaceholderText(
+            "Optional extra direction for extraction. Appended after each source "
+            "as direction: …  Example: Focus on credential formats and vault paths."
+        )
+        self.direction_input.setFixedHeight(70)
+        extract_layout.addWidget(self.direction_input)
+        self.extract_btn = QPushButton("Extract relevant text (Kimi)")
+        self.extract_btn.clicked.connect(self._start_extract)
+        extract_layout.addWidget(self.extract_btn)
+        self.extract_progress = QProgressBar()
+        self.extract_progress.setRange(0, 1)
+        self.extract_progress.setValue(0)
+        self.extract_progress.setFormat("%v / %m windows (%p%)")
+        self.extract_progress.setTextVisible(True)
+        extract_layout.addWidget(self.extract_progress)
+        self.extract_status = QLabel("Idle — extract to see progress toward completion.")
+        self.extract_status.setWordWrap(True)
+        self.extract_status.setStyleSheet("color: #555;")
+        extract_layout.addWidget(self.extract_status)
+        self.extracted_path_label = QLabel("")
+        self.extracted_path_label.setWordWrap(True)
+        self.extracted_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.extracted_path_label.setStyleSheet("color: #555;")
+        extract_layout.addWidget(self.extracted_path_label)
+        extract_group.setLayout(extract_layout)
+        layout.addWidget(extract_group)
+
         # --- Embedding / chunking
         embed_group = QGroupBox("Embedding & Chunking")
         embed_layout = QFormLayout()
 
         self.model_combo = QComboBox()
-        _populate_embedding_model_combo(self.model_combo, default_key="mini")
+        _populate_embedding_model_combo(self.model_combo)
         self.model_combo.currentIndexChanged.connect(self._on_public_model_changed)
         embed_layout.addRow("Embedding model:", self.model_combo)
+        embed_layout.addRow("", _embedding_match_note())
 
         self.device_combo = QComboBox()
         self.device_combo.addItem("Auto (CUDA if available)", "auto")
@@ -1521,17 +1839,26 @@ class BuildPublicCorpusTab(QWidget):
         self.chunk_overlap_spin = QSpinBox()
         self.chunk_overlap_spin.setRange(0, 4096)
         self.chunk_overlap_spin.setValue(50)
-        embed_layout.addRow("Chunk overlap:", self.chunk_overlap_spin)
+        embed_layout.addRow("Chunk overlap (~10%):", self.chunk_overlap_spin)
 
         self.min_len_spin = QSpinBox()
         self.min_len_spin.setRange(1, 10000)
         self.min_len_spin.setValue(50)
-        embed_layout.addRow("Min chunk length:", self.min_len_spin)
+        embed_layout.addRow("Min section length:", self.min_len_spin)
 
         self.max_len_spin = QSpinBox()
         self.max_len_spin.setRange(50, 20000)
         self.max_len_spin.setValue(2000)
-        embed_layout.addRow("Max chunk length:", self.max_len_spin)
+        embed_layout.addRow("Max section length:", self.max_len_spin)
+
+        self.embed_norm_label = QLabel(
+            "Embeddings are L2-normalized (required for cosine / FlatIP)."
+        )
+        self.embed_norm_label.setWordWrap(True)
+        self.embed_norm_label.setStyleSheet("color: #555;")
+        embed_layout.addRow("", self.embed_norm_label)
+
+        self.chunk_size_spin.valueChanged.connect(self._on_chunk_size_changed)
 
         self.index_type_combo = QComboBox()
         self.index_type_combo.addItems(["flat", "ivf", "hnsw", "pq"])
@@ -1549,7 +1876,7 @@ class BuildPublicCorpusTab(QWidget):
         types_row.addWidget(QLabel("Include source types:"))
         self._type_checks: Dict[str, QCheckBox] = {}
         for src in _SOURCE_TYPES:
-            cb = QCheckBox(src.replace("_", " "))
+            cb = QCheckBox(_SOURCE_TYPE_LABELS.get(src, src.replace("_", " ")))
             types_row.addWidget(cb)
             self._type_checks[src] = cb
         filter_layout.addLayout(types_row)
@@ -1583,7 +1910,8 @@ class BuildPublicCorpusTab(QWidget):
         # --- Output
         out_group = QGroupBox("Output")
         out_layout = QFormLayout()
-        self.output_dir_input = QLineEdit("indexes/public")
+        self.output_dir_input = QLineEdit("")
+        self.output_dir_input.setPlaceholderText("Current project's indexes/public/")
         out_btn = QPushButton("Browse…")
         out_btn.clicked.connect(self._pick_output_dir)
         out_row = QHBoxLayout()
@@ -1610,16 +1938,28 @@ class BuildPublicCorpusTab(QWidget):
         layout.addWidget(self.log)
 
         self.setLayout(layout)
+        self._refresh_extracted_label()
 
     def _on_public_model_changed(self):
-        from shared_utils.model_config import get_catalog_entry
+        from shared_utils.model_config import get_catalog_entry, get_max_seq_tokens
 
-        model_key = self.model_combo.currentData() or "mini"
+        model_key = self.model_combo.currentData()
+        if not model_key:
+            from shared_utils.model_config import DEFAULT_MODEL_KEY
+            model_key = DEFAULT_MODEL_KEY
         entry = get_catalog_entry(model_key) or {}
         hint = entry.get("description", "")
         dims = entry.get("dimensions")
+        max_tok = get_max_seq_tokens(model_key)
+        extra = []
         if dims:
-            hint = f"{dims}d — {hint}" if hint else f"{dims}d"
+            extra.append(f"{dims}d")
+        extra.append(f"max_tokens={max_tok}")
+        prefix = " — ".join(extra)
+        if hint:
+            hint = f"{prefix} — {hint}"
+        else:
+            hint = prefix
         if entry.get("backend") == "openai":
             hint = f"{hint} (device ignored — API)"
             self.device_combo.setEnabled(False)
@@ -1627,10 +1967,53 @@ class BuildPublicCorpusTab(QWidget):
             self.device_combo.setEnabled(True)
         self.model_hint_label.setText(hint)
 
+    def _on_chunk_size_changed(self, value: int):
+        from shared_utils.chunking import default_chunk_overlap
+
+        self.chunk_overlap_spin.setValue(default_chunk_overlap(value))
+
+    def _extracted_dest(self) -> Path:
+        from moyo.publicside.gatherpublicsources.extract import extracted_path
+
+        return extracted_path(self._sources_dir())
+
+    def _sources_dir(self) -> Path:
+        text = self.sources_dir_input.text().strip()
+        if text:
+            return Path(text)
+        project = self._projects.current if self._projects else None
+        if project is None:
+            raise ValueError(
+                "Select or create a project in the toolbar, or set a sources directory."
+            )
+        return project.public_sources_dir
+
+    def _refresh_extracted_label(self):
+        from moyo.publicside.gatherpublicsources.extract import EXTRACTED_FILE_NAME
+
+        try:
+            dest = self._extracted_dest()
+        except ValueError:
+            self.extracted_path_label.setText(
+                f"Extracted file will be written as {EXTRACTED_FILE_NAME} "
+                "under the sources directory."
+            )
+            return
+        if dest.is_file():
+            self.extracted_path_label.setText(
+                f"Extracted file (used by Build Index and Naive corpus compare):\n{dest}"
+            )
+        else:
+            self.extracted_path_label.setText(
+                f"Extracted file will be written to:\n{dest}\n"
+                "Run Extract relevant text before building the index."
+            )
+
     def _pick_sources_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Sources Directory")
         if path:
             self.sources_dir_input.setText(path)
+            self._refresh_extracted_label()
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Select Output Directory")
@@ -1642,52 +2025,139 @@ class BuildPublicCorpusTab(QWidget):
         picks = [s for s, cb in self._type_checks.items() if cb.isChecked()]
         return [SourceType(s) for s in picks]
 
-    def _load_sources(self, sources_dir: Path):
-        """Recursively load sources.json files into PublicSource objects."""
-        from moyo.publicside.gatherpublicsources.schema import PublicSource
+    def _load_extracted(self, sources_dir: Path):
+        """Load the post-extraction corpus (extracted.json)."""
+        from moyo.publicside.gatherpublicsources.extract import load_extracted_sources
 
-        sources = []
-        if not sources_dir.exists():
-            raise FileNotFoundError(f"Sources directory not found: {sources_dir}")
+        return load_extracted_sources(sources_dir)
 
-        files = list(sources_dir.rglob("sources.json"))
-        if not files:
-            # Treat top-level JSON files as raw arrays
-            files = [p for p in sources_dir.rglob("*.json") if p.name != "summary.json"]
+    def _start_extract(self):
+        if self._worker is not None:
+            QMessageBox.information(self, "Busy", "A job is already running.")
+            return
+        try:
+            sources_dir = self._sources_dir()
+        except ValueError as exc:
+            QMessageBox.warning(self, "No project", str(exc))
+            return
 
-        for path in files:
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    data = [data]
-                for raw in data:
-                    try:
-                        sources.append(PublicSource(**raw))
-                    except Exception:
-                        continue
-            except Exception:
-                continue
-        return sources
+        from moyo.publicside.gatherpublicsources.extract import extracted_path
+
+        dest = extracted_path(sources_dir)
+        direction = self.direction_input.toPlainText().strip()
+        holder = {"worker": None}
+
+        def on_progress(current, total, message=""):
+            from moyo.publicside.gatherpublicsources.extract import format_extract_progress
+
+            worker = holder["worker"]
+            if worker is None:
+                return
+            worker.progress.emit(int(current), int(total), str(message or ""))
+            worker.log.emit(format_extract_progress(current, total, message))
+
+        def job():
+            from moyo.publicside.gatherpublicsources.extract import run_public_extract
+
+            return run_public_extract(
+                sources_dir,
+                direction=direction or None,
+                output=dest,
+                progress=on_progress,
+            )
+
+        self.log.clear()
+        self.log.append(f"Extracting relevant text. Output file:\n{dest}")
+        self.extract_progress.setRange(0, 1)
+        self.extract_progress.setValue(0)
+        self.extract_progress.setFormat("%v / %m windows (%p%)")
+        self.extract_status.setText("Starting extract…")
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%v / %m windows (%p%)")
+        self.progress_bar.setVisible(True)
+        _busy(self.extract_btn, True, "Extract relevant text (Kimi)")
+        _busy(self.build_btn, True, "Build Index")
+
+        self._worker = BackgroundWorker(job)
+        holder["worker"] = self._worker
+        self._worker.log.connect(self.log.append)
+        self._worker.progress.connect(self._on_extract_progress)
+        self._worker.done.connect(self._on_extract_done)
+        self._worker.failed.connect(self._on_extract_failed)
+        self._worker.start()
+
+    def _on_extract_progress(self, current: int, total: int, message: str):
+        from moyo.publicside.gatherpublicsources.extract import format_extract_progress
+
+        total = max(1, int(total))
+        current = max(0, min(int(current), total))
+        for bar in (self.extract_progress, self.progress_bar):
+            bar.setRange(0, total)
+            bar.setValue(current)
+            bar.setFormat("%v / %m windows (%p%)")
+            bar.setVisible(True)
+        self.extract_status.setText(format_extract_progress(current, total, message))
+
+    def _on_extract_done(self, result):
+        try:
+            path = (result or {}).get("path") if isinstance(result, dict) else None
+            count = (result or {}).get("count") if isinstance(result, dict) else None
+            self._refresh_extracted_label()
+            if path:
+                self.extract_status.setText(
+                    f"Wrote {count} relevant passage(s) to {path}"
+                )
+                self.extract_progress.setValue(self.extract_progress.maximum())
+                self.log.append(f"✅ Extracted file written to:\n{path}")
+                QMessageBox.information(
+                    self,
+                    "Extracted text written",
+                    f"Wrote {count} relevant passage(s) to:\n\n{path}\n\n"
+                    "Build Index and Naive corpus compare use this file.",
+                )
+        finally:
+            self._cleanup_worker()
+
+    def _on_extract_failed(self, msg: str):
+        self.log.append(f"❌ {msg}")
+        self.extract_status.setText("Extract failed — see log.")
+        QMessageBox.critical(self, "Extract failed", msg)
+        self._cleanup_worker()
 
     def _start_build(self):
         if self._worker is not None:
-            QMessageBox.information(self, "Busy", "A build is already running.")
+            QMessageBox.information(self, "Busy", "A job is already running.")
             return
 
-        sources_dir = Path(self.sources_dir_input.text().strip() or "data/public_sources")
-        name = self.name_input.text().strip() or "public_index"
+        sources_text = self.sources_dir_input.text().strip()
+        output_text = self.output_dir_input.text().strip()
+        project = self._projects.current if self._projects else None
+        if not sources_text or not output_text:
+            if project is None:
+                QMessageBox.warning(
+                    self,
+                    "No project",
+                    "Select or create a project in the toolbar, or set sources and output paths.",
+                )
+                return
+            sources_text = sources_text or str(project.public_sources_dir)
+            output_text = output_text or str(project.public_index_dir)
+        sources_dir = Path(sources_text)
+        name = self.name_input.text().strip() or (project.name if project else "public_index")
         description = self.description_input.text().strip()
-        output_dir = self.output_dir_input.text().strip() or "indexes/public"
+        output_dir = output_text
 
         try:
             from moyo.publicside.barrierprobe.schema import IndexConfig, IndexType
             from moyo.publicside.barrierprobe.public_index_builder import PublicIndexBuilder
-            from shared_utils.model_config import resolve_model_name
+            from shared_utils.model_config import DEFAULT_MODEL_KEY, resolve_model_name
+            from shared_utils.chunking import resolve_chunk_max_tokens
         except Exception as exc:
             QMessageBox.critical(self, "Import error", str(exc))
             return
 
-        model_key = self.model_combo.currentData() or "mini"
+        model_key = self.model_combo.currentData() or DEFAULT_MODEL_KEY
         model_name = resolve_model_name(model_key)
         device = self.device_combo.currentData() or "auto"
 
@@ -1697,6 +2167,8 @@ class BuildPublicCorpusTab(QWidget):
             embedding_device=device,
             chunk_size=self.chunk_size_spin.value(),
             chunk_overlap=self.chunk_overlap_spin.value(),
+            max_tokens=resolve_chunk_max_tokens(model_name),
+            normalize_embeddings=True,
             min_chunk_length=self.min_len_spin.value(),
             max_chunk_length=self.max_len_spin.value(),
             output_directory=output_dir,
@@ -1707,15 +2179,18 @@ class BuildPublicCorpusTab(QWidget):
             normalization_enabled=self.normalize_check.isChecked(),
         )
 
-        load_sources = self._load_sources
+        load_extracted = self._load_extracted
 
         def job():
-            print(f"Loading sources from {sources_dir}…")
-            sources = load_sources(sources_dir)
-            print(f"Loaded {len(sources)} sources")
+            print(f"Loading extracted corpus from {sources_dir}…")
+            try:
+                sources = load_extracted(sources_dir)
+            except FileNotFoundError as exc:
+                raise RuntimeError(str(exc)) from exc
+            print(f"Loaded {len(sources)} extracted passages")
             if not sources:
                 raise RuntimeError(
-                    "No sources found. Run the Gather Public Sources tab first."
+                    "extracted.json has no passages. Run Extract relevant text first."
                 )
 
             builder = PublicIndexBuilder(cfg)
@@ -1730,8 +2205,9 @@ class BuildPublicCorpusTab(QWidget):
             return builder.build_index(name=name, description=description)
 
         self.log.clear()
-        self.log.append("Starting build…")
+        self.log.append("Starting build from extracted.json…")
         self.progress_bar.setVisible(True)
+        _busy(self.extract_btn, True, "Extract relevant text (Kimi)")
         _busy(self.build_btn, True, "Build Index")
 
         self._worker = BackgroundWorker(job)
@@ -1763,6 +2239,9 @@ class BuildPublicCorpusTab(QWidget):
     def _cleanup_worker(self):
         self._worker = None
         self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setFormat("%p%")
+        _busy(self.extract_btn, False, "Extract relevant text (Kimi)")
         _busy(self.build_btn, False, "Build Index")
 
 
@@ -1773,7 +2252,22 @@ class BarrierProbeTab(QWidget):
         super().__init__()
         self._worker: Optional[BackgroundWorker] = None
         self._last_result = None
+        self._projects = None
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            return
+        project.ensure()
+        priv = project.latest_private_index() or project.private_index_dir
+        pub = project.latest_public_index() or project.public_index_dir
+        self.private_path.setText(str(priv))
+        self.public_path.setText(str(pub))
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -1783,8 +2277,9 @@ class BarrierProbeTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "For each private phrase, find its nearest public neighbour and rank "
-            "potential information-barrier breaches by cosine distance. "
+            "Pair level: cosine nearest-neighbour distance. "
+            "Neighborhood: top-1/top-2 margin and top-k entropy (is the match specific?). "
+            "Corpus: Semantic Separation (JS over cluster occupancy) — not barrier integrity. "
             "Both indices must share the same chunking + embedding model."
         )
         desc.setWordWrap(True)
@@ -1793,7 +2288,8 @@ class BarrierProbeTab(QWidget):
         # --- Index paths
         idx_group = QGroupBox("Indices")
         idx_layout = QFormLayout()
-        self.public_path = QLineEdit("indexes/public")
+        self.public_path = QLineEdit("")
+        self.public_path.setPlaceholderText("Current project's indexes/public/")
         pub_btn = QPushButton("Browse…")
         pub_btn.clicked.connect(lambda: self._pick(self.public_path, "Public Index"))
         pub_row = QHBoxLayout()
@@ -1801,7 +2297,8 @@ class BarrierProbeTab(QWidget):
         pub_row.addWidget(pub_btn)
         idx_layout.addRow("Public index:", pub_row)
 
-        self.private_path = QLineEdit("indexes/private")
+        self.private_path = QLineEdit("")
+        self.private_path.setPlaceholderText("Current project's indexes/private/")
         priv_btn = QPushButton("Browse…")
         priv_btn.clicked.connect(lambda: self._pick(self.private_path, "Private Index"))
         priv_row = QHBoxLayout()
@@ -1821,6 +2318,12 @@ class BarrierProbeTab(QWidget):
         self.similarity_spin.setValue(0.8)
         param_layout.addRow("Cosine-distance threshold:", self.similarity_spin)
 
+        self.calibrate_profile = QComboBox()
+        self.calibrate_profile.addItem("balanced (closest 10%)", "balanced")
+        self.calibrate_profile.addItem("strict (closest 5%)", "strict")
+        self.calibrate_profile.addItem("recall (closest 25%)", "recall")
+        param_layout.addRow("Calibration profile:", self.calibrate_profile)
+
         self.top_k_spin = QSpinBox()
         self.top_k_spin.setRange(1, 5000)
         self.top_k_spin.setValue(10)
@@ -1834,6 +2337,10 @@ class BarrierProbeTab(QWidget):
         self.run_btn = QPushButton("Run Barrier Analysis")
         self.run_btn.clicked.connect(self._start)
         action_row.addWidget(self.run_btn)
+
+        self.calibrate_btn = QPushButton("Calibrate Threshold")
+        self.calibrate_btn.clicked.connect(self._calibrate)
+        action_row.addWidget(self.calibrate_btn)
 
         self.save_json_btn = QPushButton("Save JSON Report")
         self.save_json_btn.setEnabled(False)
@@ -1854,14 +2361,26 @@ class BarrierProbeTab(QWidget):
         layout.addWidget(self.summary_label)
 
         # --- Breach table
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
-            ["Rank", "Risk", "Distance", "Private phrase", "Public phrase"]
+            [
+                "Rank",
+                "Risk",
+                "Distance",
+                "Margin",
+                "Entropy",
+                "Concentrated",
+                "Private phrase",
+                "Public phrase",
+            ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.table.setSortingEnabled(True)
         self.table.setMinimumHeight(220)
         layout.addWidget(self.table)
@@ -1926,6 +2445,72 @@ class BarrierProbeTab(QWidget):
         self._worker.failed.connect(self._on_failed)
         self._worker.start()
 
+    def _calibrate(self):
+        if self._worker is not None:
+            QMessageBox.information(self, "Busy", "Analysis already running.")
+            return
+
+        public_path = self.public_path.text().strip()
+        private_path = self.private_path.text().strip()
+        if not (Path(public_path).exists() and Path(private_path).exists()):
+            QMessageBox.warning(
+                self, "Path missing",
+                "Both the public and private index directories must exist."
+            )
+            return
+
+        try:
+            from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
+            from moyo.publicside.barrierprobe.barrier_analyzer import BarrierAnalyzer
+        except Exception as exc:
+            QMessageBox.critical(self, "Import error", str(exc))
+            return
+
+        cfg = BarrierProbeConfig(
+            public_index_path=public_path,
+            private_index_path=private_path,
+        )
+        profile = self.calibrate_profile.currentData() or "balanced"
+
+        def job():
+            analyzer = BarrierAnalyzer(cfg)
+            return analyzer.calibrate_threshold(profile=profile)
+
+        self.log.clear()
+        self.log.append(f"Calibrating cosine-distance threshold ({profile})…")
+        self.progress_bar.setVisible(True)
+        _busy(self.run_btn, True, "Run Barrier Analysis")
+        _busy(self.calibrate_btn, True, "Calibrate Threshold")
+
+        self._worker = BackgroundWorker(job)
+        self._worker.log.connect(self.log.append)
+        self._worker.done.connect(self._on_calibrated)
+        self._worker.failed.connect(self._on_failed)
+        self._worker.start()
+
+    def _on_calibrated(self, result):
+        try:
+            recommended = float(getattr(result, "recommended_distance"))
+            self.similarity_spin.setValue(recommended)
+            self.log.append(
+                f"Recommended threshold ({result.profile}): {recommended:.4f}"
+            )
+            self.log.append(
+                f"Would flag {result.n_flagged_at_recommended} / {result.n_private} "
+                "private phrases"
+            )
+            self.log.append(
+                f"min={result.min_distance:.4f}  median={result.median_distance:.4f}  "
+                f"max={result.max_distance:.4f}"
+            )
+            for note in getattr(result, "notes", []) or []:
+                self.log.append(f"• {note}")
+            self.summary_label.setText(
+                f"Calibrated threshold: {recommended:.4f} ({result.profile})"
+            )
+        finally:
+            self._cleanup_worker()
+
     def _on_done(self, result):
         try:
             self._last_result = result
@@ -1933,7 +2518,14 @@ class BarrierProbeTab(QWidget):
             medium = getattr(result, "medium_risk_breaches", 0)
             low = getattr(result, "low_risk_breaches", 0)
             total = getattr(result, "breach_count", 0)
+            sep = getattr(result, "semantic_separation", None)
+            sep_txt = f"{sep:.2f}" if isinstance(sep, (int, float)) else "n/a"
+            exposure = getattr(result, "pairwise_exposure", "None")
+            concentrated = getattr(result, "concentrated_matches", 0)
             self.summary_label.setText(
+                f"Semantic Separation: {sep_txt}   "
+                f"Pairwise Exposure: {exposure}   "
+                f"Concentrated Matches: {concentrated}   |   "
                 f"Breaches: {total}   High: {high}   Medium: {medium}   Low: {low}"
             )
 
@@ -1944,13 +2536,18 @@ class BarrierProbeTab(QWidget):
                 rank = b.get("rank", row + 1)
                 risk = b.get("risk_level", "")
                 dist = b.get("distance", 0.0)
+                margin = b.get("margin")
+                ent = b.get("normalized_entropy")
                 pub = (b.get("public_content") or "")[:200]
                 priv = (b.get("private_content") or "")[:200]
                 self._set(row, 0, str(rank))
                 self._set(row, 1, risk, _risk_color(risk))
                 self._set(row, 2, f"{dist:.4f}")
-                self._set(row, 3, priv)
-                self._set(row, 4, pub)
+                self._set(row, 3, "" if margin is None else f"{margin:.4f}")
+                self._set(row, 4, "" if ent is None else f"{ent:.3f}")
+                self._set(row, 5, "yes" if b.get("concentrated") else "")
+                self._set(row, 6, priv)
+                self._set(row, 7, pub)
             self.table.setSortingEnabled(True)
 
             for rec in getattr(result, "recommendations", []) or []:
@@ -1976,6 +2573,8 @@ class BarrierProbeTab(QWidget):
         self._worker = None
         self.progress_bar.setVisible(False)
         _busy(self.run_btn, False, "Run Barrier Analysis")
+        if hasattr(self, "calibrate_btn"):
+            _busy(self.calibrate_btn, False, "Calibrate Threshold")
 
     def _save_json(self):
         if self._last_result is None:
@@ -2008,19 +2607,31 @@ class BarrierProbeTab(QWidget):
                 "tr.high{background:#fdd;}tr.medium{background:#fed;}tr.low{background:#dfd;}</style>",
                 "</head><body>",
                 f"<h1>Barrier Probe Report</h1>",
+                f"<p>Semantic Separation: "
+                f"{'n/a' if res.semantic_separation is None else f'{res.semantic_separation:.2f}'} "
+                f"&nbsp; Pairwise Exposure: {res.pairwise_exposure} "
+                f"&nbsp; Concentrated Matches: {res.concentrated_matches}</p>",
+                "<p>High Semantic Separation is not barrier integrity — "
+                "a single leaked fact may barely move corpus occupancy.</p>",
                 f"<p>Total breaches: {res.breach_count} "
                 f"(high {res.high_risk_breaches}, "
                 f"medium {res.medium_risk_breaches}, "
                 f"low {res.low_risk_breaches})</p>",
                 "<table><tr><th>Rank</th><th>Risk</th><th>Distance</th>"
+                "<th>Margin</th><th>Entropy</th><th>Concentrated</th>"
                 "<th>Private</th><th>Public</th></tr>",
             ]
             for b in res.potential_breaches:
+                margin = b.get("margin")
+                ent = b.get("normalized_entropy")
                 lines.append(
                     f"<tr class='{b.get('risk_level','')}'>"
                     f"<td>{b.get('rank','')}</td>"
                     f"<td>{b.get('risk_level','')}</td>"
                     f"<td>{b.get('distance', 0):.4f}</td>"
+                    f"<td>{'' if margin is None else f'{margin:.4f}'}</td>"
+                    f"<td>{'' if ent is None else f'{ent:.3f}'}</td>"
+                    f"<td>{'yes' if b.get('concentrated') else ''}</td>"
                     f"<td>{(b.get('private_content') or '')[:400]}</td>"
                     f"<td>{(b.get('public_content') or '')[:400]}</td>"
                     "</tr>"
@@ -2049,7 +2660,20 @@ class FuzzerTab(QWidget):
         super().__init__()
         self._worker: Optional[BackgroundWorker] = None
         self._last_results: list = []
+        self._projects = None
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            return
+        project.ensure()
+        priv = project.latest_private_index() or project.private_index_dir
+        self.corpus_path.setText(str(priv))
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -2072,7 +2696,8 @@ class FuzzerTab(QWidget):
         # --- Corpus
         corpus_group = QGroupBox("Corpus")
         corpus_layout = QFormLayout()
-        self.corpus_path = QLineEdit("indexes/private")
+        self.corpus_path = QLineEdit("")
+        self.corpus_path.setPlaceholderText("Current project's indexes/private/")
         corp_btn = QPushButton("Browse…")
         corp_btn.clicked.connect(lambda: self._pick(self.corpus_path, "Corpus Index"))
         corp_row = QHBoxLayout()
@@ -2420,8 +3045,9 @@ class VisualizationTab(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.default_private_index_path = _repo_root / "indexes" / "private"
-        self.default_public_index_path = _repo_root / "indexes" / "public"
+        self._projects = None
+        self.default_private_index_path = None
+        self.default_public_index_path = None
         self.private_index = None
         self.public_index = None
         # Cached arrays: avoid recomputing on every plot change
@@ -2431,6 +3057,34 @@ class VisualizationTab(QWidget):
         self._coords_2d = None
         self._coords_reducer = None  # which reducer the coords came from
         self.init_ui()
+
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            self.default_private_index_path = None
+            self.default_public_index_path = None
+            self.private_index_label.setText("(no project)")
+            self.public_index_label.setText("(no project)")
+            self.use_default_private_checkbox.setText("Use this project's private index")
+            self.use_default_public_checkbox.setText("Use this project's public index")
+            return
+        project.ensure()
+        priv = project.latest_private_index() or project.private_index_dir
+        pub = project.latest_public_index() or project.public_index_dir
+        self.default_private_index_path = priv
+        self.default_public_index_path = pub
+        self.private_index_label.setText(str(priv))
+        self.public_index_label.setText(str(pub))
+        self.use_default_private_checkbox.setText(
+            f"Use this project's private index ({priv})"
+        )
+        self.use_default_public_checkbox.setText(
+            f"Use this project's public index ({pub})"
+        )
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -2444,7 +3098,7 @@ class VisualizationTab(QWidget):
         data_layout = QVBoxLayout()
 
         private_layout = QHBoxLayout()
-        self.private_index_label = QLabel(str(self.default_private_index_path))
+        self.private_index_label = QLabel("(no project)")
         select_private_btn = QPushButton("Load Private Index")
         select_private_btn.clicked.connect(self.load_private_index)
         private_layout.addWidget(QLabel("Private:"))
@@ -2453,14 +3107,14 @@ class VisualizationTab(QWidget):
         data_layout.addLayout(private_layout)
 
         self.use_default_private_checkbox = QCheckBox(
-            "Use default private index (indexes/private)"
+            "Use this project's private index"
         )
         self.use_default_private_checkbox.setChecked(True)
         self.use_default_private_checkbox.toggled.connect(self.on_private_method_changed)
         data_layout.addWidget(self.use_default_private_checkbox)
 
         public_layout = QHBoxLayout()
-        self.public_index_label = QLabel(str(self.default_public_index_path))
+        self.public_index_label = QLabel("(no project)")
         select_public_btn = QPushButton("Load Public Index")
         select_public_btn.clicked.connect(self.load_public_index)
         public_layout.addWidget(QLabel("Public:"))
@@ -2469,7 +3123,7 @@ class VisualizationTab(QWidget):
         data_layout.addLayout(public_layout)
 
         self.use_default_public_checkbox = QCheckBox(
-            "Use default public index (indexes/public)"
+            "Use this project's public index"
         )
         self.use_default_public_checkbox.setChecked(True)
         self.use_default_public_checkbox.toggled.connect(self.on_public_method_changed)
@@ -2599,14 +3253,20 @@ class VisualizationTab(QWidget):
             if self.use_default_public_checkbox.isChecked()
             else Path(self.public_index_label.text())
         )
-        return priv, pub
+        if priv is None or pub is None:
+            raise ValueError("Select or create a project in the toolbar first.")
+        return Path(priv), Path(pub)
 
     def load_indices(self):
         if not MATPLOTLIB_AVAILABLE:
             QMessageBox.warning(self, "Warning", "Visualization deps not installed")
             return
 
-        priv_path, pub_path = self._resolve_paths()
+        try:
+            priv_path, pub_path = self._resolve_paths()
+        except ValueError as exc:
+            QMessageBox.warning(self, "No project", str(exc))
+            return
         if not priv_path.exists():
             QMessageBox.warning(self, "Path missing", f"Private index not found: {priv_path}")
             return
@@ -2952,10 +3612,34 @@ class BuildReportTab(QWidget):
     def __init__(self):
         super().__init__()
         self._worker: Optional[BackgroundWorker] = None
+        self._projects = None
         self.init_ui()
 
+    def bind_project(self, controller) -> None:
+        self._projects = controller
+        controller.changed.connect(self._on_project_changed)
+        self.compare.bind_project(controller)
+        self._on_project_changed(controller.current)
+
+    def _on_project_changed(self, project) -> None:
+        if project is None:
+            self.compare.reload()
+            return
+        found = project.find_explorations()
+        if found:
+            self.expl_input.setText(str(found[0]))
+        else:
+            self.expl_input.setPlaceholderText(
+                f"Path to exploration.md under {project.public_sources_dir}"
+            )
+        self.compare.reload()
+
     def init_ui(self):
-        layout = QVBoxLayout()
+        outer = QVBoxLayout()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        layout = QVBoxLayout(inner)
 
         title = QLabel("Build Report")
         title.setFont(QFont("Arial", 16, QFont.Bold))
@@ -2980,7 +3664,7 @@ class BuildReportTab(QWidget):
         expl_row = QHBoxLayout()
         self.expl_input = QLineEdit()
         self.expl_input.setPlaceholderText(
-            "Path to exploration.md (e.g. data/public_sources/<slug>/exploration.md)"
+            "Path to exploration.md (searched in the current project)"
         )
         browse_btn = QPushButton("Browse…")
         browse_btn.clicked.connect(self._browse_exploration)
@@ -3042,11 +3726,19 @@ class BuildReportTab(QWidget):
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        self.log = _make_log_pane(min_height=220)
+        self.log = _make_log_pane(min_height=180)
         layout.addWidget(self.log)
 
-        layout.addStretch(1)
-        self.setLayout(layout)
+        from moyo.gui.compare_widget import NaiveCompareWidget
+
+        self.compare = NaiveCompareWidget(
+            exploration_getter=lambda: self.expl_input.text().strip()
+        )
+        layout.addWidget(self.compare)
+
+        scroll.setWidget(inner)
+        outer.addWidget(scroll)
+        self.setLayout(outer)
 
     def _browse_exploration(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -3054,6 +3746,7 @@ class BuildReportTab(QWidget):
         )
         if path:
             self.expl_input.setText(path)
+            self.compare.reload()
 
     def _build(self):
         exploration = self.expl_input.text().strip()
@@ -3325,6 +4018,9 @@ class MoyoGUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        from moyo.gui.project_controller import ProjectController
+
+        self.projects = ProjectController(self)
         self.init_ui()
 
     def init_ui(self):
@@ -3338,6 +4034,26 @@ class MoyoGUI(QMainWindow):
         layout = QVBoxLayout()
         central_widget.setLayout(layout)
 
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("Project:"))
+        self.project_combo = QComboBox()
+        self.project_combo.setMinimumWidth(240)
+        self.project_combo.currentIndexChanged.connect(self._on_project_combo)
+        bar.addWidget(self.project_combo)
+        new_btn = QPushButton("New…")
+        new_btn.setToolTip("Create a new project folder under projects/")
+        new_btn.clicked.connect(self._new_project)
+        bar.addWidget(new_btn)
+        open_btn = QPushButton("Open folder…")
+        open_btn.setToolTip("Use an existing directory as a project")
+        open_btn.clicked.connect(self._open_project_folder)
+        bar.addWidget(open_btn)
+        self.project_path_label = QLabel("")
+        self.project_path_label.setStyleSheet("color: #555;")
+        self.project_path_label.setWordWrap(True)
+        bar.addWidget(self.project_path_label, stretch=1)
+        layout.addLayout(bar)
+
         self.tab_widget = QTabWidget()
         self.tab_widget.addTab(MoyoScanTab(), "Moyo Scan")
         self.tab_widget.addTab(DataInputTab(), "Private Data Input")
@@ -3349,8 +4065,70 @@ class MoyoGUI(QMainWindow):
         self.tab_widget.addTab(FuzzerTab(), "LLM Fuzzer")
         self.tab_widget.addTab(VisualizationTab(), "Visualize Indices")
 
+        for i in range(self.tab_widget.count()):
+            tab = self.tab_widget.widget(i)
+            bind = getattr(tab, "bind_project", None)
+            if callable(bind):
+                bind(self.projects)
+
         layout.addWidget(self.tab_widget)
+        self._refresh_project_combo()
         self.statusBar().showMessage("Ready")
+
+    def _refresh_project_combo(self) -> None:
+        self.project_combo.blockSignals(True)
+        self.project_combo.clear()
+        self.project_combo.addItem("(no project)", "")
+        current = self.projects.current
+        select = 0
+        for i, proj in enumerate(self.projects.projects(), start=1):
+            self.project_combo.addItem(f"{proj.name}", str(proj.root))
+            if current is not None and proj.root == current.root:
+                select = i
+        self.project_combo.setCurrentIndex(select)
+        self.project_combo.blockSignals(False)
+        self._update_project_label()
+
+    def _update_project_label(self) -> None:
+        project = self.projects.current
+        if project is None:
+            self.project_path_label.setText(
+                "Select or create a project. Phrases and FAISS indexes live in that folder."
+            )
+            self.statusBar().showMessage("No project selected")
+            return
+        self.project_path_label.setText(str(project.root))
+        self.statusBar().showMessage(f"Project: {project.name}")
+
+    def _on_project_combo(self, index: int) -> None:
+        from moyo.project import MoyoProject
+
+        data = self.project_combo.itemData(index)
+        if not data:
+            self.projects.set_project(None)
+            self._update_project_label()
+            return
+        self.projects.set_project(MoyoProject.from_path(data))
+        self._update_project_label()
+
+    def _new_project(self) -> None:
+        name, ok = QInputDialog.getText(self, "New project", "Project name:")
+        if not ok or not str(name).strip():
+            return
+        try:
+            self.projects.create(str(name).strip())
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid name", str(exc))
+            return
+        self._refresh_project_combo()
+
+    def _open_project_folder(self) -> None:
+        start = str(self.projects.current.root) if self.projects.current else ""
+        path = QFileDialog.getExistingDirectory(self, "Open project folder", start)
+        if not path:
+            return
+        self.projects.open_folder(Path(path))
+        self._refresh_project_combo()
 
     def closeEvent(self, event):
         reply = QMessageBox.question(

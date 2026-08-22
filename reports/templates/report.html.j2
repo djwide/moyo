@@ -37,8 +37,8 @@
 
     <section>
       <h2>§ 3 Findings &amp; basis chains</h2>
-      {% if graphics.sensitivity_distribution %}
-      <div class="graphic">{{ graphics.sensitivity_distribution | safe }}</div>
+      {% if graphics.findings_by_llm %}
+      <div class="graphic">{{ graphics.findings_by_llm | safe }}</div>
       {% endif %}
       <table class="findings-table">
         <thead>

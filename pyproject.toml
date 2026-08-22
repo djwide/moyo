@@ -57,6 +57,7 @@ moyo-corpus = "moyo.privateside.mapcorpus.cli:cli"
 moyo-gather = "moyo.publicside.gatherpublicsources.cli:cli"
 moyo-probe = "moyo.publicside.barrierprobe.cli:cli"
 moyo-redteam = "moyo.redteam.cli:cli"
+moyo-phrases = "moyo.privateside.phrases.cli:cli"
 moyo-gui = "moyo.gui.app:main"
 
 [build-system]

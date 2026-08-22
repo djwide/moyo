@@ -1,9 +1,9 @@
-"""Exposure radar + sensitivity distribution SVGs."""
+"""Exposure radar + findings-by-LLM bar chart SVGs."""
 
 from __future__ import annotations
 
 import math
-from typing import Mapping
+from typing import Any, Mapping, Sequence
 
 from .style import (
     BAR_COLORS,
@@ -22,6 +22,7 @@ from .style import (
     escape_xml,
     svg_root,
     title_block,
+    truncate,
 )
 
 
@@ -124,26 +125,50 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
     return svg_root(size, size, body)
 
 
-def sensitivity_bars_svg(bins: Mapping[str, int], width: int = 520, height: int = 304) -> str:
-    """Bar chart with cream panel large enough for counts and category labels."""
-    order = ["high", "medium", "low", "informational"]
-    values = [int(bins.get(k, 0)) for k in order]
-    peak = max(values) or 1
+def _band_score(row: Mapping[str, Any], band: str) -> float:
+    bands = row.get("bands") if isinstance(row.get("bands"), Mapping) else {}
+    cell = bands.get(band) if isinstance(bands, Mapping) else None
+    if isinstance(cell, Mapping):
+        return float(cell.get("score", 0) or 0)
+    return float(row.get(f"{band}_score", 0) or 0)
 
-    # Plot sits lower so title/subtitle stay clear of the panel.
-    left, right, top, bottom = 48, 24, 64 + 2 * LETTER_H, 56
+
+def _llm_row_score(row: Mapping[str, Any]) -> float:
+    score = row.get("score")
+    if score is not None:
+        return max(0.0, float(score or 0))
+    return sum(_band_score(row, k) for k in ("high", "medium", "low", "informational"))
+
+
+def llm_findings_bars_svg(
+    rows: Sequence[Mapping[str, Any]],
+    width: int = 520,
+    height: int = 320,
+) -> str:
+    """Bar chart of test LLMs scored by finding quantity and sensitivity.
+
+    Bar height is the sum of finding sensitivities for that model. Stacks are
+    colored by sensitivity band so both volume and severity are visible.
+    """
+    band_order = ("informational", "low", "medium", "high")  # bottom → top
+    series = [dict(r) for r in (rows or []) if r.get("model")]
+    series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
+    peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
+
+    # Title + subtitle sit above the panel (subtitle is 16px below the title).
+    left, right, top, bottom = 48, 20, 72, 68
     plot_w = width - left - right
     plot_h = height - top - bottom
     base = top + plot_h
-    n = len(order)
-    gap = 28
-    bar_w = (plot_w - gap * (n - 1)) / n
+    n = max(len(series), 1)
+    gap = 10.0 if n >= 8 else (16.0 if n >= 5 else 24.0)
+    bar_w = min(52.0, (plot_w - gap * (n - 1)) / n)
+    total_w = n * bar_w + max(n - 1, 0) * gap
+    x0 = left + max(0.0, (plot_w - total_w) / 2)
 
-    # Restored panel height (pad 28/36); still extended left by one letter-width.
-    # Positioned lower than the pre-change y so title + subtitle remain visible.
     panel_pad_x = 20
-    panel_pad_top = 28
-    panel_pad_bot = 36
+    panel_pad_top = 18
+    panel_pad_bot = 48
     panel_left = left - panel_pad_x - LETTER_W
     panel_y = top - panel_pad_top
     panel = (
@@ -153,15 +178,14 @@ def sensitivity_bars_svg(bins: Mapping[str, int], width: int = 520, height: int 
         f'rx="10" fill="{CREAM}" stroke="{RULE}"/>'
     )
 
-    # Horizontal grid + baseline
     grid = []
     for frac in (0.25, 0.5, 0.75, 1.0):
         y = base - frac * plot_h
+        tick_v = int(round(peak * frac))
         grid.append(
             f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" '
             f'stroke="{RULE}" stroke-width="1"/>'
         )
-        tick_v = int(round(peak * frac))
         grid.append(
             f'<text x="{left - 8}" y="{y + 3:.1f}" text-anchor="end" '
             f'font-family="{FONT}" font-size="9" fill="{MUTED}">{tick_v}</text>'
@@ -171,40 +195,90 @@ def sensitivity_bars_svg(bins: Mapping[str, int], width: int = 520, height: int 
         f'stroke="{INK}" stroke-width="1.5"/>'
     )
 
-    bars = []
-    for i, (name, v) in enumerate(zip(order, values)):
-        color = BAR_COLORS[name]
-        label = BAR_LABELS[name]
-        # Zero counts still show a hairline stub so the category is visible
-        if v == 0:
+    bars: list[str] = []
+    name_limit = 7 if n >= 9 else (9 if n >= 6 else 12)
+    label_size = 9 if n >= 8 else 11
+    for i, row in enumerate(series):
+        x = x0 + i * (bar_w + gap)
+        total = _llm_row_score(row)
+        segments = [(band, _band_score(row, band)) for band in band_order]
+        live = [(band, sc) for band, sc in segments if sc > 0]
+        cx = x + bar_w / 2
+
+        if not live or total <= 0:
             h = 3.0
-            color = RULE
+            y = base - h
+            bars.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" '
+                f'fill="{RULE}"/>'
+            )
         else:
-            h = max((v / peak) * plot_h, 8.0)
-        x = left + i * (bar_w + gap)
-        y = base - h
-        # Rounded top via path (rect + top radius)
-        r = min(6.0, bar_w / 2, h / 2)
-        path = (
-            f"M {x:.1f},{base:.1f} "
-            f"L {x:.1f},{y + r:.1f} "
-            f"Q {x:.1f},{y:.1f} {x + r:.1f},{y:.1f} "
-            f"L {x + bar_w - r:.1f},{y:.1f} "
-            f"Q {x + bar_w:.1f},{y:.1f} {x + bar_w:.1f},{y + r:.1f} "
-            f"L {x + bar_w:.1f},{base:.1f} Z"
-        )
-        bars.append(f'<path d="{path}" fill="{color}"/>')
+            y_cursor = base
+            for j, (band, sc) in enumerate(live):
+                h = (sc / peak) * plot_h
+                if h <= 0:
+                    continue
+                y = y_cursor - h
+                is_top = j == len(live) - 1
+                color = BAR_COLORS[band]
+                if is_top:
+                    r = min(6.0, bar_w / 2, h / 2)
+                    path = (
+                        f"M {x:.1f},{y_cursor:.1f} "
+                        f"L {x:.1f},{y + r:.1f} "
+                        f"Q {x:.1f},{y:.1f} {x + r:.1f},{y:.1f} "
+                        f"L {x + bar_w - r:.1f},{y:.1f} "
+                        f"Q {x + bar_w:.1f},{y:.1f} {x + bar_w:.1f},{y + r:.1f} "
+                        f"L {x + bar_w:.1f},{y_cursor:.1f} Z"
+                    )
+                    bars.append(f'<path d="{path}" fill="{color}"/>')
+                else:
+                    bars.append(
+                        f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" '
+                        f'height="{h:.1f}" fill="{color}"/>'
+                    )
+                y_cursor = y
+            label = str(int(round(total)))
+            bars.append(
+                f'<text x="{cx:.1f}" y="{y_cursor - 8:.1f}" text-anchor="middle" '
+                f'font-family="{FONT}" font-size="12" font-weight="600" fill="{INK}">'
+                f"{escape_xml(label)}</text>"
+            )
+
+        model = truncate(str(row.get("model") or ""), name_limit)
         bars.append(
-            f'<text x="{x + bar_w / 2:.1f}" y="{y - 8:.1f}" text-anchor="middle" '
-            f'font-family="{FONT}" font-size="13" font-weight="600" fill="{INK}">{v}</text>'
-        )
-        bars.append(
-            f'<text x="{x + bar_w / 2:.1f}" y="{base + 22}" text-anchor="middle" '
-            f'font-family="{FONT}" font-size="11" fill="{MUTED}">{escape_xml(label)}</text>'
+            f'<text x="{cx:.1f}" y="{base + 18}" text-anchor="middle" '
+            f'font-family="{FONT}" font-size="{label_size}" fill="{MUTED}">'
+            f"{escape_xml(model)}</text>"
         )
 
-    body = f"""  {title_block(width / 2, 20, "Findings by Sensitivity")}
+    if not series:
+        bars.append(
+            f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h / 2:.1f}" '
+            f'text-anchor="middle" font-family="{FONT}" font-size="12" fill="{MUTED}">'
+            f"No findings</text>"
+        )
+
+    legend = []
+    legend_y = height - 18
+    items = [(k, BAR_LABELS[k]) for k in ("high", "medium", "low", "informational")]
+    item_w = 72
+    legend_w = item_w * len(items)
+    lx = (width - legend_w) / 2 + 8
+    for name, label in items:
+        legend.append(
+            f'<rect x="{lx:.1f}" y="{legend_y - 8:.1f}" width="10" height="10" rx="2" '
+            f'fill="{BAR_COLORS[name]}"/>'
+        )
+        legend.append(
+            f'<text x="{lx + 14:.1f}" y="{legend_y:.1f}" font-family="{FONT}" '
+            f'font-size="10" fill="{MUTED}">{escape_xml(label)}</text>'
+        )
+        lx += item_w
+
+    body = f"""  {title_block(width / 2, 20, "Findings by LLM", subtitle="Score = findings × sensitivity")}
   {panel}
   {"".join(grid)}
-  {"".join(bars)}"""
+  {"".join(bars)}
+  {"".join(legend)}"""
     return svg_root(width, height, body)

@@ -10,9 +10,10 @@ Configuration:
 
 | Setting | Env / config | Default |
 | ------- | ------------ | ------- |
-| Model   | `MOYO_EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` |
+| Model   | `MOYO_EMBEDDING_MODEL_NAME` | `BAAI/bge-base-en-v1.5` |
 | Device  | `MOYO_EMBEDDING_DEVICE` | `auto` (`cuda` when PyTorch sees a GPU, else `cpu`) |
 | Batch   | `MOYO_EMBEDDING_BATCH_SIZE` | `32` |
+| Normalize | `MOYO_EMBEDDING_NORMALIZE` | `true` (required for FlatIP = cosine) |
 
 The GUI (**Create Private Index**, **Build Public Corpus**) exposes the full
 catalog plus a device selector (`Auto` / `CUDA` / `CPU`). Catalog keys live in
@@ -46,10 +47,10 @@ is GPU-accelerated. That is usually the bottleneck for index builds.
 
 | Tier | Keys (GUI) | Model | Dims | When to use |
 | ---- | ---------- | ----- | ---- | ----------- |
-| **Fast** | `mini` | `all-MiniLM-L6-v2` | 384 | Default for prototyping and pipeline iteration. English only. Fine on CPU. |
+| **Fast** | `mini` | `all-MiniLM-L6-v2` | 384 | Prototyping and CPU-only iteration. English only. |
 | **Fast+** | `mini-l12` | `all-MiniLM-L12-v2` | 384 | Modest quality bump; **same 384d layout** as L6 (re-embed, no FAISS dim change). Still CPU-friendly. |
-| **Balanced** | `mpnet` | `all-mpnet-base-v2` | 768 | Strong local default once you care about barrier precision. Prefer GPU for bulk builds. |
-| **Balanced / retrieval** | `bge-base` | `BAAI/bge-base-en-v1.5` | 768 | Often beats MPNet on retrieval benchmarks. English. Same hardware profile as MPNet. |
+| **Balanced** | `mpnet` | `all-mpnet-base-v2` | 768 | Strong local STS model. Prefer GPU for bulk builds. |
+| **Default / retrieval** | `bge-base` | `BAAI/bge-base-en-v1.5` | 768 | Default. Best local match for short private phrases vs public text. English. |
 | **Balanced / retrieval** | `e5-base` | `intfloat/e5-base-v2` | 768 | Strong retrieval; best with `query:` / `passage:` prefixes (not applied automatically today). |
 | **Multilingual** | `multilingual` | `paraphrase-multilingual-mpnet-base-v2` | 768 | Non-English (or mixed) public/private corpora. |
 | **API** | `openai-small` | `text-embedding-3-small` | 1536 | Highest convenience / quality via API. **Private text leaves the machine.** Needs `OPENAI_API_KEY`. |
@@ -57,17 +58,17 @@ is GPU-accelerated. That is usually the bottleneck for index builds.
 
 ### Practical guidance for moyo
 
-1. **Stay on MiniLM-L6** while building and tuning the pipeline.
-2. When real corpora matter for barrier precision, **benchmark `mpnet` or
-   `bge-base`** on a sample: compare nearest-neighbour rankings and distance
-   distributions, not only public MTEB scores.
+1. **Use `bge-base`** (the default) for private and public indexes.
+2. Drop to **MiniLM-L6** only for CPU-only prototyping; rebuild both sides
+   before comparing distances.
 3. Use **`multilingual`** only if language coverage requires it.
 4. Prefer **local models for private-side** work; use OpenAI only if you
    accept data leaving the host and recalibrate distance thresholds after
    switching.
 5. After any model change, **rebuild both public and private indices** and
    re-run barrier baselines — absolute cosine distances are not comparable
-   across embedding spaces.
+   across embedding spaces. Private and public indexes **must** share the
+   same embedding model.
 
 ### Cost sketch (local)
 
@@ -84,6 +85,46 @@ Bulk embed time scales roughly with model size; on GPU, MPNet/BGE are
 typically comfortable. On CPU-only hosts, MiniLM remains the pragmatic
 default for large corpora.
 
+## Chunking, normalization, and compute time
+
+Public and private indexes must share **embedding model**, **L2-normalization**,
+and (for document corpora) **chunk_size / overlap / max_tokens**. Phrase-level
+private indexes only need the model and normalization to match; the public
+side already emits sentence/item vectors that line up with short secrets.
+
+`max_tokens` is taken from the model catalog (MiniLM 256, MPNet 384, BGE/E5
+512) so a larger encoder is not still packing MiniLM-sized windows.
+
+Overlap defaults to ~10% of `chunk_size` (`MOYO_PIPELINE_OVERLAP=50` at 512).
+Section chunks shorter than `MOYO_PIPELINE_MIN_CHUNK_LENGTH` (50) are dropped
+as boilerplate; sentence/item chunks and atomic private secrets are kept.
+Dedup stays on by default.
+
+### Compute tradeoffs
+
+Embed time is linear in **vector count × sequence length × model size**.
+Barrier analysis is `O(N_private × N_public × dim)` in the current exact
+NumPy pass.
+
+| Choice | Effect on vector count | Effect on embed time | Effect on barrier pass |
+| ------ | ---------------------- | -------------------- | ---------------------- |
+| Multi-granularity (section + sentence + item) | ~2–4× vs sections only | ~2–4× | ~2–4× public N |
+| Smaller `chunk_size` | more section windows | up (more encodes) | up |
+| Larger `max_tokens` (MPNet 384 vs MiniLM 256) | fewer, longer sections | each encode is slower; fewer of them | slight drop in N, higher dim if you also switch model |
+| MiniLM → MPNet/BGE | same N if chunking is unchanged | ~3–5× on GPU, more on CPU; 2× RAM at 768d | 2× in the dim term |
+| L2-normalize | none | negligible (one pass over each vector) | none (required for cosine) |
+| Dedup + min section length | fewer near-duplicate/boilerplate vectors | down | down |
+| `moyo-probe calibrate` | none | none | one extra NN pass, same cost as analyze |
+
+Use GPU (`MOYO_EMBEDDING_DEVICE=auto`) for the embed step — that dominates
+index builds. FAISS FlatIP search is not the bottleneck at typical corpus
+sizes.
+
+After any model change, rebuild **both** indexes and re-run
+`moyo-probe calibrate -p <public> -r <private>` (or **Calibrate Threshold**
+in the Barrier Probe tab). MiniLM distances are not a valid cutoff on
+MPNet/BGE.
+
 ## CLI / code
 
 ```python
@@ -94,7 +135,7 @@ print(get_device_info())
 
 vectors = embed(
     ["secret formula fragment"],
-    model_name="all-mpnet-base-v2",  # or catalog key "mpnet"
+    model_name="BAAI/bge-base-en-v1.5",  # or catalog key "bge-base"
     device="auto",
 )
 ```
@@ -103,5 +144,5 @@ Environment override:
 
 ```bash
 export MOYO_EMBEDDING_DEVICE=cuda
-export MOYO_EMBEDDING_MODEL_NAME=all-mpnet-base-v2
+export MOYO_EMBEDDING_MODEL_NAME=BAAI/bge-base-en-v1.5
 ```

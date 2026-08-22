@@ -331,7 +331,12 @@ class FAISSIndex:
         """Get number of vectors in index."""
         return self.index.ntotal
     
-    def save(self, directory: Union[str, Path], name: str = "index") -> Path:
+    def save(
+        self,
+        directory: Union[str, Path],
+        name: str = "index",
+        extra_info: Optional[Dict[str, Any]] = None,
+    ) -> Path:
         """Save index and metadata to directory.
 
         Args:
@@ -339,6 +344,8 @@ class FAISSIndex:
             name: Base name for the FAISS file, i.e. ``<name>.faiss``. Use the
                 corpus name so indexes are identifiable and never collide on a
                 single ``index.faiss``.
+            extra_info: Optional fields merged into ``index_info.json``
+                (embedding model, chunking, normalization fingerprint).
 
         Returns:
             Path to the written ``<name>.faiss`` file.
@@ -397,6 +404,8 @@ class FAISSIndex:
             "is_trained": self.is_trained,
             "has_string_store": len(self.string_store) > 0
         }
+        if extra_info:
+            info.update(extra_info)
         with open(info_path, 'w') as f:
             json.dump(info, f, indent=2)
         

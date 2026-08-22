@@ -45,8 +45,16 @@ class PipelineConfig(BaseSettings):
     
     batch_size: int = Field(default=1000, description="Default batch size for processing")
     max_workers: int = Field(default=4, description="Maximum number of worker processes")
-    chunk_size: int = Field(default=512, description="Default text chunk size")
-    overlap: int = Field(default=50, description="Default chunk overlap")
+    chunk_size: int = Field(default=512, description="Default text chunk size in characters")
+    overlap: int = Field(
+        default=50,
+        description="Chunk overlap in characters (~10% of chunk_size)",
+    )
+    min_chunk_length: int = Field(
+        default=50,
+        description="Drop section chunks shorter than this (boilerplate). "
+        "Sentence/item chunks and atomic private secrets are kept.",
+    )
     timeout_seconds: int = Field(default=300, description="Default timeout for operations")
     
     model_config = ConfigDict(env_prefix="MOYO_PIPELINE_")
@@ -56,7 +64,7 @@ class EmbeddingConfig(BaseSettings):
     """Embedding model configuration."""
     
     model_name: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
+        default="BAAI/bge-base-en-v1.5",
         description="Default embedding model"
     )
     device: str = Field(
@@ -64,7 +72,10 @@ class EmbeddingConfig(BaseSettings):
         description="Device for embedding computation: auto | cuda | cpu",
     )
     batch_size: int = Field(default=32, description="Batch size for embedding generation")
-    normalize: bool = Field(default=True, description="Normalize embeddings")
+    normalize: bool = Field(
+        default=True,
+        description="L2-normalize embeddings so FlatIP equals cosine similarity",
+    )
     
     model_config = ConfigDict(env_prefix="MOYO_EMBEDDING_")
 
@@ -82,7 +93,7 @@ class FAISSConfig(BaseSettings):
     """FAISS index configuration."""
     
     index_type: str = Field(default="FlatL2", description="Default FAISS index type")
-    dimension: int = Field(default=384, description="Embedding dimension")
+    dimension: int = Field(default=768, description="Embedding dimension")
     nlist: int = Field(default=100, description="Number of clusters for IVF indices")
     nprobe: int = Field(default=10, description="Number of probes for IVF search")
     
@@ -143,9 +154,17 @@ class Settings(BaseSettings):
 
     # Core settings
     data_dir: str = Field(default="data", description="Data directory")
-    index_dir: str = Field(default="indexes", description="Index directory")
+    index_dir: str = Field(default="indexes", description="Legacy global index directory")
     cache_dir: str = Field(default="cache", description="Cache directory")
     output_dir: str = Field(default="output", description="Output directory")
+    projects_dir: str = Field(
+        default="projects",
+        description="Directory of per-engagement project folders",
+    )
+    project: Optional[str] = Field(
+        default=None,
+        description="Current project slug (under projects_dir), or an absolute path",
+    )
 
     # Environment
     environment: str = Field(default="development", description="Environment name")

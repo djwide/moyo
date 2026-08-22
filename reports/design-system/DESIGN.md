@@ -15,7 +15,7 @@ reports/build/<run-id>/
 │   ├── company-logo.svg
 │   ├── exposure-radar.svg
 │   ├── model-heatmap.svg
-│   ├── sensitivity-distribution.svg
+│   ├── findings-by-llm.svg
 │   ├── evidence-graph.svg
 │   └── screenshots/       # optional raster evidence
 └── output/
@@ -56,7 +56,7 @@ and `css/basis.css`.
 |------|---------|
 | Cover | Brand, topic, date, classification |
 | Executive Summary | Narrative + key metrics |
-| Risk Overview | Severity distribution + exposure radar |
+| Risk Overview | Findings by LLM + exposure radar |
 | Finding | Finding card(s) with scores + status |
 | Evidence | Evidence boxes + graph |
 | Model Comparison | Heatmap + model exposure ranks |
@@ -72,7 +72,7 @@ and `css/basis.css`.
 | Evidence box | `evidence-box` | raw excerpt + line refs |
 | Quote box | `quote-box` | pull quote |
 | Metric card | `metric-card` | big number + label |
-| Risk matrix | `risk-matrix` | optional 2×2; bins chart often used |
+| Risk matrix | `risk-matrix` | optional 2×2; findings-by-LLM chart often used |
 | Model comparison chart | SVG asset | heatmap / exposure dots |
 | Confidence indicator | `confidence` | 1–5 dots or bar |
 | Remediation box | `remediation-box` | follow-up method + action |

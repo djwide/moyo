@@ -24,18 +24,21 @@ Storefront order fields used here::
     keepContent          reuse report.yaml / report.md (local --keep-content)
     generationStartedAt  ISO-8601 UTC, set when work begins
     generationFinishedAt ISO-8601 UTC, set on success or failure
-    output.pdfPath       reports/{orderId}/report.pdf
-    output.jsonPath      reports/{orderId}/report.json
-    output.markdownPath  reports/{orderId}/report.md
-    output.htmlPath      reports/{orderId}/report.html
+    output.pdfPath       reports/{storageFolder}/report.pdf
+    output.jsonPath      reports/{storageFolder}/report.json
+    output.markdownPath  reports/{storageFolder}/report.md
+    output.htmlPath      reports/{storageFolder}/report.html
+    storageFolder        first prompt words + short order suffix (GCS prefix)
 
 ``awaiting_qc`` is the canonical human-QC state. ``qc_pending`` is accepted
 only as a legacy alias when reading status.
 
-One report per prompt. A single-prompt order writes artifacts at
-``reports/{order_id}/`` (the path QC already uses). Multi-prompt orders
-use ``reports/{order_id}/{nn}_{slug}/`` plus a canonical root ``report.json``
-and ``manifest.json``.
+One report per prompt. GCS folders are ``reports/{storageFolder}/`` where
+``storageFolder`` is the first few prompt words plus a short unique suffix
+(not the Firestore ``ord_xxx`` id). A single-prompt order writes artifacts
+at that prefix (the path QC reads via ``output.pdfPath``). Multi-prompt
+orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root
+``report.json`` and ``manifest.json``.
 
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
 summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
@@ -61,6 +64,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from moyo.llm.client import ensure_env_loaded
+from moyo.order_storage import order_storage_folder
 
 logger = logging.getLogger("moyo.cloud_worker")
 
@@ -166,6 +170,16 @@ class OrderSpec:
     qc_required: bool = True
     product_id: str = "moyo_snapshot"
     source: str | None = None
+    storage_folder: str = ""
+
+    def __post_init__(self) -> None:
+        folder = (self.storage_folder or "").strip().strip("/")
+        if not folder:
+            folder = order_storage_folder(self.order_id, self.prompts)
+        self.storage_folder = folder
+
+    def reports_prefix(self) -> str:
+        return f"reports/{self.storage_folder}"
 
 
 @dataclass(frozen=True)
@@ -478,6 +492,9 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
             _first(data, "productId", "product_id", default=None), product
         ),
         source=source,
+        storage_folder=str(
+            _first(data, "storageFolder", "storage_folder", default="") or ""
+        ).strip(),
     )
 
 
@@ -683,9 +700,9 @@ def write_canonical_report_json(
     return write_json(dest, build_canonical_report(spec, runs))
 
 
-def output_paths(order_id: str, urls: dict[str, str]) -> dict[str, str | None]:
+def output_paths(folder: str, urls: dict[str, str]) -> dict[str, str | None]:
     """Storefront output.pdfPath / jsonPath / markdownPath / htmlPath."""
-    prefix = f"reports/{order_id}/"
+    prefix = f"reports/{folder.strip('/')}/"
 
     def pick(filenames: tuple[str, ...]) -> str | None:
         for name in filenames:
@@ -721,7 +738,8 @@ def success_update_fields(
         "generationMode": spec.generation_mode,
         "artifactPaths": urls,
         "reportManifest": manifest,
-        "output": output_paths(spec.order_id, urls),
+        "output": output_paths(spec.storage_folder, urls),
+        "storageFolder": spec.storage_folder,
         "qcRequired": spec.qc_required,
         "error": None,
     }
@@ -891,7 +909,7 @@ def _stage_retrieval_check(prompt_dir: Path, result: Any) -> None:
 
     write_llm_retrieval_check(result, prompt_dir)
 
-def retrieval_check_storage_paths(order_id: str, work: Path) -> list[tuple[str, Path]]:
+def retrieval_check_storage_paths(folder: str, work: Path) -> list[tuple[str, Path]]:
     """GCS object paths for any llm-retrieval-check files under the work dir."""
     dest: list[tuple[str, Path]] = []
     slugs = [
@@ -900,14 +918,15 @@ def retrieval_check_storage_paths(order_id: str, work: Path) -> list[tuple[str, 
         if p.is_dir() and (p / "llm-retrieval-check.md").exists()
     ]
     single = len(slugs) == 1
+    prefix = f"reports/{folder.strip('/')}"
     for path in work.rglob("llm-retrieval-check.*"):
         if path.suffix not in {".md", ".json"}:
             continue
         slug = path.parent.name
         if single:
-            dest.append((f"reports/{order_id}/{path.name}", path))
+            dest.append((f"{prefix}/{path.name}", path))
         else:
-            dest.append((f"reports/{order_id}/{slug}/{path.name}", path))
+            dest.append((f"{prefix}/{slug}/{path.name}", path))
     return dest
 
 
@@ -1035,9 +1054,9 @@ REBUILD_STAGE_FILES = (
 )
 
 
-def download_order_prefix(bucket, order_id: str, dest: Path) -> Path:
-    """Copy gs://…/reports/{orderId}/** into dest."""
-    prefix = f"reports/{order_id}/"
+def download_order_prefix(bucket, folder: str, dest: Path) -> Path:
+    """Copy gs://…/reports/{storageFolder}/** into dest."""
+    prefix = f"reports/{folder.strip('/')}/"
     dest.mkdir(parents=True, exist_ok=True)
     count = 0
     for blob in bucket.list_blobs(prefix=prefix):
@@ -1136,10 +1155,11 @@ def run_rebuild(
         if progress:
             progress(msg)
 
-    gcs_root = download_order_prefix(bucket, spec.order_id, work / "gcs")
+    gcs_root = download_order_prefix(bucket, spec.storage_folder, work / "gcs")
     _progress(
         f"rebuild from-stage={plan.from_stage} keep_graphics={plan.keep_graphics} "
-        f"keep_content={plan.keep_content} gs://{bucket.name}/reports/{spec.order_id}/"
+        f"keep_content={plan.keep_content} "
+        f"gs://{bucket.name}/reports/{spec.storage_folder}/"
     )
     runs: list[PromptRun] = []
     for index, prompt, src in rebuild_topic_dirs(gcs_root, spec):
@@ -1268,18 +1288,20 @@ def run_moyo(
     return runs
 
 
-def artifact_manifest(order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
+def artifact_manifest(order_id: str, runs: list[PromptRun], *, folder: str) -> dict[str, Any]:
+    prefix_root = f"reports/{folder.strip('/')}"
     return {
         "orderId": order_id,
+        "storageFolder": folder,
         "reports": [
             {
                 "index": run.index,
                 "prompt": run.prompt,
                 "slug": run.slug,
                 "prefix": (
-                    f"reports/{order_id}/"
+                    f"{prefix_root}/"
                     if len(runs) == 1
-                    else f"reports/{order_id}/{run.slug}/"
+                    else f"{prefix_root}/{run.slug}/"
                 ),
                 "files": sorted(run.artifacts),
             }
@@ -1289,21 +1311,18 @@ def artifact_manifest(order_id: str, runs: list[PromptRun]) -> dict[str, Any]:
 
 
 def storage_destinations(
-    order_id: str, runs: list[PromptRun]
+    folder: str, runs: list[PromptRun]
 ) -> list[tuple[str, Path]]:
     """(object path, local file) pairs. One copy per file.
 
-    Single-prompt orders land at ``reports/{order_id}/`` (QC path).
-    Multi-prompt orders land at ``reports/{order_id}/{slug}/``.
+    Single-prompt orders land at ``reports/{storageFolder}/``.
+    Multi-prompt orders land at ``reports/{storageFolder}/{slug}/``.
     """
     dest: list[tuple[str, Path]] = []
     single = len(runs) == 1
+    root = f"reports/{folder.strip('/')}"
     for run in runs:
-        prefix = (
-            f"reports/{order_id}"
-            if single
-            else f"reports/{order_id}/{run.slug}"
-        )
+        prefix = root if single else f"{root}/{run.slug}"
         for name, path in run.artifacts.items():
             dest.append((f"{prefix}/{name}", path))
     return dest
@@ -1416,18 +1435,19 @@ def _upload_runs(
     bucket, spec: OrderSpec, runs: list[PromptRun], *, work: Path
 ) -> dict[str, Any]:
     canonical = write_canonical_report_json(spec, runs, work / "report.json")
-    dest = dict(storage_destinations(spec.order_id, runs))
-    dest[f"reports/{spec.order_id}/report.json"] = canonical
+    prefix = spec.reports_prefix()
+    dest = dict(storage_destinations(spec.storage_folder, runs))
+    dest[f"{prefix}/report.json"] = canonical
     urls = _upload_files(bucket, list(dest.items()))
-    manifest = artifact_manifest(spec.order_id, runs)
-    manifest_blob = bucket.blob(f"reports/{spec.order_id}/manifest.json")
+    manifest = artifact_manifest(
+        spec.order_id, runs, folder=spec.storage_folder
+    )
+    manifest_blob = bucket.blob(f"{prefix}/manifest.json")
     manifest_blob.upload_from_string(
         json.dumps(manifest, indent=2, ensure_ascii=False),
         content_type="application/json",
     )
-    urls[f"reports/{spec.order_id}/manifest.json"] = (
-        f"gs://{bucket.name}/reports/{spec.order_id}/manifest.json"
-    )
+    urls[f"{prefix}/manifest.json"] = f"gs://{bucket.name}/{prefix}/manifest.json"
     return {"manifest": manifest, "urls": urls}
 
 
@@ -1473,6 +1493,7 @@ def main() -> int:
         return 2
 
     order_ref = None
+    spec = None
     started = utc_now()
     try:
         data, order_ref = _load_order_data(order_id)
@@ -1495,6 +1516,7 @@ def main() -> int:
                 "reportStatus": "generating",
                 "generationStartedAt": started,
                 "generationFinishedAt": None,
+                "storageFolder": spec.storage_folder,
                 "error": None,
             }
         )
@@ -1522,7 +1544,9 @@ def main() -> int:
                 write_canonical_report_json(spec, runs, work / "report.json")
         finished = utc_now()
         urls = uploaded.get("urls") or {}
-        manifest = uploaded.get("manifest") or artifact_manifest(spec.order_id, runs)
+        manifest = uploaded.get("manifest") or artifact_manifest(
+            spec.order_id, runs, folder=spec.storage_folder
+        )
         _mark(
             success_update_fields(
                 spec,
@@ -1549,8 +1573,13 @@ def main() -> int:
                 work = work_dir_for(order_id)
                 _db, bucket, _fs = _init_firebase()
                 if bucket is not None:
+                    folder = (
+                        spec.storage_folder
+                        if spec is not None
+                        else order_storage_folder(order_id, None)
+                    )
                     urls = _upload_files(
-                        bucket, retrieval_check_storage_paths(order_id, work)
+                        bucket, retrieval_check_storage_paths(folder, work)
                     )
                     if urls:
                         logger.info(

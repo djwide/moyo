@@ -54,6 +54,76 @@ def crawl_tokens(tokens: str, output: Optional[str]) -> None:
     click.echo(json.dumps(res.dict(), indent=2, default=str))
 
 
+@cli.command("extract")
+@click.option(
+    "--project",
+    "-P",
+    default=None,
+    help="Project slug; reads projects/<name>/public_sources/",
+)
+@click.option(
+    "--sources-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Directory with sources.json / exploration.md (default: current project)",
+)
+@click.option(
+    "--direction",
+    default=None,
+    help="Optional extra direction appended after each source as direction: …",
+)
+@click.option(
+    "--direction-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Read direction from a text file",
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Where to write extracted.json (default: <sources-dir>/extracted.json)",
+)
+def extract_cmd(project, sources_dir, direction, direction_file, output):
+    """Extract relevant passages from gather output (Kimi).
+
+    Writes extracted.json. Shows a completion bar of Kimi windows.
+    Requires MOONSHOT_API_KEY. Build Public Corpus and naive compare use this file.
+    """
+    from moyo.project import get_project, load_saved_project
+    from .extract import cli_extract_progress, run_public_extract
+
+    extra = (direction or "").strip()
+    if direction_file:
+        file_text = direction_file.read_text(encoding="utf-8").strip()
+        extra = f"{extra}\n{file_text}".strip() if extra else file_text
+
+    root = sources_dir
+    if root is None:
+        name = project
+        try:
+            if name:
+                proj = get_project(name, create=False)
+            else:
+                proj = load_saved_project()
+        except FileNotFoundError as exc:
+            raise click.UsageError(str(exc)) from exc
+        if proj is None:
+            raise click.UsageError(
+                "Pass --sources-dir or --project (or set MOYO_PROJECT / select a GUI project)."
+            )
+        root = proj.public_sources_dir
+
+    click.echo(f"Extracting from {root}", err=True)
+    result = run_public_extract(
+        root,
+        direction=extra or None,
+        output=output,
+        progress=cli_extract_progress,
+    )
+    click.echo(f"Wrote {result['count']} passages to {result['path']}")
+
+
 @cli.command()
 @click.option(
     "--prompt",

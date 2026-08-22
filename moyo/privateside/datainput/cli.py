@@ -7,10 +7,10 @@ import json
 from .gui_bridge import (
     GUIBridge,
     ProcessingConfig,
-    PRIVATE_INDEX_ROOT,
     process_text_and_build_index,
     process_files_and_build_index,
 )
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 # Root under which all FAISS indexes live (private and public).
 INDEX_ROOT = "indexes"
@@ -96,25 +96,31 @@ def cli(verbose: bool, debug: bool) -> None:
 @click.option('--files', '-F', 'file_paths', multiple=True, type=click.Path(exists=True), help='Multiple files to process')
 @click.option('--chunk-size', default=512, help='Chunk size for text processing')
 @click.option('--chunk-overlap', default=50, help='Overlap between chunks')
-@click.option('--model', default='all-MiniLM-L6-v2', help='Embedding model to use')
+@click.option('--model', default=DEFAULT_MODEL_NAME, help='Embedding model to use')
 @click.option('--index-type', default='flat', type=click.Choice(['flat', 'ivf', 'hnsw']), help='FAISS index type')
+@click.option('--project', '-P', default=None, help='Project slug; writes FAISS to projects/<name>/indexes/private')
+@click.option('--output-dir', '-o', default=None, help='Override index output directory')
 @click.option('--name', '-n', 'index_name', default=None,
               help='Corpus name for the index (defaults to the file/corpus name)')
 @click.option('--no-save', is_flag=True, help='Do not save index to disk')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
 def process(text: str, file_path: str, file_paths: List[str], chunk_size: int, chunk_overlap: int, 
-            model: str, index_type: str, index_name: str, no_save: bool, json_output: bool) -> None:
-    """Process text or files and build a FAISS index under indexes/private."""
-    
-    # Create configuration. Indexes are always written under indexes/private,
-    # one subdirectory per corpus, with the .faiss file named after the corpus.
+            model: str, index_type: str, project: str, output_dir: str, index_name: str, no_save: bool, json_output: bool) -> None:
+    """Process text or files and build a FAISS index under the current project."""
+    from moyo.project import resolve_private_index_dir
+
+    try:
+        dest = resolve_private_index_dir(project=project, output_dir=output_dir, create=True)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
     config = ProcessingConfig(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         embedding_model=model,
         index_type=index_type,
         save_index=not no_save,
-        output_dir=PRIVATE_INDEX_ROOT,
+        output_dir=str(dest),
     )
     
     if text:

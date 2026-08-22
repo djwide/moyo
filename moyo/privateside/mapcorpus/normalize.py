@@ -162,6 +162,9 @@ def normalize_chunks(chunks: List[DocumentChunk],
             chunk_size=len(normalized_text),
             start_position=chunk.start_position,
             end_position=chunk.end_position,
+            embedding=chunk.embedding,
+            level=getattr(chunk, "level", "section") or "section",
+            parent_id=getattr(chunk, "parent_id", None),
             metadata={**chunk.metadata, "normalized": True}
         )
         
@@ -172,17 +175,12 @@ def normalize_chunks(chunks: List[DocumentChunk],
 
 
 def filter_chunks_by_length(chunks: List[DocumentChunk], 
-                           min_length: int = 10,
+                           min_length: int = 50,
                            max_length: int = 2000) -> List[DocumentChunk]:
     """Filter chunks based on text length.
-    
-    Args:
-        chunks: List of document chunks
-        min_length: Minimum text length
-        max_length: Maximum text length
-        
-    Returns:
-        Filtered list of chunks
+
+    Minimum length applies to *section* chunks only so sentence/item/phrase
+    units (the ones that match short secrets) are not dropped as boilerplate.
     """
     if not chunks:
         return chunks
@@ -192,10 +190,21 @@ def filter_chunks_by_length(chunks: List[DocumentChunk],
     
     for chunk in chunks:
         text_length = len(chunk.text)
-        if min_length <= text_length <= max_length:
-            filtered_chunks.append(chunk)
-        else:
+        level = getattr(chunk, "level", "section") or "section"
+        if text_length > max_length and level == "section":
             removed_count += 1
+            continue
+        if level == "section" and text_length < min_length:
+            # Keep a short section that is the only representation of a secret.
+            has_siblings = any(
+                getattr(other, "parent_id", None) == chunk.id
+                for other in chunks
+                if other is not chunk
+            )
+            if has_siblings:
+                removed_count += 1
+                continue
+        filtered_chunks.append(chunk)
     
     logger.info(f"Filtered chunks by length: {len(chunks)} -> {len(filtered_chunks)} ({removed_count} removed)")
     return filtered_chunks

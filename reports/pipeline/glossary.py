@@ -151,9 +151,11 @@ _GROUPS: list[dict[str, Any]] = [
                 "confidence across all extracted claims.",
             ),
             (
-                "Findings by sensitivity",
-                "How many findings fall into the high, medium, low, and "
-                "informational bands.",
+                "Findings by LLM",
+                "Each tested model scored by how many findings it produced and "
+                "how sensitive those findings are. Bar height is the sum of "
+                "finding sensitivities; color shows the high / medium / low / "
+                "informational mix.",
             ),
             (
                 "Model heatmap",

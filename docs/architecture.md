@@ -23,7 +23,8 @@ moyo is an experimental tool for corpus mapping and information-barrier analysis
 │   ├── metrics.py / metrics_server.py / cli_metrics.py
 │   └── logging.py
 ├── config/                     # retrieval_llms.json, model_config.json
-├── indexes/                    # FAISS indexes only (per-corpus names)
+├── indexes/                    # legacy global indexes (prefer projects/)
+├── projects/                   # per-engagement phrases + FAISS + public sources
 ├── shared_utils/               # Vendored shared utilities
 │   ├── embeddings.py, faiss_index.py, chunking.py, model_config.py, ...
 │   └── models/                 # miniLM_fp32.onnx, miniLM_int8.onnx
@@ -56,7 +57,7 @@ Derives topic tokens from the private corpus for use as crawl seeds on the publi
   (preflight → reword → parallel retrieve → compile/localize → analyze → render)
 - CLI: `moyo-gather crawl`, `crawl-tokens`, `explore`, `summarize`, `deliverable`, `check-llms`
 
-Source adapters: patents, press releases, git commits, conference talks, arXiv/PubMed, generic web search.
+Source adapters: USPTO/Google Patents, GDELT press, GitHub commits, arXiv/OpenAlex, NVD/GHSA advisories.
 
 #### Barrier Probe (`barrierprobe/`)
 Analyses information barriers between private and public FAISS indexes:
@@ -150,7 +151,7 @@ export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 
 # Embedding model
-export MOYO_EMBEDDING_MODEL="all-MiniLM-L6-v2"
+export MOYO_EMBEDDING_MODEL_NAME="BAAI/bge-base-en-v1.5"
 ```
 
 Configuration is defined in `moyo/config/settings.py` (Pydantic). Settings are

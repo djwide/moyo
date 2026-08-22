@@ -5,6 +5,7 @@ import json
 
 from .builder import CorpusBuilder, build_corpus_from_files, build_corpus_from_texts
 from .schema import CorpusConfig
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 
 @click.group()
@@ -29,7 +30,7 @@ def cli(verbose: bool, debug: bool) -> None:
     Examples:
     • Build from directory: moyo-corpus build /path/to/documents
     • Build from text: moyo-corpus build-text "Text 1" "Text 2"
-    • Custom configuration: moyo-corpus build --chunk-size 256 --model all-MiniLM-L6-v2
+    • Custom configuration: moyo-corpus build --chunk-size 256 --model BAAI/bge-base-en-v1.5
     """
     if verbose:
         import logging
@@ -42,29 +43,37 @@ def cli(verbose: bool, debug: bool) -> None:
 
 @cli.command()
 @click.argument('input_path', type=click.Path(exists=True))
-@click.option('--output-dir', '-o', default='indexes/private', help='Output directory for index')
+@click.option('--project', '-P', default=None, help='Project slug; writes to projects/<name>/indexes/private')
+@click.option('--output-dir', '-o', default=None, help='Override output directory for the index')
 @click.option('--chunk-size', default=512, help='Chunk size for text processing')
-@click.option('--chunk-overlap', default=50, help='Overlap between chunks')
-@click.option('--model', default='all-MiniLM-L6-v2', help='Embedding model to use')
+@click.option('--chunk-overlap', default=50, help='Overlap between chunks (~10% of chunk size)')
+@click.option('--min-chunk-length', default=50, help='Drop section chunks shorter than this (boilerplate)')
+@click.option('--model', default=DEFAULT_MODEL_NAME, help='Embedding model to use')
 @click.option('--index-type', default='flat', type=click.Choice(['flat', 'ivf', 'hnsw']), help='FAISS index type')
 @click.option('--dedupe/--no-dedupe', default=True, help='Enable/disable deduplication')
 @click.option('--normalize/--no-normalize', default=True, help='Enable/disable text normalization')
 @click.option('--save-chunks/--no-save-chunks', default=True, help='Save chunk data to disk')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
-def build(input_path: str, output_dir: str, chunk_size: int, chunk_overlap: int, 
-          model: str, index_type: str, dedupe: bool, normalize: bool, 
+def build(input_path: str, output_dir: str, project: str, chunk_size: int, chunk_overlap: int, 
+          min_chunk_length: int, model: str, index_type: str, dedupe: bool, normalize: bool, 
           save_chunks: bool, json_output: bool) -> None:
     """Build corpus from input path (file or directory)."""
-    
-    # Create configuration
+    from moyo.project import resolve_private_index_dir
+
+    try:
+        dest = resolve_private_index_dir(project=project, output_dir=output_dir, create=True)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
     config = CorpusConfig(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
+        min_chunk_length=min_chunk_length,
         embedding_model=model,
         index_type=index_type,
         deduplication_enabled=dedupe,
         normalization_enabled=normalize,
-        output_directory=output_dir,
+        output_directory=str(dest),
         save_chunks=save_chunks
     )
     
@@ -111,23 +120,29 @@ def build(input_path: str, output_dir: str, chunk_size: int, chunk_overlap: int,
 
 @cli.command()
 @click.argument('texts', nargs=-1, required=True)
-@click.option('--output-dir', '-o', default='indexes/private', help='Output directory for index')
+@click.option('--project', '-P', default=None, help='Project slug; writes to projects/<name>/indexes/private')
+@click.option('--output-dir', '-o', default=None, help='Override output directory for the index')
 @click.option('--chunk-size', default=512, help='Chunk size for text processing')
 @click.option('--chunk-overlap', default=50, help='Overlap between chunks')
-@click.option('--model', default='all-MiniLM-L6-v2', help='Embedding model to use')
+@click.option('--model', default=DEFAULT_MODEL_NAME, help='Embedding model to use')
 @click.option('--index-type', default='flat', type=click.Choice(['flat', 'ivf', 'hnsw']), help='FAISS index type')
 @click.option('--json', 'json_output', is_flag=True, help='Output results as JSON')
-def build_text(texts: List[str], output_dir: str, chunk_size: int, chunk_overlap: int, 
+def build_text(texts: List[str], output_dir: str, project: str, chunk_size: int, chunk_overlap: int, 
                model: str, index_type: str, json_output: bool) -> None:
     """Build corpus from text inputs."""
-    
-    # Create configuration
+    from moyo.project import resolve_private_index_dir
+
+    try:
+        dest = resolve_private_index_dir(project=project, output_dir=output_dir, create=True)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
     config = CorpusConfig(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         embedding_model=model,
         index_type=index_type,
-        output_directory=output_dir
+        output_directory=str(dest)
     )
     
     result = build_corpus_from_texts(list(texts), config)

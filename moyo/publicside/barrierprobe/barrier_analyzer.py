@@ -20,9 +20,22 @@ from dataclasses import dataclass, field
 import json
 
 from .schema import BarrierProbeConfig, BarrierProbeResult
+from .distribution import (
+    DEFAULT_NEIGHBORHOOD_K,
+    DistributionLayer,
+    attach_neighborhood,
+    build_distribution_layer,
+)
 from .public_index_builder import load_public_index
 from moyo.privateside.mapcorpus.builder import CorpusBuilder
 from shared_utils import generate_id, embed
+from shared_utils.index_spec import (
+    GRANULARITY_MULTI,
+    GRANULARITY_PHRASES,
+    compare_index_specs,
+    load_index_spec,
+    spec_from_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +93,12 @@ class BarrierAnalyzer:
         self.private_builder: Optional[CorpusBuilder] = None
         # Cache for nearest neighbor results
         self._nn_cache: Optional[List[NearestNeighborResult]] = None
+        self._spec_errors: List[str] = []
+        self._distance_matrix: Optional[np.ndarray] = None
+        self._private_embeddings: Optional[np.ndarray] = None
+        self._public_embeddings: Optional[np.ndarray] = None
+        self._private_chunks: Optional[List[Any]] = None
+        self._public_chunks: Optional[List[Any]] = None
 
     def _filter_results(self, matches: List[Dict[str, Any]], top_k: int) -> List[Dict[str, Any]]:
         """Filter matches based on similarity threshold and return top results.
@@ -120,7 +139,12 @@ class BarrierAnalyzer:
                 return False
             
             # Verify embedding granularity consistency
-            self._verify_granularity_consistency()
+            errors = self._verify_granularity_consistency()
+            if errors:
+                self._spec_errors = errors
+                for msg in errors:
+                    logger.error(msg)
+                return False
             
             logger.info("Both indexes loaded successfully")
             return True
@@ -129,53 +153,45 @@ class BarrierAnalyzer:
             logger.error(f"Error loading indexes: {e}")
             return False
     
-    def _verify_granularity_consistency(self) -> None:
-        """Verify that public and private corpora use the same embedding granularity.
-        
-        Logs warnings if granularity differs between corpora, which could lead to
-        invalid distance comparisons.
+    def _verify_granularity_consistency(self) -> List[str]:
+        """Require matching embedding model / normalization (and chunk packing).
+
+        Returns a list of hard-error messages. Empty means the pair is comparable.
         """
-        if not self.public_builder or not self.private_builder:
-            return
-        
-        public_config = getattr(self.public_builder, 'config', None)
-        private_config = getattr(self.private_builder, 'config', None)
-        
-        if not public_config or not private_config:
-            logger.warning("Could not verify granularity consistency: config not available")
-            return
-        
-        # Check chunk_size
-        public_chunk_size = getattr(public_config, 'chunk_size', None)
-        private_chunk_size = getattr(private_config, 'chunk_size', None)
-        
-        if public_chunk_size and private_chunk_size and public_chunk_size != private_chunk_size:
-            logger.warning(
-                f"Granularity mismatch: public chunk_size={public_chunk_size}, "
-                f"private chunk_size={private_chunk_size}. "
-                "Distance comparisons may be invalid."
+        public_spec = None
+        private_spec = None
+        if self.config.public_index_path:
+            public_spec = load_index_spec(self.config.public_index_path)
+        if self.config.private_index_path:
+            private_spec = load_index_spec(self.config.private_index_path)
+
+        if public_spec is None and self.public_builder is not None:
+            public_spec = spec_from_config(
+                getattr(self.public_builder, "config", None) or {},
+                granularity=GRANULARITY_MULTI,
             )
-        
-        # Check chunk_overlap
-        public_overlap = getattr(public_config, 'chunk_overlap', None)
-        private_overlap = getattr(private_config, 'chunk_overlap', None)
-        
-        if public_overlap and private_overlap and public_overlap != private_overlap:
-            logger.warning(
-                f"Granularity mismatch: public chunk_overlap={public_overlap}, "
-                f"private chunk_overlap={private_overlap}. "
-                "Distance comparisons may be invalid."
+        if private_spec is None and self.private_builder is not None:
+            cfg = getattr(self.private_builder, "config", None)
+            granularity = GRANULARITY_MULTI
+            if cfg is not None:
+                granularity = getattr(cfg, "granularity", GRANULARITY_MULTI) or GRANULARITY_MULTI
+            private_spec = spec_from_config(cfg or {}, granularity=granularity)
+
+        if public_spec is None or private_spec is None:
+            logger.warning("Could not verify granularity consistency: spec not available")
+            return []
+
+        errors = compare_index_specs(private_spec, public_spec)
+        if (
+            private_spec.granularity == GRANULARITY_PHRASES
+            and public_spec.granularity == GRANULARITY_MULTI
+        ):
+            logger.info(
+                "Private index is phrase-level; public multi-granularity sentence/item "
+                "chunks are the matching unit. Embedding model and L2-normalization "
+                "must still agree."
             )
-        
-        # Check embedding_model
-        public_model = getattr(public_config, 'embedding_model', None)
-        private_model = getattr(private_config, 'embedding_model', None)
-        
-        if public_model and private_model and public_model != private_model:
-            logger.error(
-                f"CRITICAL: Embedding model mismatch: public={public_model}, "
-                f"private={private_model}. Distance comparisons will be INVALID!"
-            )
+        return errors
     
     def calculate_cosine_distance(self, vec1: List[float], vec2: List[float]) -> float:
         """Calculate cosine distance between two vectors.
@@ -205,6 +221,39 @@ class BarrierAnalyzer:
         
         # Return cosine distance (1 - similarity)
         return 1.0 - cosine_similarity
+
+    def _ensure_matrices(self) -> bool:
+        """Load embeddings and the private×public cosine-distance matrix once."""
+        if self._distance_matrix is not None:
+            return True
+        if not self.public_builder or not self.private_builder:
+            logger.error("Indexes not loaded")
+            return False
+
+        public_embeddings, public_chunks = self._vectors_and_chunks(
+            self.public_builder, side="public"
+        )
+        private_embeddings, private_chunks = self._vectors_and_chunks(
+            self.private_builder, side="private"
+        )
+        if not public_embeddings or not private_embeddings:
+            logger.warning("No embeddings found in one or both indexes")
+            return False
+
+        public_matrix = np.vstack(public_embeddings)
+        private_matrix = np.vstack(private_embeddings)
+        public_norms = np.linalg.norm(public_matrix, axis=1, keepdims=True)
+        private_norms = np.linalg.norm(private_matrix, axis=1, keepdims=True)
+        public_normalized = public_matrix / np.where(public_norms == 0, 1, public_norms)
+        private_normalized = private_matrix / np.where(private_norms == 0, 1, private_norms)
+        similarity_matrix = np.dot(private_normalized, public_normalized.T)
+
+        self._public_embeddings = public_normalized
+        self._private_embeddings = private_normalized
+        self._public_chunks = public_chunks
+        self._private_chunks = private_chunks
+        self._distance_matrix = 1.0 - similarity_matrix
+        return True
     
     def find_nearest_public_neighbors(self, top_k: int = 1) -> List[NearestNeighborResult]:
         """For each private phrase, find its nearest public neighbor(s).
@@ -220,50 +269,16 @@ class BarrierAnalyzer:
             List of NearestNeighborResult, one per private phrase (with top_k=1)
             or multiple per private phrase (with top_k>1)
         """
-        if not self.public_builder or not self.private_builder:
-            logger.error("Indexes not loaded")
+        if not self._ensure_matrices():
             return []
-        
+
         logger.info(f"Finding nearest public neighbors for each private phrase (top_k={top_k})...")
-        
-        # Get embeddings from both indexes
-        public_embeddings = []
-        public_chunks = []
-        
-        for chunk in self.public_builder.chunks:
-            if chunk.embedding:
-                public_embeddings.append(np.array(chunk.embedding, dtype=np.float32))
-                public_chunks.append(chunk)
-        
-        private_embeddings = []
-        private_chunks = []
-        
-        for chunk in self.private_builder.chunks:
-            if chunk.embedding:
-                private_embeddings.append(np.array(chunk.embedding, dtype=np.float32))
-                private_chunks.append(chunk)
-        
-        if not public_embeddings or not private_embeddings:
-            logger.warning("No embeddings found in one or both indexes")
+        public_chunks = self._public_chunks or []
+        private_chunks = self._private_chunks or []
+        distance_matrix = self._distance_matrix
+        if distance_matrix is None:
             return []
-        
-        # Convert to numpy arrays for efficient computation
-        public_matrix = np.vstack(public_embeddings)
-        private_matrix = np.vstack(private_embeddings)
-        
-        # Normalize for cosine distance calculation
-        public_norms = np.linalg.norm(public_matrix, axis=1, keepdims=True)
-        private_norms = np.linalg.norm(private_matrix, axis=1, keepdims=True)
-        
-        public_normalized = public_matrix / np.where(public_norms == 0, 1, public_norms)
-        private_normalized = private_matrix / np.where(private_norms == 0, 1, private_norms)
-        
-        # Compute cosine similarity matrix: private x public
-        similarity_matrix = np.dot(private_normalized, public_normalized.T)
-        
-        # Convert to cosine distance
-        distance_matrix = 1.0 - similarity_matrix
-        
+
         results = []
         
         # For each private phrase, find its top_k nearest public neighbors
@@ -303,6 +318,84 @@ class BarrierAnalyzer:
         
         logger.info(f"Found {len(results)} nearest neighbor pairs")
         return results
+
+    def _vectors_and_chunks(self, builder: Any, side: str):
+        """Load embeddings from chunk records, or reconstruct from FAISS."""
+        embeddings = []
+        chunks = []
+        stored = getattr(builder, "chunks", None) or []
+        for chunk in stored:
+            vector = getattr(chunk, "embedding", None)
+            if vector:
+                embeddings.append(np.array(vector, dtype=np.float32))
+                chunks.append(chunk)
+
+        if embeddings:
+            return embeddings, chunks
+
+        index = getattr(builder, "faiss_index", None) or getattr(builder, "index", None)
+        if index is None or getattr(index, "index", None) is None:
+            logger.warning("No embeddings found for %s index", side)
+            return [], []
+        ntotal = index.index.ntotal
+        if ntotal <= 0:
+            return [], []
+        try:
+            matrix = index.index.reconstruct_n(0, ntotal)
+        except Exception as exc:
+            logger.warning("Could not reconstruct %s FAISS vectors: %s", side, exc)
+            return [], []
+
+        metadata = getattr(index, "metadata", None) or []
+        string_store = getattr(index, "string_store", None)
+        reconstructed = []
+        for i in range(ntotal):
+            meta = metadata[i] if i < len(metadata) else {}
+            text = meta.get("text") or meta.get("text_preview") or ""
+            if string_store is not None and meta.get("text_id") is not None:
+                stored_text = string_store.get(meta["text_id"])
+                if stored_text:
+                    text = stored_text
+            reconstructed.append(
+                type(
+                    "Chunk",
+                    (),
+                    {
+                        "id": meta.get("id") or meta.get("chunk_id") or f"{side}_{i}",
+                        "text": text,
+                        "content": text,
+                        "metadata": meta,
+                        "source_type": meta.get("source_type"),
+                        "source_document": meta.get("source")
+                        or meta.get("source_document")
+                        or "",
+                    },
+                )()
+            )
+        return [np.asarray(row, dtype=np.float32) for row in matrix], reconstructed
+
+    def calibrate_threshold(self, profile: str = "balanced"):
+        """Recommend a cosine-distance cutoff from unlabeled nearest neighbors."""
+        from .calibrate import calibrate_from_distances
+
+        if not self.public_builder or not self.private_builder:
+            if not self.load_indexes():
+                raise RuntimeError(
+                    "Failed to load indexes"
+                    + (": " + "; ".join(self._spec_errors) if self._spec_errors else "")
+                )
+        nn = self.find_nearest_public_neighbors(top_k=1)
+        if not nn:
+            raise RuntimeError("No nearest-neighbor distances available to calibrate")
+        model = None
+        pub_cfg = getattr(self.public_builder, "config", None)
+        if pub_cfg is not None:
+            model = getattr(pub_cfg, "embedding_model", None)
+        return calibrate_from_distances(
+            [r.distance for r in nn],
+            profile=profile,
+            embedding_model=model,
+        )
     
     def find_closest_matches(self, top_k: int = 10) -> List[Dict[str, Any]]:
         """Find the closest matches between private and public chunks.
@@ -489,6 +582,27 @@ class BarrierAnalyzer:
 
         return results
 
+    def score_distribution_layer(self) -> DistributionLayer:
+        """JS occupancy, directional KL, and per-private margin / top-k entropy."""
+        if not self._ensure_matrices():
+            return DistributionLayer(
+                semantic_separation=None,
+                pairwise_exposure="None",
+                concentrated_matches=0,
+            )
+        k = getattr(self.config, "neighborhood_k", None) or DEFAULT_NEIGHBORHOOD_K
+        temperature = getattr(self.config, "softmax_temperature", None)
+        if temperature is None:
+            temperature = 0.10
+        return build_distribution_layer(
+            self._distance_matrix,
+            self._private_embeddings,
+            self._public_embeddings,
+            neighborhood_k=int(k),
+            temperature=float(temperature),
+            n_clusters=getattr(self.config, "cluster_count", None),
+        )
+
     def analyze_barriers(self, top_k: int = 10) -> BarrierProbeResult:
         """Perform comprehensive barrier analysis.
         
@@ -507,12 +621,16 @@ class BarrierAnalyzer:
         
         # Load indexes
         if not self.load_indexes():
+            detail = "; ".join(self._spec_errors) if self._spec_errors else "Failed to load indexes"
+            if self._spec_errors:
+                raise RuntimeError(detail)
             return BarrierProbeResult(
                 probe_id=generate_id("probe"),
                 public_index_info={},
                 private_index_info={},
                 similarity_threshold=self.config.similarity_threshold,
-                message="Failed to load indexes"
+                recommendations=[detail],
+                metadata={"error": detail},
             )
         
         # Get index information with granularity details
@@ -558,6 +676,19 @@ class BarrierAnalyzer:
         # Filter to matches within threshold
         raw_matches = self.find_closest_matches(top_k * 5)
         filtered_matches = self._filter_results(raw_matches, top_k)
+        layer = self.score_distribution_layer()
+        by_private = layer.by_private_index()
+
+        def _neighborhood_for(match: Dict[str, Any]):
+            idx = match.get("private_index")
+            if idx is None:
+                return None
+            return by_private.get(int(idx))
+
+        raw_matches = [attach_neighborhood(m, _neighborhood_for(m)) for m in raw_matches]
+        filtered_matches = [
+            attach_neighborhood(m, _neighborhood_for(m)) for m in filtered_matches
+        ]
 
         # Identify potential breaches
         potential_breaches = []
@@ -578,23 +709,27 @@ class BarrierAnalyzer:
                 risk_level = "low"
                 low_risk += 1
 
-            breach_info = {
-                'rank': match.get('rank'),
-                'type': 'similarity_breach',
-                'risk_level': risk_level,
-                'distance': match['distance'],
-                'public_chunk_id': match['public_chunk_id'],
-                'private_chunk_id': match['private_chunk_id'],
-                'public_content': match['public_content'],
-                'private_content': match['private_content'],
-                'public_metadata': match.get('public_metadata', {}),
-                'private_metadata': match.get('private_metadata', {}),
-                'public_source_type': match.get('public_source_type'),
-            }
+            breach_info = attach_neighborhood(
+                {
+                    'rank': match.get('rank'),
+                    'type': 'similarity_breach',
+                    'risk_level': risk_level,
+                    'distance': match['distance'],
+                    'public_chunk_id': match['public_chunk_id'],
+                    'private_chunk_id': match['private_chunk_id'],
+                    'public_content': match['public_content'],
+                    'private_content': match['private_content'],
+                    'public_metadata': match.get('public_metadata', {}),
+                    'private_metadata': match.get('private_metadata', {}),
+                    'public_source_type': match.get('public_source_type'),
+                    'private_index': match.get('private_index'),
+                },
+                _neighborhood_for(match),
+            )
             potential_breaches.append(breach_info)
         
         # Generate recommendations based on distance distribution
-        recommendations = []
+        recommendations = list(layer.headline_lines())
         
         if breach_count > 0:
             recommendations.append(f"Found {breach_count} potential information barrier breaches")
@@ -655,6 +790,10 @@ class BarrierAnalyzer:
             low_risk_breaches=low_risk,
             processing_time=processing_time,
             recommendations=recommendations,
+            semantic_separation=layer.semantic_separation,
+            pairwise_exposure=layer.pairwise_exposure,
+            concentrated_matches=layer.concentrated_matches,
+            distribution_diagnostics=layer.diagnostics(),
             metadata={
                 'closest_matches': raw_matches,
                 'top_breaches': filtered_matches,
@@ -666,7 +805,8 @@ class BarrierAnalyzer:
                     'private_content': global_min.private_content[:200] + "..." if len(global_min.private_content) > 200 else global_min.private_content,
                     'public_content': global_min.public_content[:200] + "..." if len(global_min.public_content) > 200 else global_min.public_content
                 } if global_min else None,
-                'distance_distribution': dist_dict
+                'distance_distribution': dist_dict,
+                'distribution_layer': layer.to_dict(),
             }
         )
 

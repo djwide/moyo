@@ -12,7 +12,7 @@ class SourceType(str, Enum):
     PRESS_RELEASE = "press_release"
     GIT_COMMIT = "git_commit"
     CONFERENCE_TALK = "conference_talk"
-    LEAKED_CODE = "leaked_code"
+    LEAKED_CODE = "leaked_code"  # public CVE/GHSA advisories (not paste/dork scraping)
     WEB_SEARCH = "web_search"
     RESEARCH_PAPER = "research_paper"
     NEWS_ARTICLE = "news_article"

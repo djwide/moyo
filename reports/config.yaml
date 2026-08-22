@@ -76,7 +76,7 @@ graphics:
   emit:
     - exposure_radar
     - model_heatmap
-    - sensitivity_distribution
+    - findings_by_llm
     - evidence_graph
   model_aliases:
     "ChatGPT (OpenAI gpt-4o)": GPT

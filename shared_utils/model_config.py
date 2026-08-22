@@ -24,14 +24,16 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
     "mini": {
         "model_name": "all-MiniLM-L6-v2",
         "dimensions": 384,
+        "max_seq_tokens": 256,
         "backend": "local",
         "tier": "fast",
         "label": "MiniLM-L6 — fast (384d)",
-        "description": "Default for prototyping. Fast on CPU/GPU; English only.",
+        "description": "Fast prototyping. English only. Prefer BGE-base for barrier precision.",
     },
     "mini-l12": {
         "model_name": "all-MiniLM-L12-v2",
         "dimensions": 384,
+        "max_seq_tokens": 256,
         "backend": "local",
         "tier": "fast",
         "label": "MiniLM-L12 — fast+ (384d)",
@@ -40,22 +42,25 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
     "mpnet": {
         "model_name": "all-mpnet-base-v2",
         "dimensions": 768,
+        "max_seq_tokens": 384,
         "backend": "local",
         "tier": "balanced",
         "label": "MPNet — balanced (768d)",
-        "description": "Strong local default for barrier analysis. Prefer GPU for bulk builds.",
+        "description": "Strong local STS model. Prefer GPU for bulk builds.",
     },
     "bge-base": {
         "model_name": "BAAI/bge-base-en-v1.5",
         "dimensions": 768,
+        "max_seq_tokens": 512,
         "backend": "local",
         "tier": "balanced",
-        "label": "BGE-base — retrieval (768d)",
-        "description": "Often beats MPNet on retrieval benchmarks. English.",
+        "label": "BGE-base — default / retrieval (768d)",
+        "description": "Default. Strong retrieval for short private phrases vs public text. English.",
     },
     "e5-base": {
         "model_name": "intfloat/e5-base-v2",
         "dimensions": 768,
+        "max_seq_tokens": 512,
         "backend": "local",
         "tier": "balanced",
         "label": "E5-base — retrieval (768d)",
@@ -64,6 +69,7 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
     "multilingual": {
         "model_name": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
         "dimensions": 768,
+        "max_seq_tokens": 128,
         "backend": "local",
         "tier": "balanced",
         "label": "Multilingual MPNet (768d)",
@@ -72,6 +78,7 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
     "openai-small": {
         "model_name": "text-embedding-3-small",
         "dimensions": 1536,
+        "max_seq_tokens": 8191,
         "backend": "openai",
         "tier": "api",
         "label": "OpenAI small (1536d)",
@@ -80,6 +87,7 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
     "openai-large": {
         "model_name": "text-embedding-3-large",
         "dimensions": 3072,
+        "max_seq_tokens": 8191,
         "backend": "openai",
         "tier": "api",
         "label": "OpenAI large (3072d)",
@@ -92,7 +100,7 @@ EMBEDDING_MODELS: Dict[str, str] = {
     key: meta["model_name"] for key, meta in EMBEDDING_CATALOG.items()
 }
 
-DEFAULT_MODEL_KEY = "mini"
+DEFAULT_MODEL_KEY = "bge-base"
 DEFAULT_MODEL_NAME = EMBEDDING_MODELS[DEFAULT_MODEL_KEY]
 
 OPENAI_MODEL_NAMES = {
@@ -120,6 +128,18 @@ def get_catalog_entry(model_key_or_name: str) -> Optional[Dict[str, Any]]:
 def get_dimensions(model_key_or_name: str, default: int = 384) -> int:
     entry = get_catalog_entry(model_key_or_name)
     return int(entry["dimensions"]) if entry else default
+
+
+def get_max_seq_tokens(model_key_or_name: Optional[str] = None, default: int = 256) -> int:
+    """Token ceiling of the embedding model's input window.
+
+    Used as ``max_tokens`` when packing chunks so section text is not silently
+    truncated by the encoder. MiniLM is 256; MPNet 384; BGE/E5 512.
+    """
+    entry = get_catalog_entry(model_key_or_name or DEFAULT_MODEL_KEY)
+    if entry and entry.get("max_seq_tokens"):
+        return int(entry["max_seq_tokens"])
+    return default
 
 
 def is_openai_model(model_key_or_name: str) -> bool:

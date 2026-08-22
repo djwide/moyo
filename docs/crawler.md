@@ -121,7 +121,7 @@ print(result.output_path, result.summary_path)
   - `crawl(topic)` — crawl by topic string
   - `crawl_with_tokens(tokens)` — crawl by token list
 - `schema.py` — Pydantic models for sources, configs, jobs
-- `sources/` — adapters (patents, press, git, conferences, leaks, …)
+- `sources/` — adapters against public APIs (PatentsView/Google Patents, GDELT, GitHub, arXiv/OpenAlex, NVD/GHSA)
 - `parsers/` / `enrichers/` — HTML/PDF/text, classification, dedupe
 
 ### CLI
@@ -131,6 +131,18 @@ moyo-gather crawl --topic "artificial intelligence"
 moyo-gather crawl-tokens --tokens "neural networks,transformers,LLM"
 moyo-gather crawl --topic "machine learning" --output results/ml_sources
 ```
+
+Adapters (no placeholder hosts):
+
+| Source type | Public API | Optional env |
+|---|---|---|
+| Patents | USPTO [PatentsView](https://patentsview.org/) or Google Patents xhr | `PATENTSVIEW_API_KEY` |
+| Press / news | [GDELT 2.0 DOC API](https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/) (PR Newswire, Business Wire, …) | — |
+| Git commits | [GitHub commit search](https://docs.github.com/en/rest/search/search#search-commits); GitLab if token set | `GITHUB_TOKEN`, `GITLAB_TOKEN` |
+| Papers / talks | [arXiv API](https://info.arxiv.org/help/api/index.html), [OpenAlex](https://docs.openalex.org/) | `OPENALEX_MAILTO` |
+| Advisories | [NVD CVE 2.0](https://nvd.nist.gov/developers/vulnerabilities), [GitHub Advisories](https://docs.github.com/en/rest/advisories) | `NVD_API_KEY`, `GITHUB_TOKEN` |
+
+GitHub dorks, paste-site scrapers, IEEE/ACM HTML, and `example.com` stubs were removed. Credential harvesting is not implemented.
 
 ### Token-driven crawling
 
@@ -155,8 +167,6 @@ Outputs under `data/public_sources/<topic>/` when persistence is enabled:
 
 - `sources.json` — normalized sources
 - `summary.json` — counts, types, date ranges
-
-> Bundled adapters may ship with placeholder endpoints until pointed at real services.
 
 ## Related docs
 

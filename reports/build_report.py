@@ -355,7 +355,7 @@ def render_pdfs(
         p = run_dir / stale
         if p.exists():
             p.unlink()
-    for name in ("exposure_radar", "model_heatmap", "sensitivity_distribution", "evidence_graph"):
+    for name in ("exposure_radar", "model_heatmap", "findings_by_llm", "evidence_graph"):
         p = run_dir / f"{name}.svg"
         if p.exists():
             p.unlink()

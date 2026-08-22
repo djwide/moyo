@@ -4,6 +4,36 @@ import re
 from dataclasses import dataclass
 from typing import List, Iterator, Optional, Callable
 
+# Section packing defaults. Overlap is ~10% of chunk_size so adjacent windows
+# share a sentence of context without exploding vector count.
+CHUNK_OVERLAP_RATIO = 0.10
+DEFAULT_CHUNK_SIZE = 512
+DEFAULT_MIN_SECTION_CHARS = 50
+DEFAULT_MAX_CHUNK_CHARS = 2000
+
+
+def default_chunk_overlap(chunk_size: int = DEFAULT_CHUNK_SIZE) -> int:
+    """Return ~10% of ``chunk_size`` (character overlap between section chunks)."""
+    if chunk_size <= 0:
+        return 0
+    return max(0, int(round(chunk_size * CHUNK_OVERLAP_RATIO)))
+
+
+def resolve_chunk_max_tokens(
+    model_name: Optional[str] = None,
+    override: Optional[int] = None,
+) -> int:
+    """Token ceiling for packing chunks, derived from the embedding model.
+
+    MiniLM is 256; a larger model (MPNet/BGE) should pack more text per section
+    so the encoder window is not left unused. An explicit ``override`` wins.
+    """
+    if override is not None and int(override) > 0:
+        return int(override)
+    from shared_utils.model_config import get_max_seq_tokens
+
+    return get_max_seq_tokens(model_name)
+
 # A markdown heading line, e.g. "## Section 2". Up to 3 leading spaces allowed.
 _HEADING_RE = re.compile(r'^\s{0,3}#{1,6}\s')
 # A horizontal rule on its own line, e.g. "---", "***", "___".
@@ -40,8 +70,37 @@ def estimate_token_count(text: str) -> int:
     return int(len(words) * 4 / 3) + 1
 
 
+def keep_granular_chunk(
+    level: str,
+    text: str,
+    *,
+    min_section_chars: int = DEFAULT_MIN_SECTION_CHARS,
+    max_section_chars: int = DEFAULT_MAX_CHUNK_CHARS,
+    has_finer_children: bool = False,
+    keep_short_atomic: bool = False,
+) -> bool:
+    """Decide whether a multi-granularity chunk should be indexed.
+
+    Section chunks shorter than ``min_section_chars`` are normally dropped
+    (boilerplate). Sentence/item chunks are kept — they are the units that
+    match short secrets. When ``keep_short_atomic`` is True (private side),
+    a short section with no sentence/item children is kept so a one-line
+    secret is not discarded.
+    """
+    n = len(text or "")
+    if level != "section":
+        return n > 0
+    if max_section_chars and n > max_section_chars:
+        return False
+    if n >= min_section_chars:
+        return True
+    if keep_short_atomic and not has_finer_children:
+        return True
+    return False
+
+
 def chunk_text(text: str,
-               chunk_size: int = 512,
+               chunk_size: int = DEFAULT_CHUNK_SIZE,
                overlap: int = 50,
                preserve_sentences: bool = True,
                preserve_structure: bool = True,
@@ -118,7 +177,7 @@ class GranularChunk:
 
 
 def chunk_text_multi_granularity(text: str,
-                                 chunk_size: int = 512,
+                                 chunk_size: int = DEFAULT_CHUNK_SIZE,
                                  overlap: int = 50,
                                  max_tokens: int = 256,
                                  include_sentences: bool = True,

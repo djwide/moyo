@@ -9,6 +9,13 @@ from datetime import datetime
 import json
 
 from shared_utils import embed, get_embedding_model, chunk_text, FAISSIndex, ensure_directory, generate_id
+from shared_utils.chunking import (
+    chunk_text_multi_granularity,
+    keep_granular_chunk,
+    resolve_chunk_max_tokens,
+)
+from shared_utils.index_spec import spec_from_config
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 from .schema import (
     DocumentChunk, MappedDocument, CorpusConfig, CorpusBuildResult, 
@@ -50,20 +57,47 @@ class CorpusBuilder:
         if not text or not text.strip():
             return []
         
-        # Chunk the text
-        text_chunks = chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
-        
-        # Create DocumentChunk objects
+        max_tokens = resolve_chunk_max_tokens(
+            self.config.embedding_model, self.config.max_tokens
+        )
+        self.config.max_tokens = max_tokens
+        granular = chunk_text_multi_granularity(
+            text,
+            chunk_size=self.config.chunk_size,
+            overlap=self.config.chunk_overlap,
+            max_tokens=max_tokens,
+        )
+        child_parents = {
+            gc.parent_index for gc in granular if gc.parent_index is not None
+        }
+
         chunks = []
-        for i, chunk_text_content in enumerate(text_chunks):
+        for gc in granular:
+            if not keep_granular_chunk(
+                gc.level,
+                gc.text,
+                min_section_chars=self.config.min_chunk_length,
+                max_section_chars=self.config.max_chunk_length,
+                has_finer_children=gc.index in child_parents,
+                keep_short_atomic=True,
+            ):
+                continue
+            parent_id = None
+            if gc.parent_index is not None:
+                parent_id = next(
+                    (c.id for c in chunks if c.chunk_index == gc.parent_index),
+                    None,
+                )
             chunk_id = generate_id("chunk")
             chunk = DocumentChunk(
                 id=chunk_id,
-                text=chunk_text_content,
-                chunk_index=len(self.chunks) + i,
+                text=gc.text,
+                chunk_index=gc.index,
                 source_document=source_name,
-                chunk_size=len(chunk_text_content),
-                metadata=metadata or {}
+                chunk_size=len(gc.text),
+                level=gc.level,
+                parent_id=parent_id,
+                metadata=metadata or {},
             )
             chunks.append(chunk)
         
@@ -248,14 +282,19 @@ class CorpusBuilder:
             
             # Generate embeddings
             embeddings = embed(
-                texts, 
-                self.config.embedding_model, 
-                self.config.batch_size
+                texts,
+                self.config.embedding_model,
+                self.config.batch_size,
+                normalize=self.config.normalize_embeddings,
+                device=getattr(self.config, "embedding_device", "auto"),
             )
             
             if not embeddings:
                 result.message = "Failed to generate embeddings"
                 return result
+
+            for chunk, vector in zip(self.chunks, embeddings):
+                chunk.embedding = vector
             
             # Create FAISS index
             self.index = FAISSIndex(
@@ -325,7 +364,12 @@ class CorpusBuilder:
         
         try:
             # Embed the query
-            query_embeddings = embed([query], self.config.embedding_model)
+            query_embeddings = embed(
+                [query],
+                self.config.embedding_model,
+                normalize=self.config.normalize_embeddings,
+                device=getattr(self.config, "embedding_device", "auto"),
+            )
             if not query_embeddings:
                 return SearchResult(
                     query=query,
@@ -420,7 +464,11 @@ class CorpusBuilder:
             ensure_directory(output_dir)
             
             # Save FAISS index, named after the corpus
-            index_path = self.index.save(output_dir, name=corpus_name)
+            index_path = self.index.save(
+                output_dir,
+                name=corpus_name,
+                extra_info=spec_from_config(self.config).to_dict(),
+            )
             
             # Save chunks if requested
             if self.config.save_chunks:
@@ -482,20 +530,43 @@ class CorpusBuilder:
             
             # Load corpus info
             info_path = index_dir / "corpus_info.json"
-            if not info_path.exists():
-                logger.error(f"Corpus info file not found: {info_path}")
-                return None
-                
-            with open(info_path, 'r', encoding='utf-8') as f:
-                corpus_info = json.load(f)
-            
-            # Create config from corpus info
-            config_data = corpus_info.get("metadata", {}).get("config", {})
-            config = CorpusConfig(**config_data)
-            
-            # Create builder
-            builder = cls(config)
-            builder.corpus_id = corpus_info.get("corpus_id", generate_id("corpus"))
+            if info_path.exists():
+                with open(info_path, 'r', encoding='utf-8') as f:
+                    corpus_info = json.load(f)
+                config_data = corpus_info.get("metadata", {}).get("config", {})
+                config = CorpusConfig(**config_data) if config_data else CorpusConfig()
+                builder = cls(config)
+                builder.corpus_id = corpus_info.get("corpus_id", generate_id("corpus"))
+            else:
+                # Phrase indexes from the GUI only write index_info.json + metadata.
+                from shared_utils.index_spec import load_index_spec, GRANULARITY_PHRASES
+
+                spec = load_index_spec(index_dir)
+                config = CorpusConfig(
+                    embedding_model=(
+                        spec.embedding_model
+                        if spec and spec.embedding_model
+                        else DEFAULT_MODEL_NAME
+                    ),
+                    normalize_embeddings=spec.normalize_embeddings if spec else True,
+                    granularity=(spec.granularity if spec else GRANULARITY_PHRASES),
+                    chunk_size=spec.chunk_size if spec and spec.chunk_size else 512,
+                    chunk_overlap=(
+                        spec.chunk_overlap
+                        if spec and spec.chunk_overlap is not None
+                        else 50
+                    ),
+                    max_tokens=spec.max_tokens if spec else None,
+                    min_chunk_length=(
+                        spec.min_chunk_length
+                        if spec and spec.min_chunk_length
+                        else 50
+                    ),
+                    deduplication_enabled=(
+                        spec.deduplication_enabled if spec else True
+                    ),
+                )
+                builder = cls(config)
             
             # Load chunks if available
             chunks_path = index_dir / "chunks.json"

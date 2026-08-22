@@ -218,7 +218,7 @@ result = crawler.crawl_with_tokens(tokens)
 ```bash
 export OPENAI_API_KEY="..."      # Required for LLM fuzzing / OpenAI embeddings
 export ANTHROPIC_API_KEY="..."   # Alternative LLM provider
-export MOYO_EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2"
+export MOYO_EMBEDDING_MODEL_NAME="BAAI/bge-base-en-v1.5"
 export MOYO_EMBEDDING_DEVICE="auto"   # auto | cuda | cpu
 export MOYO_CHUNK_SIZE="512"
 ```

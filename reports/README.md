@@ -34,7 +34,7 @@ reports/build/<run-id>/
 │   ├── company-logo.svg
 │   ├── exposure-radar.svg
 │   ├── model-heatmap.svg
-│   ├── sensitivity-distribution.svg
+│   ├── findings-by-llm.svg
 │   ├── evidence-graph.svg
 │   └── screenshots/          # optional raster only
 └── output/
@@ -106,4 +106,4 @@ Edit charts by hand under `assets/*.svg`, then rebuild PDF without regenerating 
 python reports/build_report.py --run-id <id> --from-stage render --keep-graphics
 ```
 
-(`exposure-radar.svg`, `model-heatmap.svg`, `sensitivity-distribution.svg`, `evidence-graph.svg`)
+(`exposure-radar.svg`, `model-heatmap.svg`, `findings-by-llm.svg`, `evidence-graph.svg`)

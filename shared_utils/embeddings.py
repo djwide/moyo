@@ -6,6 +6,8 @@ from typing import Iterable, List, Optional, Tuple
 import logging
 import os
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Global variables for model caching
@@ -99,10 +101,37 @@ def _openai_api_model_name(model_name: str) -> str:
     return aliases.get(model_name, model_name)
 
 
+def l2_normalize(vectors: List[List[float]]) -> List[List[float]]:
+    """L2-normalize rows so inner product equals cosine similarity."""
+    if not vectors:
+        return vectors
+    arr = np.asarray(vectors, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    arr = arr / np.where(norms == 0, 1.0, norms)
+    return arr.tolist()
+
+
+def resolve_normalize(normalize: Optional[bool] = None) -> bool:
+    """Resolve embedding L2-normalization. Default True (required for FlatIP)."""
+    if normalize is not None:
+        return bool(normalize)
+    env = os.environ.get("MOYO_EMBEDDING_NORMALIZE")
+    if env is not None:
+        return env.strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        from moyo.config.settings import get_settings
+        return bool(get_settings().embedding.normalize)
+    except Exception:
+        return True
+
+
 def _embed_openai(
     texts: List[str],
     model_name: str,
     batch_size: int,
+    normalize: bool = True,
 ) -> List[List[float]]:
     try:
         from openai import OpenAI
@@ -123,7 +152,7 @@ def _embed_openai(
         ordered = sorted(response.data, key=lambda d: d.index)
         vectors.extend([list(item.embedding) for item in ordered])
 
-    return vectors
+    return l2_normalize(vectors) if normalize else vectors
 
 
 def clear_embedding_cache() -> None:
@@ -196,7 +225,7 @@ def embed(
     texts: Iterable[str],
     model_name: Optional[str] = None,
     batch_size: int = 32,
-    normalize: bool = True,
+    normalize: Optional[bool] = None,
     device: Optional[str] = None,
 ) -> List[List[float]]:
     """Embed texts using sentence-transformers or the OpenAI embeddings API.
@@ -205,7 +234,8 @@ def embed(
         texts: Iterable of text strings to embed
         model_name: Model key or Hugging Face / OpenAI model name
         batch_size: Batch size for processing
-        normalize: Whether to L2-normalize embeddings (local models)
+        normalize: L2-normalize embeddings so FlatIP = cosine. Defaults to
+            ``MOYO_EMBEDDING_NORMALIZE`` / True. Leave on for barrier analysis.
         device: ``auto`` / ``cuda`` / ``cpu`` (ignored for OpenAI models)
 
     Returns:
@@ -221,10 +251,18 @@ def embed(
         raise ValueError("All texts must be strings")
 
     resolved_name = resolve_model_name(model_name)
+    do_normalize = resolve_normalize(normalize)
+    if not do_normalize:
+        logger.warning(
+            "Embedding L2-normalization is OFF. IndexFlatIP inner products "
+            "will not equal cosine similarity; barrier distances will drift."
+        )
 
     if is_openai_model(resolved_name):
         try:
-            return _embed_openai(texts_list, resolved_name, batch_size)
+            return _embed_openai(
+                texts_list, resolved_name, batch_size, normalize=do_normalize
+            )
         except Exception as e:
             if isinstance(e, (ImportError, RuntimeError, ValueError)):
                 raise
@@ -238,7 +276,7 @@ def embed(
         embeddings = model.encode(
             texts_list,
             batch_size=batch_size,
-            normalize_embeddings=normalize,
+            normalize_embeddings=do_normalize,
             show_progress_bar=False,
             convert_to_numpy=True,
         )

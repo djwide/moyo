@@ -10,7 +10,7 @@ import asyncio
 
 from .schema import (
     CrawlConfig, CrawlResult, CrawlJob, CrawlStatus, 
-    PublicSource, SourceType, SearchQuery
+    PublicSource, SourceType
 )
 from moyo.publicside.gatherpublicsources.sources.patents import search_patents
 from moyo.publicside.gatherpublicsources.sources.press_releases import search_press_releases
@@ -229,7 +229,7 @@ class PublicSourcesCrawler:
                     search_conference_talks(
                         topic,
                         max_results=self.config.max_results_per_source,
-                        sources=["arxiv", "ieee", "acm"],
+                        sources=["arxiv", "openalex"],
                     )
                 )
 
@@ -238,7 +238,7 @@ class PublicSourcesCrawler:
                     search_leaked_code(
                         topic,
                         max_results=self.config.max_results_per_source,
-                        sources=["github_dorks", "security_forums"],
+                        sources=["nvd", "github_advisories"],
                     )
                 )
             

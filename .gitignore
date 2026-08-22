@@ -14,6 +14,13 @@ data/private/*
 indexes/private/*
 !indexes/private/.gitignore
 
+# Per-engagement projects (phrases + FAISS + public sources)
+projects/*
+!projects/.gitignore
+
+# GUI last-selected project
+config/project.json
+
 # Logs, caches, run outputs
 logs/
 *.log
