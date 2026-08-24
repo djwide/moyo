@@ -128,7 +128,8 @@ MPNet/BGE.
 ## CLI / code
 
 ```python
-from shared_utils import embed, resolve_device, get_device_info
+from shared_utils import embed
+from shared_utils.embeddings import get_device_info, resolve_device
 
 print(get_device_info())
 # {'cuda_available': True, 'resolved_device': 'cuda', ...}

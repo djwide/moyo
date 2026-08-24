@@ -13,6 +13,7 @@ from moyo.project import (
     list_projects,
     resolve_phrases_dir,
     resolve_private_index_dir,
+    resolve_public_sources_dir,
     slugify_project_name,
 )
 
@@ -89,14 +90,18 @@ def test_resolve_requires_project(projects_dir):
         resolve_phrases_dir()
     with pytest.raises(ValueError, match="No project selected"):
         resolve_private_index_dir()
+    with pytest.raises(ValueError, match="No project selected"):
+        resolve_public_sources_dir()
 
 
 def test_resolve_from_project_name(projects_dir):
     create_project("gamma")
     phrases = resolve_phrases_dir(project="gamma")
     private = resolve_private_index_dir(project="gamma")
+    public = resolve_public_sources_dir(project="gamma")
     assert phrases == projects_dir / "gamma" / "phrases"
     assert private == projects_dir / "gamma" / "indexes" / "private"
+    assert public == projects_dir / "gamma" / "public_sources"
 
 
 def test_get_project_missing(projects_dir):
@@ -104,3 +109,14 @@ def test_get_project_missing(projects_dir):
         get_project("missing")
     created = get_project("later", create=True)
     assert created.root.exists()
+
+
+def test_settings_reload_does_not_create_repo_root_artifact_dirs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MOYO_DATA_DIR", raising=False)
+    monkeypatch.delenv("MOYO_OUTPUT_DIR", raising=False)
+    from moyo.config.settings import reload_settings
+
+    reload_settings()
+    assert not (tmp_path / "data").exists()
+    assert not (tmp_path / "output").exists()

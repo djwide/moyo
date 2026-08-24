@@ -71,8 +71,8 @@ moyo-probe analyze \
     --similarity-threshold 0.7 \
     --top-k 20 \
     --llm-top-k 5 \
-    --output-json data/barrierprobe/results/report.json \
-    --output-html data/barrierprobe/results/report.html
+    --output-json cache/barrierprobe/report.json \
+    --output-html cache/barrierprobe/report.html
 ```
 
 ### Programmatic Usage
@@ -191,7 +191,7 @@ Recommendations:
 | `private_index_path` | str | Required | Path to private FAISS index |
 | `similarity_threshold` | float | 0.8 | Cosine-**distance** cutoff (smaller = closer). Calibrate with `moyo-probe calibrate`; do not reuse across embedding models. |
 | `max_comparisons` | int | 1000 | Maximum comparisons to perform |
-| `output_directory` | str | "data/barrierprobe/results" | Output directory for results |
+| `output_directory` | str | "cache/barrierprobe" | Output directory for results |
 | `save_detailed_results` | bool | True | Save detailed results to file |
 | `include_metadata` | bool | True | Include metadata in results |
 

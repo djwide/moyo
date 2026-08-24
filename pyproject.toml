@@ -44,10 +44,13 @@ gui = [
 reports = [
     "jinja2>=3.1",
     "weasyprint>=60",
+    "google-cloud-storage>=2.14.0",
+    "google-auth>=2.0.0",
 ]
 cloud = [
     "firebase-admin>=6.5.0",
     "google-auth>=2.0.0",
+    "google-cloud-storage>=2.14.0",
 ]
 
 [project.scripts]
@@ -56,7 +59,6 @@ moyo-datainput = "moyo.privateside.datainput.cli:cli"
 moyo-corpus = "moyo.privateside.mapcorpus.cli:cli"
 moyo-gather = "moyo.publicside.gatherpublicsources.cli:cli"
 moyo-probe = "moyo.publicside.barrierprobe.cli:cli"
-moyo-redteam = "moyo.redteam.cli:cli"
 moyo-phrases = "moyo.privateside.phrases.cli:cli"
 moyo-gui = "moyo.gui.app:main"
 

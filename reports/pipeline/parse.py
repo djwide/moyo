@@ -462,7 +462,7 @@ def _find_exploration_by_queries(
         return None
     best: Path | None = None
     best_hits = 0
-    for expl in sorted(public_sources.glob("*/exploration.md")):
+    for expl in sorted(public_sources.rglob("exploration.md")):
         try:
             text = expl.read_text(encoding="utf-8")
         except OSError:
@@ -492,13 +492,16 @@ def resolve_exploration_path(
     if pointed is not None:
         return pointed
 
-    public = repo_root / "data" / "public_sources"
-    by_slug = public / run_id / "exploration.md"
+    projects = repo_root / "projects"
+    by_slug = projects / run_id / "public_sources" / "exploration.md"
     if by_slug.is_file():
         return by_slug
+    nested = projects / run_id / "public_sources" / run_id / "exploration.md"
+    if nested.is_file():
+        return nested
 
     return _find_exploration_by_queries(
-        public,
+        projects,
         _chunk_query_texts(run_dir / "chunks.jsonl"),
     )
 

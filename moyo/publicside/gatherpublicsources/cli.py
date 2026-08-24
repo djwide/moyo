@@ -27,14 +27,38 @@ def cli(test_mode: bool) -> None:
         click.echo("LLM test mode ON (fake deterministic clients).", err=True)
 
 
+def _public_sources_dir(project: Optional[str], output_dir: Optional[str]) -> str:
+    from moyo.project import load_saved_project, resolve_public_sources_dir
+
+    try:
+        if output_dir or project:
+            return str(resolve_public_sources_dir(project=project, output_dir=output_dir))
+        saved = load_saved_project()
+        if saved is not None:
+            saved.ensure()
+            return str(saved.public_sources_dir)
+        return str(resolve_public_sources_dir())
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
 @cli.command()
 @click.option("--topic", required=True, help="Topic query string")
-@click.option("--output", type=click.Path(), default=None, help="Optional output directory")
-def crawl(topic: str, output: Optional[str]) -> None:
+@click.option(
+    "--project",
+    "-P",
+    default=None,
+    help="Project slug; writes to projects/<name>/public_sources/",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Optional output directory (default: current project's public_sources/)",
+)
+def crawl(topic: str, project: Optional[str], output: Optional[str]) -> None:
     """Crawl public sources by topic string."""
-    config = CrawlConfig(topic=topic)
-    if output:
-        config.output_directory = output
+    config = CrawlConfig(topic=topic, output_directory=_public_sources_dir(project, output))
     crawler = PublicSourcesCrawler(config)
     res = crawler.crawl(topic)
     click.echo(json.dumps(res.dict(), indent=2, default=str))
@@ -42,13 +66,25 @@ def crawl(topic: str, output: Optional[str]) -> None:
 
 @cli.command("crawl-tokens")
 @click.option("--tokens", required=True, help="Comma-separated list of tokens")
-@click.option("--output", type=click.Path(), default=None, help="Optional output directory")
-def crawl_tokens(tokens: str, output: Optional[str]) -> None:
+@click.option(
+    "--project",
+    "-P",
+    default=None,
+    help="Project slug; writes to projects/<name>/public_sources/",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Optional output directory (default: current project's public_sources/)",
+)
+def crawl_tokens(tokens: str, project: Optional[str], output: Optional[str]) -> None:
     """Crawl public sources using a list of tokens."""
     token_list = [t.strip() for t in tokens.split(",") if t.strip()]
-    config = CrawlConfig(topic=", ".join(token_list) or "tokens_query")
-    if output:
-        config.output_directory = output
+    config = CrawlConfig(
+        topic=", ".join(token_list) or "tokens_query",
+        output_directory=_public_sources_dir(project, output),
+    )
     crawler = PublicSourcesCrawler(config)
     res = crawler.crawl_with_tokens(token_list)
     click.echo(json.dumps(res.dict(), indent=2, default=str))
@@ -141,8 +177,19 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
 )
 @click.option("--output", type=click.Path(), default=None,
               help="Path to write the markdown report (single-prompt runs only)")
-@click.option("--output-dir", type=click.Path(), default="data/public_sources", show_default=True,
-              help="Directory for the report when --output is not given")
+@click.option(
+    "--project",
+    "-P",
+    default=None,
+    help="Project slug; writes to projects/<name>/public_sources/<slug>/",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default=None,
+    help="Directory for the report when --output is not given "
+         "(default: current project's public_sources/)",
+)
 @click.option(
     "--seeds",
     type=int,
@@ -212,6 +259,7 @@ def explore(
     prompts,
     prompts_file,
     output,
+    project,
     output_dir,
     seeds,
     fuzz_mode,
@@ -230,7 +278,8 @@ def explore(
 
     Provide prompts with repeatable ``--prompt`` / ``-p`` and/or
     ``--prompts-file`` / ``-f`` (one prompt per line). Each prompt gets its own
-    ``<output-dir>/<slug>/exploration.md``. Explore does not write
+    ``<output-dir>/<slug>/exploration.md`` (default output-dir is the current
+    project's ``public_sources/``). Explore does not write
     ``summary.md``. ``--output`` is only valid for a single prompt.
 
     Rewords each prompt into several retrieval queries via the local Ollama
@@ -261,6 +310,8 @@ def explore(
         raise click.UsageError("Provide at least one prompt via --prompt/-p or --prompts-file/-f.")
     if output and len(all_prompts) > 1:
         raise click.UsageError("--output can only be used with a single prompt.")
+    if not output:
+        output_dir = _public_sources_dir(project, output_dir)
 
     default_llm = None
     if provider:

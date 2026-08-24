@@ -222,6 +222,15 @@ class BarrierAnalyzer:
         # Return cosine distance (1 - similarity)
         return 1.0 - cosine_similarity
 
+    def _index_vector_count(self, builder: Any, side: str) -> int:
+        """Prefer live FAISS ntotal so GUI phrase indexes without chunks.json count."""
+        index = getattr(builder, "faiss_index", None) or getattr(builder, "index", None)
+        inner = getattr(index, "index", None) if index is not None else None
+        if inner is not None:
+            return int(getattr(inner, "ntotal", 0) or 0)
+        chunks = getattr(builder, "chunks", None) or []
+        return len(chunks)
+
     def _ensure_matrices(self) -> bool:
         """Load embeddings and the private×public cosine-distance matrix once."""
         if self._distance_matrix is not None:
@@ -637,17 +646,19 @@ class BarrierAnalyzer:
         public_config = getattr(self.public_builder, 'config', None)
         private_config = getattr(self.private_builder, 'config', None)
         
+        public_chunks = getattr(self.public_builder, "chunks", None) or []
+        private_chunks = getattr(self.private_builder, "chunks", None) or []
         public_index_info = {
-            'chunk_count': len(self.public_builder.chunks),
+            'chunk_count': self._index_vector_count(self.public_builder, "public") or len(public_chunks),
             'source_types': list(set(
                 getattr(chunk.source_type, 'value', str(chunk.source_type)) 
-                for chunk in self.public_builder.chunks 
+                for chunk in public_chunks
                 if hasattr(chunk, 'source_type')
             )),
             'organizations': list(set(
-                chunk.metadata.get('source_organization') 
-                for chunk in self.public_builder.chunks 
-                if chunk.metadata.get('source_organization')
+                (getattr(chunk, "metadata", None) or {}).get("source_organization")
+                for chunk in public_chunks
+                if (getattr(chunk, "metadata", None) or {}).get("source_organization")
             )),
             'granularity': {
                 'chunk_size': getattr(public_config, 'chunk_size', None),
@@ -657,8 +668,12 @@ class BarrierAnalyzer:
         }
         
         private_index_info = {
-            'chunk_count': len(self.private_builder.chunks),
-            'document_count': len(set(chunk.source_document for chunk in self.private_builder.chunks)),
+            'chunk_count': self._index_vector_count(self.private_builder, "private") or len(private_chunks),
+            'document_count': len(set(
+                getattr(chunk, "source_document", None)
+                for chunk in private_chunks
+                if getattr(chunk, "source_document", None)
+            )),
             'granularity': {
                 'chunk_size': getattr(private_config, 'chunk_size', None),
                 'chunk_overlap': getattr(private_config, 'chunk_overlap', None),

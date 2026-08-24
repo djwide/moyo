@@ -10,10 +10,8 @@ import sys
 from pathlib import Path
 
 # Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from moyo.publicside.barrierprobe.schema import IndexConfig, IndexType
 from moyo.publicside.barrierprobe.public_index_builder import (
@@ -22,6 +20,7 @@ from moyo.publicside.barrierprobe.public_index_builder import (
 )
 from moyo.publicside.gatherpublicsources.crawler import crawl_all_sources
 from moyo.publicside.gatherpublicsources.schema import SourceType
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 
 def example_basic_index_building():
@@ -43,7 +42,7 @@ def example_basic_index_building():
     # Build index with default configuration
     config = IndexConfig(
         index_type=IndexType.FLAT,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=DEFAULT_MODEL_NAME,
         chunk_size=512,
         chunk_overlap=50,
         output_directory="examples/public_indexes"
@@ -98,7 +97,7 @@ def example_filtered_index_building():
     # Build index with custom configuration
     config = IndexConfig(
         index_type=IndexType.HNSW,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=DEFAULT_MODEL_NAME,
         chunk_size=256,
         chunk_overlap=25,
         output_directory="examples/public_indexes",

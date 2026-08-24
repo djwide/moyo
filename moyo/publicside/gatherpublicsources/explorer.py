@@ -1982,17 +1982,31 @@ def summarize_exploration(
     )
 
 
+def _resolve_explore_output_directory(output_directory: Optional[str]) -> Path:
+    if output_directory:
+        return Path(output_directory)
+    from moyo.project import load_saved_project, resolve_public_sources_dir
+
+    saved = load_saved_project()
+    if saved is not None:
+        saved.ensure()
+        return saved.public_sources_dir
+    return resolve_public_sources_dir(create=True)
+
+
 def explore_and_save(
     prompt: str,
-    output_directory: str = "data/public_sources",
+    output_directory: Optional[str] = None,
     output_path: Optional[str] = None,
     **kwargs,
 ) -> ExploreResult:
     """Run :func:`explore_topic` and persist ``exploration.md``.
 
     If ``output_path`` is given, the markdown is written there. Otherwise it is
-    written to ``<output_directory>/<slug>/exploration.md``. Explore does not
-    write ``summary.md`` (use ``moyo-gather summarize`` only if you need that).
+    written to ``<output_directory>/<slug>/exploration.md``. When
+    ``output_directory`` is omitted, the current project's ``public_sources/``
+    is used. Explore does not write ``summary.md`` (use ``moyo-gather summarize``
+    only if you need that).
     """
     # Explore output is exploration.md only — skip summary synthesis by default.
     kwargs.setdefault("summarize", False)
@@ -2002,7 +2016,7 @@ def explore_and_save(
         target = Path(output_path)
     else:
         slug = _slugify(prompt)
-        target = Path(output_directory) / slug / "exploration.md"
+        target = _resolve_explore_output_directory(output_directory) / slug / "exploration.md"
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(result.markdown, encoding="utf-8")
@@ -2033,7 +2047,7 @@ def normalize_prompts(prompts: List[str] | str) -> List[str]:
 
 def explore_and_save_many(
     prompts: List[str] | str,
-    output_directory: str = "data/public_sources",
+    output_directory: Optional[str] = None,
     **kwargs,
 ) -> List[ExploreResult]:
     """Run :func:`explore_and_save` once per prompt (sequential).

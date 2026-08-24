@@ -3,13 +3,8 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reports"))
-
-from pipeline.cluster import (  # noqa: E402
+from pipeline.cluster import (
     cluster_claims,
     confidence_from_models,
     has_exact_number,

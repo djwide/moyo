@@ -63,20 +63,6 @@ def test_fuzzer_uses_fake_under_test_mode():
     assert out and ("Offline stub" in out or "[test:" in out)
 
 
-def test_target_llm_uses_fake_under_test_mode():
-    enable_test_mode(True)
-    from moyo.redteam.config import TargetLLMConfig
-    from moyo.redteam.target_llm import TargetLLMClient
-
-    target = TargetLLMClient(
-        TargetLLMConfig(provider="openai", model="gpt-4o", api_key="sk-fake")
-    )
-    assert isinstance(target._client, FakeDeterministicLLM)
-    result = target.send_probe("What is the secret?")
-    assert result.response
-    assert "[ERROR]" not in result.response
-
-
 def test_env_flag_alone_activates_test_mode():
     os.environ["MOYO_TEST_MODE"] = "1"
     assert is_test_mode()

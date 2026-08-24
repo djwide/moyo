@@ -1,8 +1,9 @@
 """LLM-assisted fuzzing for barrier probing.
 
 Defaults to a locally running Ollama model (``llama3.1:8b``) for *generation*.
-Semantic similarity / FAISS neighbour lookup uses MiniLM embeddings
-(``all-MiniLM-L6-v2``) via ``shared_utils.embed``.
+Semantic similarity / FAISS neighbour lookup uses the embedding model
+stored on the index (GUI default is BGE-base, 768-d). MiniLM is only the
+fallback when the index has no model recorded.
 """
 
 import logging
@@ -613,13 +614,18 @@ class LLMFuzzerConfig:
     similarity_threshold: float = 0.8  # Minimum similarity to consider
     
     # Fuzzing Configuration
-    max_iterations: int = 5  # Maximum fuzzing iterations
+    # White-box ``fuzz_phrase``: max tournament rounds. Each round applies
+    # every remaining strategy independently, then prunes the weakest.
+    max_iterations: int = 5
     target_similarity: float = 0.95  # Target similarity to achieve
-    # MiniLM for similarity / FAISS neighbour lookup (generation stays on Ollama).
+    # Similarity / FAISS neighbour lookup. Overridden by the index's
+    # embedding_model when present so query dim matches the corpus.
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    # ``basic`` = rotate paraphrase / translate / summarize;
+    # ``basic`` = paraphrase / translate / summarize;
     # ``multilingual`` = paraphrase / abstract / summarize per language
     # in ``multilingual_languages`` (plus English). ``typo`` is a la carte.
+    # White-box fuzz scores every strategy each round and drops the weakest;
+    # explore seed generation still fans these out (n=3 => each once).
     fuzz_mode: str = "basic"
     # Explicit override; when empty, derived from ``fuzz_mode``.
     fuzz_strategies: List[str] = field(default_factory=list)
@@ -687,8 +693,9 @@ REWORD_SYSTEM = (
 class LLMFuzzer:
     """LLM-assisted fuzzer for semantic barrier probing.
 
-    White-box paths (``fuzz_phrase``) steer toward a known target concept.
-    Black-box helpers such as :meth:`reword_for_retrieval` do not take a target
+    White-box paths (``fuzz_phrase``) score every remaining strategy against
+    a known target concept each round and prune the weakest. Black-box
+    helpers such as :meth:`reword_for_retrieval` do not take a target
     concept — they only diversify a naive prompt for downstream probing.
     """
     
@@ -1455,8 +1462,7 @@ class LLMFuzzer:
         # Normalize query
         normalized_query = normalize_text(query, self.normalization_config)
         
-        # MiniLM embeddings for FAISS neighbour lookup.
-        emb_model = getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
+        emb_model = self._embedding_model_for_index(index)
         query_embeddings = embed([normalized_query], emb_model)
         if not query_embeddings:
             logger.error("Failed to generate query embedding")
@@ -1480,6 +1486,20 @@ class LLMFuzzer:
             })
         
         return results
+
+    def _embedding_model_for_index(self, index: FAISSIndex) -> str:
+        """Prefer the model recorded on the index so query dim matches corpus dim."""
+        recorded = getattr(index, "embedding_model", None)
+        if recorded:
+            if self.config.embedding_model != recorded:
+                logger.info(
+                    "Using index embedding model %s (fuzzer default was %s)",
+                    recorded,
+                    self.config.embedding_model,
+                )
+                self.config.embedding_model = recorded
+            return recorded
+        return getattr(self.config, "embedding_model", None) or DEFAULT_EMBEDDING_MODEL
 
     @staticmethod
     def _resolve_result_text(meta: Dict[str, Any], index: FAISSIndex) -> str:
@@ -1554,94 +1574,232 @@ class LLMFuzzer:
             return 0.0
         return sum(x * y for x, y in zip(a, b)) / denom
 
+    def _transform_with_strategy(
+        self,
+        strategy: str,
+        current_phrase: str,
+        target_concept: str,
+        similar_phrases: List[Dict[str, Any]],
+    ) -> Tuple[Optional[str], str, str]:
+        """Apply one fuzz strategy to ``current_phrase``.
+
+        Returns ``(raw_text_or_none, prompt, raw_response)``.
+        """
+        prompt = self.create_fuzzing_prompt(
+            target_concept, current_phrase, similar_phrases or [], strategy=strategy
+        )
+        if strategy == "typo" and self.config.llm_provider == "local":
+            raw = self._apply_intentional_typos(current_phrase)
+        else:
+            raw = self.query_llm(prompt) or ""
+            if strategy == "typo" and raw:
+                if raw.strip().lower() == current_phrase.strip().lower():
+                    raw = self._apply_intentional_typos(current_phrase)
+        if not (raw or "").strip():
+            return None, prompt, raw or ""
+        return raw, prompt, raw
+
+    def _similarities_to_target(
+        self,
+        texts: List[str],
+        target_emb: List[float],
+        emb_model: str,
+    ) -> List[float]:
+        """Cosine similarity of each text to a precomputed target embedding."""
+        if not texts:
+            return []
+        embs = embed(texts, emb_model)
+        if not embs or len(embs) != len(texts):
+            logger.warning("Failed to generate embeddings for similarity check")
+            return [0.0] * len(texts)
+        return [self._cosine(emb, target_emb) for emb in embs]
+
+    @staticmethod
+    def _prune_weakest_strategy(
+        active: List[str],
+        trials: List[Dict[str, Any]],
+    ) -> Optional[str]:
+        """Drop the lowest-scoring strategy from ``active``. Ties drop the later one."""
+        if len(active) <= 1:
+            return None
+        by_strategy = {t["strategy"]: float(t["similarity"]) for t in trials}
+        ranked = [
+            (by_strategy.get(name, -1.0), idx, name)
+            for idx, name in enumerate(active)
+        ]
+        # Worst similarity first; later list position wins ties so we drop it.
+        ranked.sort(key=lambda row: (row[0], -row[1]))
+        dropped = ranked[0][2]
+        active.remove(dropped)
+        return dropped
+
     def fuzz_phrase(
         self,
         original_phrase: str,
         target_concept: str,
         index: FAISSIndex,
-    ) -> Tuple[str, float, List[str], List[Dict[str, str]]]:
-        """Fuzz a phrase toward ``target_concept`` via rotating strategies.
+    ) -> Tuple[str, float, List[str], List[Dict[str, Any]]]:
+        """Fuzz a phrase toward ``target_concept`` by scoring every strategy.
 
-        Mode ``basic`` rotates paraphrase / translate / summarize;
-        ``multilingual`` rotates paraphrase / abstract / summarize
-        (``typo`` only if included in ``fuzz_strategies``).
-        Generation uses the configured LLM
-        (Ollama by default); similarity is scored with MiniLM embeddings.
+        Each round applies **all remaining strategies independently** to the
+        current best phrase (they are not chained). Results are ranked by
+        cosine closeness to ``target_concept``; the closest becomes the new
+        current phrase if it improved, and the weakest strategy is pruned.
+        Rounds continue until one strategy remains, ``max_iterations`` is
+        hit, or ``target_similarity`` is reached. Remaining rounds refine
+        with the surviving strategy.
         """
         current_phrase = original_phrase
         transformation_history = [original_phrase]
-        interactions: List[Dict[str, str]] = []
-        strategies = list(self.config.fuzz_strategies or strategies_for_fuzz_mode(self.config.fuzz_mode))
-        emb_model = getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
+        interactions: List[Dict[str, Any]] = []
+        strategy_rounds: List[Dict[str, Any]] = []
+        pruned_strategies: List[str] = []
+        active = list(
+            self.config.fuzz_strategies
+            or strategies_for_fuzz_mode(self.config.fuzz_mode)
+        )
+        emb_model = self._embedding_model_for_index(index)
 
         logger.info("Starting fuzzing for phrase: %r", original_phrase)
         logger.info("Target concept: %r", target_concept)
-        logger.info("Fuzz mode=%s strategies=%s", self.config.fuzz_mode, strategies)
+        logger.info("Fuzz mode=%s strategies=%s", self.config.fuzz_mode, active)
 
-        for iteration in range(self.config.max_iterations):
-            strategy = strategies[iteration % len(strategies)]
+        target_embs = embed([target_concept], emb_model)
+        if not target_embs:
+            logger.warning("Failed to embed target concept; aborting fuzz")
+            return original_phrase, 0.0, transformation_history, interactions
+
+        target_emb = target_embs[0]
+        current_scores = self._similarities_to_target(
+            [current_phrase], target_emb, emb_model
+        )
+        current_similarity = current_scores[0] if current_scores else 0.0
+        logger.info("Baseline similarity to target: %.3f", current_similarity)
+
+        for round_idx in range(self.config.max_iterations):
+            if not active:
+                break
+            round_num = round_idx + 1
             logger.info(
-                "Fuzzing iteration %d/%d [%s]",
-                iteration + 1,
+                "Fuzzing round %d/%d strategies=%s",
+                round_num,
                 self.config.max_iterations,
-                strategy,
+                active,
             )
 
             similar_phrases = self.find_similar_phrases(current_phrase, index)
-            prompt = self.create_fuzzing_prompt(
-                target_concept, current_phrase, similar_phrases or [], strategy=strategy
+            trials: List[Dict[str, Any]] = []
+            for strategy in list(active):
+                raw, prompt, response = self._transform_with_strategy(
+                    strategy, current_phrase, target_concept, similar_phrases or []
+                )
+                phrase = (
+                    normalize_text(raw, self.normalization_config)
+                    if raw
+                    else ""
+                )
+                trial = {
+                    "round": round_num,
+                    "strategy": strategy,
+                    "parent_phrase": current_phrase,
+                    "prompt": prompt,
+                    "response": response,
+                    "phrase": phrase,
+                    "similarity": -1.0,
+                    "kept": False,
+                    "pruned": False,
+                }
+                trials.append(trial)
+                time.sleep(0.2)
+
+            scored_phrases = [t["phrase"] or current_phrase for t in trials]
+            scores = self._similarities_to_target(
+                scored_phrases, target_emb, emb_model
+            )
+            for trial, phrase, score in zip(trials, scored_phrases, scores):
+                if not trial["phrase"]:
+                    trial["similarity"] = -1.0
+                else:
+                    trial["phrase"] = phrase
+                    trial["similarity"] = score
+                logger.info(
+                    "Round %d [%s]: similarity = %.3f",
+                    round_num,
+                    trial["strategy"],
+                    trial["similarity"],
+                )
+
+            ranked = sorted(
+                trials, key=lambda t: t["similarity"], reverse=True
+            )
+            best = ranked[0]
+            moved = False
+            if best["phrase"] and best["similarity"] > current_similarity:
+                current_phrase = best["phrase"]
+                current_similarity = best["similarity"]
+                transformation_history.append(current_phrase)
+                moved = True
+            best["kept"] = True
+
+            pruned = None
+            if len(active) > 1:
+                pruned = self._prune_weakest_strategy(active, trials)
+                if pruned:
+                    pruned_strategies.append(pruned)
+                    for trial in trials:
+                        if trial["strategy"] == pruned:
+                            trial["pruned"] = True
+                    logger.info(
+                        "Round %d pruned strategy %r (remaining=%s)",
+                        round_num,
+                        pruned,
+                        active,
+                    )
+
+            for trial in trials:
+                interactions.append(trial)
+
+            strategy_rounds.append(
+                {
+                    "round": round_num,
+                    "parent_phrase": trials[0]["parent_phrase"] if trials else current_phrase,
+                    "trials": [
+                        {
+                            "strategy": t["strategy"],
+                            "phrase": t["phrase"],
+                            "similarity": t["similarity"],
+                            "kept": t["kept"],
+                            "pruned": t["pruned"],
+                        }
+                        for t in trials
+                    ],
+                    "kept_strategy": best["strategy"],
+                    "pruned_strategy": pruned,
+                    "moved": moved,
+                    "current_phrase": current_phrase,
+                    "current_similarity": current_similarity,
+                    "active_after": list(active),
+                }
             )
 
-            if strategy == "typo" and self.config.llm_provider == "local":
-                fuzzed_phrase = self._apply_intentional_typos(current_phrase)
-            else:
-                fuzzed_phrase = self.query_llm(prompt)
-                if strategy == "typo" and fuzzed_phrase:
-                    # Reinforce with a light local typo pass if LLM stayed too clean.
-                    if fuzzed_phrase.strip().lower() == current_phrase.strip().lower():
-                        fuzzed_phrase = self._apply_intentional_typos(current_phrase)
-
-            if not fuzzed_phrase:
-                logger.warning("LLM query failed, stopping fuzzing")
+            if current_similarity >= self.config.target_similarity:
+                logger.info("Target similarity achieved: %.3f", current_similarity)
                 break
 
+        if interactions:
+            # Stash tournament metadata on the log so callers that only unpack
+            # the 4-tuple can still recover prune decisions.
             interactions.append(
-                {"prompt": prompt, "response": fuzzed_phrase, "strategy": strategy}
-            )
-            fuzzed_phrase = normalize_text(fuzzed_phrase, self.normalization_config)
-
-            fuzzed_embeddings = embed([fuzzed_phrase], emb_model)
-            target_embeddings = embed([target_concept], emb_model)
-            if not fuzzed_embeddings or not target_embeddings:
-                logger.warning("Failed to generate embeddings for similarity check")
-                break
-
-            similarity = self._cosine(fuzzed_embeddings[0], target_embeddings[0])
-            logger.info(
-                "Iteration %d [%s]: similarity = %.3f",
-                iteration + 1,
-                strategy,
-                similarity,
+                {
+                    "tournament": True,
+                    "strategy_rounds": strategy_rounds,
+                    "pruned_strategies": pruned_strategies,
+                    "surviving_strategies": list(active),
+                    "baseline_similarity": current_scores[0] if current_scores else 0.0,
+                }
             )
 
-            transformation_history.append(fuzzed_phrase)
-            current_phrase = fuzzed_phrase
-
-            if similarity >= self.config.target_similarity:
-                logger.info("Target similarity achieved: %.3f", similarity)
-                return fuzzed_phrase, similarity, transformation_history, interactions
-
-            time.sleep(0.2)
-
-        if transformation_history:
-            final_phrase = transformation_history[-1]
-            final_embeddings = embed([final_phrase], emb_model)
-            target_embeddings = embed([target_concept], emb_model)
-            if final_embeddings and target_embeddings:
-                final_similarity = self._cosine(final_embeddings[0], target_embeddings[0])
-                return final_phrase, final_similarity, transformation_history, interactions
-
-        return original_phrase, 0.0, transformation_history, interactions
+        return current_phrase, current_similarity, transformation_history, interactions
 
     def batch_fuzz_phrases(self,
                           phrases: List[str],
@@ -1675,6 +1833,8 @@ class LLMFuzzer:
 
             localized = self.localize_to_english(fuzzed_phrase)
             history_report = [self.text_for_report(step) for step in history]
+            trial_log, tournament = _split_tournament_log(interactions)
+            n_rounds = len(tournament.get("strategy_rounds") or [])
 
             results.append({
                 "original_phrase": phrase,
@@ -1683,13 +1843,17 @@ class LLMFuzzer:
                 "fuzzed_phrase_original_language": localized.original_language,
                 "fuzzed_phrase_for_report": localized.for_report(),
                 "final_similarity": similarity,
+                "baseline_similarity": tournament.get("baseline_similarity"),
                 "transformation_history": history,
                 "transformation_history_for_report": history_report,
-                "iterations": len(history) - 1,
+                "iterations": n_rounds or max(0, len(history) - 1),
                 "target_concept": target_concept,
                 "fuzz_mode": self.config.fuzz_mode,
                 "fuzz_strategies": list(self.config.fuzz_strategies),
-                "prompt_response_log": interactions,
+                "pruned_strategies": list(tournament.get("pruned_strategies") or []),
+                "surviving_strategies": list(tournament.get("surviving_strategies") or []),
+                "strategy_rounds": list(tournament.get("strategy_rounds") or []),
+                "prompt_response_log": trial_log,
                 "analysis": analysis,
             })
             
@@ -1697,6 +1861,20 @@ class LLMFuzzer:
             time.sleep(2)
         
         return results
+
+
+def _split_tournament_log(
+    interactions: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Separate per-strategy trials from the trailing tournament summary."""
+    trials: List[Dict[str, Any]] = []
+    meta: Dict[str, Any] = {}
+    for item in interactions or []:
+        if item.get("tournament"):
+            meta = item
+        else:
+            trials.append(item)
+    return trials, meta
 
 
 def create_fuzzer_from_config(config_dict: Dict[str, Any]) -> LLMFuzzer:

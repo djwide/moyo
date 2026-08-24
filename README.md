@@ -35,16 +35,11 @@ moyo provides:
 │   │       ├── llm_fuzzer.py
 │   │       ├── iterative_llm_search.py
 │   │       └── two_layer_fuzzer.py
-│   ├── redteam/                # LLM red-teaming (moyo-redteam)
-│   │   ├── whitebox/           # known-secret probing + private-index refinement
-│   │   ├── blackbox/           # blind hypothesis-driven probing
-│   │   └── probe_paths.py      # loads probe_paths/ seed lists
 │   ├── gui/                    # PyQt5 desktop GUI (moyo-gui)
 │   ├── config/                 # Pydantic settings
 │   ├── metrics.py, metrics_server.py, cli_metrics.py   # Prometheus monitoring
 │   └── logging.py              # Structured logging
 ├── shared_utils/               # Vendored utilities (embeddings, FAISS, ingest)
-├── probe_paths/                # Target-customer secret lists for blind probing
 ├── examples/
 └── docs/
 ```
@@ -107,7 +102,7 @@ moyo-corpus build-text "Text 1" "Text 2"
 ```bash
 moyo-gather crawl --topic "artificial intelligence safety"
 moyo-gather crawl-tokens --tokens "neural networks,transformers,LLM"
-moyo-gather crawl --topic "machine learning" --output data/public_sources/ml
+moyo-gather crawl --topic "machine learning" --project ml
 ```
 
 ### `moyo-probe`
@@ -132,39 +127,6 @@ LM Studio, Together, Groq, OpenRouter, DeepSeek, llama.cpp server, ...):
 moyo-probe fuzz -p "phrase" -t "target" -i corpus.index \
   --llm-provider custom --base-url http://localhost:8000/v1 --model my-model
 ```
-
-### `moyo-redteam`
-```bash
-# White-box: probe a target LLM against a known secret inventory
-moyo-redteam whitebox --secrets-file secrets.json --target-provider openai --target-model gpt-4o
-
-# White-box with private-corpus grounding + iterative refinement:
-# probes are grounded in the private index's mapcorpus centroids and refined
-# each round toward the protected passages a response comes closest to.
-moyo-redteam whitebox --secrets-file secrets.json \
-  --target-provider openai --target-model gpt-4o \
-  --private-index indexes/private --refine-rounds 3
-
-# Black-box: hypothesis-driven blind probing
-moyo-redteam blackbox --domain "acme corp" --rounds 3 --hypothesis-source llm
-
-# Black-box seeded from a bundled probe path (list of target-valuable secrets):
-moyo-redteam blackbox --domain "state campaign" --rounds 8 \
-  --probe-path political_opposition_research
-
-# Feed black-box hypotheses into moyo-gather explore (explore CLI unchanged):
-moyo-redteam blackbox-explore -d "state campaign" \
-  --probe-path political_opposition_research --prompts-only -f /tmp/bb.txt
-moyo-gather explore -f /tmp/bb.txt
-
-moyo-redteam report --input results.json --format text
-```
-
-Probe paths live in [`probe_paths/`](probe_paths/README.md) — one subdirectory per
-target customer, each a `.txt` list of secrets valuable to know (e.g.
-`political_opposition_research`, `pharmaceutical_rd`, `tech_company_ma`). They seed
-the black-box hypothesis engine.
-See [docs/threat_model.md](docs/threat_model.md) for the red-team threat model.
 
 ### `moyo-gui`
 ```bash
@@ -203,7 +165,7 @@ from moyo.privateside.mapcorpus import tokens_for_corpus
 from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 
 centroids, topic_tokens, labels, texts = tokens_for_corpus(
-    Path('data/private/corpus.txt'), top_k=8
+    Path('projects/my_case/phrases/corpus.txt'), top_k=8
 )
 tokens = [t for cluster in topic_tokens for t in cluster][:25]
 
@@ -225,18 +187,19 @@ export MOYO_CHUNK_SIZE="512"
 
 Embedding model tiers, GPU setup, and GUI options: [`docs/embeddings.md`](docs/embeddings.md).
 
-### Data Directory Structure
+### Project Directory Structure
 
-After `moyo setup`:
+After `moyo setup` (or creating a project in the GUI):
 
 ```
 .
-├── indexes/
-│   ├── private/    # Private corpus indexes
-│   └── public/     # Public corpus indexes
-├── data/
-│   ├── private/    # Private data files
-│   └── public/     # Public data files
+├── projects/
+│   └── <slug>/
+│       ├── phrases/           # pending.jsonl, corpus.jsonl, corpus.txt
+│       ├── indexes/private/   # private FAISS
+│       ├── indexes/public/    # public FAISS
+│       ├── public_sources/    # crawl / explore outputs
+│       └── compare/           # last naive-compare result
 └── logs/
 ```
 
@@ -290,5 +253,4 @@ visualization. See
 | [docs/runbook.md](docs/runbook.md) | Operational runbook |
 | [docs/gui.md](docs/gui.md) | Desktop GUI (`moyo-gui`) guide |
 | [docs/gui_bridge_guide.md](docs/gui_bridge_guide.md) | GUI bridge / data-input API |
-| [docs/threat_model.md](docs/threat_model.md) | Red-team threat model |
 | [docs/configuration_and_monitoring_summary.md](docs/configuration_and_monitoring_summary.md) | Config and Prometheus metrics |

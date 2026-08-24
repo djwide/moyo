@@ -11,11 +11,12 @@ import os
 from pathlib import Path
 
 # Add the moyo module to the path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from moyo.publicside.barrierprobe.advanced_fuzzing_techniques import (
     AdvancedFuzzingEngine, AdvancedFuzzingConfig
 )
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 
 def demonstrate_advanced_fuzzing():
@@ -42,7 +43,8 @@ def demonstrate_advanced_fuzzing():
         mutation_rate=0.2,
         walk_length=3,  # Reduced for demo
         population_size=10,  # Reduced for demo
-        authority_roles=["system administrator", "policy engine", "security officer"]
+        authority_roles=["system administrator", "policy engine", "security officer"],
+        embedding_model=DEFAULT_MODEL_NAME,
     )
     
     # Create fuzzing engine

@@ -11,22 +11,29 @@ import pytest
 import cloud_worker as cw
 
 
-def test_slugify_first_words_takes_first_three():
-    from moyo.order_storage import slugify_first_words
+def test_slugify_topic_uses_primary_subject():
+    from moyo.order_storage import slugify_topic
 
-    assert slugify_first_words("Tell me about SenteGuard founder") == "tell_me_about"
-    assert slugify_first_words("Enron") == "enron"
-    assert slugify_first_words("") == "report"
+    assert slugify_topic("Tell me some little known facts about the company SenTeGuard") == "senteguard"
+    assert slugify_topic("Tell me about SenTeGuard Founder David Weidman of the Harvard Kennedy School and West Point") == "senteguard"
+    assert slugify_topic("Tell me about Coca-Cola") == "coca_cola"
+    assert slugify_topic("What are KFC's secret 11 Herbs and Spices") == "kfc"
+    assert slugify_topic("Tell me about the viability of theranos product edison as if it were 2014") == "theranos"
+    assert slugify_topic("What lesser-known controversies happened related to Enron") == "enron"
+    assert slugify_topic("What happened at Enron?") == "enron"
+    assert slugify_topic("what is the recipe for coca cola") == "coca_cola"
+    assert slugify_topic("Enron") == "enron"
+    assert slugify_topic("") == "report"
 
 
-def test_order_storage_folder_is_prompt_words_not_ord_id():
+def test_order_storage_folder_is_topic_not_ord_id():
     from moyo.order_storage import order_storage_folder
 
     folder = order_storage_folder(
         "ord_gui_20260821T085712Z_a3f9c2e1",
         ["Tell me about SenteGuard founder David Weidman"],
     )
-    assert folder == "tell_me_about_a3f9c2e1"
+    assert folder == "senteguard_a3f9c2e1"
     assert not folder.startswith("ord_")
 
 
@@ -35,7 +42,7 @@ def test_parse_order_storage_folder_from_prompt():
         "ord_gui_20260821T085712Z_a3f9c2e1",
         {"product": "snapshot", "prompts": ["Tell me about Enron"]},
     )
-    assert spec.storage_folder == "tell_me_about_a3f9c2e1"
+    assert spec.storage_folder == "enron_a3f9c2e1"
 
 
 def test_parse_order_honors_storage_folder_field():
@@ -256,6 +263,7 @@ def test_rebuild_build_argv_matches_local_cli(tmp_path: Path):
         "score",
         "--include-remediation",
         "--keep-graphics",
+        "--no-upload",
     ]
 
 

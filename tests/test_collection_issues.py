@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "reports"))
-
-from pipeline.content import build_content_doc  # noqa: E402
-from pipeline.extract import extract_all  # noqa: E402
-from pipeline.parse import (  # noqa: E402
+from pipeline.content import build_content_doc
+from pipeline.extract import extract_all
+from pipeline.parse import (
     Chunk,
     collection_issues_from_exploration,
     parse_exploration,

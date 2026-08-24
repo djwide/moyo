@@ -27,7 +27,7 @@ def example_configuration():
     # Load default settings
     settings = get_settings()
     print(f"Environment: {settings.environment}")
-    print(f"Data directory: {settings.data_dir}")
+    print(f"Projects directory: {settings.projects_dir}")
     print(f"Embedding model: {settings.embedding.model_name}")
     print(f"FAISS index type: {settings.faiss.index_type}")
     print(f"Logging level: {settings.logging.level}")
@@ -93,7 +93,7 @@ def example_prometheus_metrics():
     metrics_registry.set_faiss_index_size("FlatL2", 10000)
     
     # Record embedding generation
-    metrics_registry.record_embedding_generated("all-MiniLM-L6-v2", "success", 0.1)
+    metrics_registry.record_embedding_generated("BAAI/bge-base-en-v1.5", "success", 0.1)
     
     # Record LLM requests
     metrics_registry.record_llm_request("openai", "gpt-3.5-turbo", "success", 2.5)

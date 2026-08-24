@@ -1,26 +1,23 @@
 #!/usr/bin/env python3
 """
-Simple demonstration of barrier analysis functionality.
+Simple demonstration of barrier analysis without requiring a FAISS index.
 
-This script shows how to compare public and private information
-using cosine distance without requiring FAISS.
+Pair level: cosine distance between mock embeddings.
+Neighborhood + corpus: margin, top-k entropy, and Semantic Separation
+via ``build_distribution_layer``.
 """
 
 import sys
-import numpy as np
 from pathlib import Path
 
-# Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import numpy as np
 
-from moyo.publicside.barrierprobe.barrier_analyzer import BarrierAnalyzer
-from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+
 from moyo.publicside.gatherpublicsources.schema import PublicSource, SourceType
 from moyo.privateside.mapcorpus.schema import DocumentChunk
-from shared_utils import generate_id
+from moyo.publicside.barrierprobe.distribution import build_distribution_layer
 from datetime import datetime
 
 
@@ -250,6 +247,42 @@ def demonstrate_barrier_analysis():
     print()
 
 
+def demonstrate_distribution_layer():
+    """Show margin, top-k entropy, and JS occupancy on a synthetic matrix."""
+    print("=== Neighborhood + Semantic Separation ===")
+    print("Same nearest-neighbour distance can be a unique leak or generic topic overlap.")
+    print()
+
+    n_public = 20
+    # Private A: one close public neighbour, the rest far (distinctive).
+    # Private B: many public neighbours almost as close (dense neighborhood).
+    matrix = np.full((2, n_public), 0.45)
+    matrix[0] = np.array([0.13, 0.31, 0.34, 0.36] + [0.40] * 16)
+    matrix[1] = np.array([0.13, 0.14, 0.15, 0.15] + [0.16] * 16)
+
+    rng = np.random.default_rng(0)
+    private_emb = rng.normal(0.0, 0.05, size=(2, 8))
+    public_emb = rng.normal(0.0, 0.05, size=(n_public, 8))
+    # Pull public[0] toward private[0] so occupancy still has a structure.
+    public_emb[0] = private_emb[0] + rng.normal(0.0, 0.01, size=8)
+
+    layer = build_distribution_layer(
+        matrix, private_emb, public_emb, neighborhood_k=20, n_clusters=4
+    )
+    for line in layer.headline_lines():
+        print(f"  {line}")
+    print()
+    for row in layer.neighborhoods:
+        print(
+            f"  private[{row.private_index}]  d1={row.nn_distance:.3f}  "
+            f"margin={row.margin:.3f}  H_norm={row.normalized_entropy:.3f}  "
+            f"concentrated={'yes' if row.concentrated else 'no'}"
+        )
+    print()
+    print("  private[0] is a distinctive counterpart; private[1] lives in a dense neighborhood.")
+    print()
+
+
 def main():
     """Run the demonstration."""
     print("Simple Barrier Analysis Demonstration")
@@ -261,14 +294,15 @@ def main():
         
         # Demonstrate barrier analysis
         demonstrate_barrier_analysis()
+
+        demonstrate_distribution_layer()
         
         print("=" * 50)
         print("✅ Demonstration completed successfully!")
-        print("   The barrier analysis concepts are working correctly.")
         print("   Key features demonstrated:")
-        print("   • Cosine distance calculation between embeddings")
-        print("   • Finding closest matches between public and private content")
-        print("   • Identifying potential information barrier breaches")
+        print("   • Cosine distance (pair level)")
+        print("   • Closest matches and thresholded breaches")
+        print("   • NN margin, top-k entropy, Semantic Separation")
         
     except Exception as e:
         print(f"\n❌ Demonstration failed: {e}")

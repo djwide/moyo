@@ -17,7 +17,6 @@ moyo is an experimental tool for corpus mapping and information-barrier analysis
 │   ├── publicside/
 │   │   ├── gatherpublicsources/  # Crawler + naive-prompt explorer
 │   │   └── barrierprobe/       # Barrier analysis and LLM search
-│   ├── redteam/                # LLM red-teaming (whitebox + blackbox)
 │   ├── gui/                    # PyQt5 desktop GUI (moyo-gui → gui/app.py)
 │   ├── config/                 # Pydantic settings (MOYO_* env)
 │   ├── metrics.py / metrics_server.py / cli_metrics.py
@@ -79,16 +78,6 @@ own standalone Click groups (`cli_advanced_fuzzing.py`,
 Provider-agnostic `LLMClient` / `LLMSpec` (OpenAI, Anthropic, Ollama, custom
 OpenAI-compatible, echo). Registry resolves the default LLM from `MOYO_LLM_*`
 and retrieval LLMs from `config/retrieval_llms.json`.
-
-### Red Team (`redteam/`)
-Probes a *target* LLM for proprietary-information leakage, exposed as
-`moyo-redteam` (`whitebox`, `blackbox`, `blackbox-explore`, `report`). White-box uses a known
-secret inventory (`SecretStore`) to plan attacks; black-box does
-hypothesis-driven blind probing. `blackbox-explore` feeds
-`HypothesisEngine` prompts into the gather explore pipeline via
-`--prompts-file` or `explore_and_save_many` without modifying
-`moyo-gather explore`. A separate helper LLM generates probes and
-never sees the target's responses. See `docs/threat_model.md`.
 
 ### Desktop GUI (`gui/`)
 `moyo/gui/app.py` is a PyQt5 app (`moyo-gui`) with tabs that orchestrate the

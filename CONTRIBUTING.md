@@ -71,7 +71,6 @@ moyo/               # Main package
   gui/              # Desktop GUI (moyo-gui)
   privateside/      # Data ingestion + corpus building
   publicside/       # Public source gathering + barrier probing
-  redteam/          # Red-team utilities
 shared_utils/       # Vendored shared utilities (included in the wheel)
 docs/               # Operational runbook and guides
 tests/              # Test suite

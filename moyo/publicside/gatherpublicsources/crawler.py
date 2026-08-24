@@ -368,8 +368,18 @@ class PublicSourcesCrawler:
             Path where results were saved
         """
         try:
-            # Create output directory
-            output_dir = Path(self.config.output_directory)
+            output_s = (self.config.output_directory or "").strip()
+            if output_s:
+                output_dir = Path(output_s)
+            else:
+                from moyo.project import load_saved_project, resolve_public_sources_dir
+
+                saved = load_saved_project()
+                output_dir = (
+                    saved.ensure().public_sources_dir
+                    if saved is not None
+                    else resolve_public_sources_dir(create=True)
+                )
             ensure_directory(output_dir)
             
             # Create topic-specific directory

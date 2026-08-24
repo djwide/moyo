@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Add the moyo package to the path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
+
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 from moyo.publicside.barrierprobe.unified_fuzzing_engine import (
     UnifiedFuzzingEngine,
@@ -80,9 +82,11 @@ def display_fuzzing_results(campaign_result, target_concept: str):
     print()
     print("SIMILARITY SCORE EXPLANATION:")
     print("The similarity score represents the cosine similarity between the FUZZED TEXT")
-    print("and the TARGET CONCEPT using MiniLM embeddings. Higher scores (closer to 1.0)")
+    print("and the TARGET CONCEPT using the engine embedding model")
+    print(f"({DEFAULT_MODEL_NAME}). Higher scores (closer to 1.0)")
     print("indicate that the fuzzed text is more semantically similar to the target concept.")
     print("This measures how well the fuzzing process moved the text towards the target.")
+    print("Use the same embedding model the corpus index was built with (query dim must match).")
     print()
     
     # Display results by fuzzing level
@@ -168,7 +172,7 @@ def demonstrate_custom_fuzzing_levels():
     # Create engine with custom fuzzing levels
     custom_config = FuzzingConfig(
         fuzzing_levels=[0.2, 0.4, 0.6, 0.8, 1.0],
-        embedding_model="all-MiniLM-L6-v2"
+        embedding_model=DEFAULT_MODEL_NAME
     )
     
     engine = create_unified_fuzzing_engine(custom_config)
@@ -202,7 +206,7 @@ def demonstrate_single_phrase_fuzzing():
     # Create engine
     config = FuzzingConfig(
         fuzzing_levels=[0.1, 0.3, 0.5, 0.7, 0.9],
-        embedding_model="all-MiniLM-L6-v2"
+        embedding_model=DEFAULT_MODEL_NAME
     )
     
     engine = create_unified_fuzzing_engine(config)
@@ -240,7 +244,7 @@ def main():
         # Create engine with default configuration
         config = FuzzingConfig(
             fuzzing_levels=[0.1, 0.3, 0.5, 0.7, 0.9],
-            embedding_model="all-MiniLM-L6-v2"
+            embedding_model=DEFAULT_MODEL_NAME
         )
         
         engine = create_unified_fuzzing_engine(config)

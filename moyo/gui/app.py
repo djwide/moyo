@@ -971,7 +971,8 @@ def _make_compute_location_box(*, include_product: bool = True) -> tuple:
         "Cloud Run is a single job: explore → extract → cluster → PDFs. "
         "Pick the report product below; do not use the Build Report tab "
         "afterward. Artifacts land in gs://senteguard-website-moyo-reports/"
-        "reports/<order-id>/. Requires `gcloud` auth to this project.\n\n"
+        "reports/<storageFolder>/ (topic + order suffix). "
+        "Requires `gcloud` auth to this project.\n\n"
         "Local explore only writes exploration.md on this machine. Then "
         "open the Build Report tab and point it at that file."
     )
@@ -2268,6 +2269,7 @@ class BarrierProbeTab(QWidget):
         pub = project.latest_public_index() or project.public_index_dir
         self.private_path.setText(str(priv))
         self.public_path.setText(str(pub))
+        self._refresh_index_specs()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -2307,6 +2309,11 @@ class BarrierProbeTab(QWidget):
         idx_layout.addRow("Private index:", priv_row)
         idx_group.setLayout(idx_layout)
         layout.addWidget(idx_group)
+
+        self.index_spec_label = QLabel("")
+        self.index_spec_label.setWordWrap(True)
+        self.index_spec_label.setStyleSheet("color: #555;")
+        layout.addWidget(self.index_spec_label)
 
         # --- Analysis params
         param_group = QGroupBox("Analysis Parameters")
@@ -2399,20 +2406,55 @@ class BarrierProbeTab(QWidget):
         path = QFileDialog.getExistingDirectory(self, f"Select {label}")
         if path:
             line_edit.setText(path)
+            self._refresh_index_specs()
+
+    def _refresh_index_specs(self) -> None:
+        if not hasattr(self, "index_spec_label"):
+            return
+        try:
+            from shared_utils.faiss_index import resolve_index_directory
+            from shared_utils.index_spec import load_index_spec
+        except Exception:
+            self.index_spec_label.setText("")
+            return
+        parts = []
+        for name, raw in (
+            ("Public", self.public_path.text().strip()),
+            ("Private", self.private_path.text().strip()),
+        ):
+            if not raw:
+                continue
+            try:
+                directory = resolve_index_directory(Path(raw))
+                spec = load_index_spec(directory)
+                model = (spec.embedding_model if spec else None) or "unknown model"
+                parts.append(f"{name}: {directory.name} ({model})")
+            except FileNotFoundError:
+                parts.append(f"{name}: no .faiss under {raw}")
+        self.index_spec_label.setText(" · ".join(parts))
+
+    def _resolved_index_paths(self) -> Optional[tuple]:
+        from shared_utils.faiss_index import resolve_index_directory
+
+        public_raw = self.public_path.text().strip()
+        private_raw = self.private_path.text().strip()
+        try:
+            public_path = resolve_index_directory(Path(public_raw))
+            private_path = resolve_index_directory(Path(private_raw))
+        except FileNotFoundError as exc:
+            QMessageBox.warning(self, "Index missing", str(exc))
+            return None
+        return str(public_path), str(private_path)
 
     def _start(self):
         if self._worker is not None:
             QMessageBox.information(self, "Busy", "Analysis already running.")
             return
 
-        public_path = self.public_path.text().strip()
-        private_path = self.private_path.text().strip()
-        if not (Path(public_path).exists() and Path(private_path).exists()):
-            QMessageBox.warning(
-                self, "Path missing",
-                "Both the public and private index directories must exist."
-            )
+        resolved = self._resolved_index_paths()
+        if resolved is None:
             return
+        public_path, private_path = resolved
 
         try:
             from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
@@ -2450,14 +2492,10 @@ class BarrierProbeTab(QWidget):
             QMessageBox.information(self, "Busy", "Analysis already running.")
             return
 
-        public_path = self.public_path.text().strip()
-        private_path = self.private_path.text().strip()
-        if not (Path(public_path).exists() and Path(private_path).exists()):
-            QMessageBox.warning(
-                self, "Path missing",
-                "Both the public and private index directories must exist."
-            )
+        resolved = self._resolved_index_paths()
+        if resolved is None:
             return
+        public_path, private_path = resolved
 
         try:
             from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
@@ -2683,10 +2721,11 @@ class FuzzerTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Use an LLM (default: local Ollama llama3.1:8b) to iteratively transform input "
-            "phrases toward a target concept. Mode basic rotates paraphrase / translate / "
-            "summarize; multilingual rotates paraphrase / abstract / summarize "
-            "(typo available when configured). "
+            "Use an LLM (default: local Ollama llama3.1:8b) to transform input "
+            "phrases toward a target concept. Each round applies every remaining "
+            "strategy independently (paraphrase / translate / summarize in basic; "
+            "paraphrase / abstract / summarize in multilingual), scores closeness "
+            "to the target, keeps the best result, and prunes the weakest strategy. "
             "Foreign-language outputs are translated back to English with a language "
             "annotation in saved reports."
         )
@@ -2753,7 +2792,7 @@ class FuzzerTab(QWidget):
         self.max_iter_spin = QSpinBox()
         self.max_iter_spin.setRange(1, 100)
         self.max_iter_spin.setValue(5)
-        fuzz_layout.addRow("Max iterations:", self.max_iter_spin)
+        fuzz_layout.addRow("Max tournament rounds:", self.max_iter_spin)
 
         self.target_sim_spin = QDoubleSpinBox()
         self.target_sim_spin.setRange(0.0, 1.0)
@@ -2819,7 +2858,7 @@ class FuzzerTab(QWidget):
         # --- Results
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(
-            ["Original", "Fuzzed", "Final similarity", "Iterations"]
+            ["Original", "Fuzzed", "Final similarity", "Rounds"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setMinimumHeight(180)
@@ -2965,7 +3004,13 @@ class FuzzerTab(QWidget):
         def job():
             print(f"Loading corpus index from {corpus}…")
             index = FAISSIndex.load(str(corpus))
-            print(f"Loaded {index.get_vector_count()} vectors")
+            model = getattr(index, "embedding_model", None) or cfg.embedding_model
+            if model:
+                cfg.embedding_model = model
+            print(
+                f"Loaded {index.get_vector_count()} vectors "
+                f"(dim={index.dimension}, model={model})"
+            )
             print(f"Fuzzing {len(phrases)} phrases toward '{target}'…")
             return fuzz_phrases_for_barrier_analysis(phrases, target, index, cfg)
 
@@ -2996,6 +3041,28 @@ class FuzzerTab(QWidget):
                 self.log.append(
                     f"✅ Done (mode={mode}). Average final similarity: {avg_sim:.3f}"
                 )
+                for r in self._last_results:
+                    orig = r.get("original_phrase", "")
+                    surviving = ", ".join(r.get("surviving_strategies") or []) or "(none)"
+                    pruned = ", ".join(r.get("pruned_strategies") or []) or "(none)"
+                    self.log.append(
+                        f"  {orig!r}: sim={r.get('final_similarity', 0.0):.3f} "
+                        f"surviving={surviving} pruned={pruned}"
+                    )
+                    for rnd in r.get("strategy_rounds") or []:
+                        bits = []
+                        for trial in rnd.get("trials") or []:
+                            mark = ""
+                            if trial.get("pruned"):
+                                mark = "*"
+                            elif trial.get("kept"):
+                                mark = "+"
+                            bits.append(
+                                f"{trial.get('strategy')}={trial.get('similarity', 0.0):.3f}{mark}"
+                            )
+                        self.log.append(
+                            f"    round {rnd.get('round')}: " + ", ".join(bits)
+                        )
                 self.save_btn.setEnabled(True)
             else:
                 self.log.append("⚠️  Fuzzer returned no results.")
@@ -3646,8 +3713,12 @@ class BuildReportTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Local only: render MOYO report products from an exploration.md "
-            "on this machine. Cloud Run jobs (explore + PDFs) start from the "
+            "Render MOYO report products from an exploration.md on this "
+            "machine. Finished artifacts are also uploaded to "
+            "gs://senteguard-website-moyo-reports/reports/<storageFolder>/ "
+            "using the same object names as Cloud Run jobs. Uncheck the "
+            "upload box or pass --no-upload to keep the run local-only.\n\n"
+            "Cloud Run jobs (explore + PDFs) start from the "
             "Gather Public Sources tab with Naive prompts + Cloud — do not "
             "use this tab for those.\n\n"
             "The Exposure Snapshot is the one-pager + report; the Basis "
@@ -3716,6 +3787,11 @@ class BuildReportTab(QWidget):
         )
         self.include_remediation_cb.setChecked(False)
         layout.addWidget(self.include_remediation_cb)
+        self.upload_gcs_cb = QCheckBox(
+            "Upload artifacts to GCS (same layout as Cloud Run jobs)"
+        )
+        self.upload_gcs_cb.setChecked(True)
+        layout.addWidget(self.upload_gcs_cb)
 
         self.run_btn = QPushButton("Build Report")
         self.run_btn.clicked.connect(self._build)
@@ -3778,8 +3854,12 @@ class BuildReportTab(QWidget):
             argv.append("--include-remediation")
         else:
             argv.append("--no-include-remediation")
+        if not self.upload_gcs_cb.isChecked():
+            argv.append("--no-upload")
 
-        run_label = run_id or Path(exploration).parent.name
+        from moyo.report_storage import infer_local_run_id
+
+        run_label = run_id or infer_local_run_id(Path(exploration))
 
         def job():
             import sys as _sys
@@ -3809,6 +3889,10 @@ class BuildReportTab(QWidget):
         self.progress_bar.setVisible(False)
         _busy(self.run_btn, False, self._idle_label())
         self.log.append("Done. PDFs are under reports/build/<run-id>/output/.")
+        self.log.append(
+            "GCS prefix (if upload succeeded) is printed above as "
+            "gs://senteguard-website-moyo-reports/reports/<storageFolder>/."
+        )
 
     def _on_failed(self, message: str):
         self.progress_bar.setVisible(False)

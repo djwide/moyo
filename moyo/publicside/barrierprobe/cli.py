@@ -132,7 +132,7 @@ def cli(verbose: bool, debug: bool, test_mode: bool):
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
-@click.option('--max-iterations', default=5, help='Maximum fuzzing iterations')
+@click.option('--max-iterations', default=5, help='Maximum tournament rounds (each round scores remaining strategies, then prunes the weakest)')
 @click.option('--target-similarity', default=0.95, help='Target similarity to achieve')
 @click.option('--search-k', default=10, help='Number of similar phrases to retrieve')
 @click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
@@ -215,7 +215,32 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
                 f"(from {result['fuzzed_phrase_original_language']})"
             )
         click.echo(f"  Similarity: {result['final_similarity']:.3f}")
-        click.echo(f"  Iterations: {result['iterations']}")
+        baseline = result.get("baseline_similarity")
+        if baseline is not None:
+            click.echo(f"  Baseline:   {baseline:.3f}")
+        click.echo(f"  Rounds:     {result['iterations']}")
+        surviving = result.get("surviving_strategies") or []
+        pruned = result.get("pruned_strategies") or []
+        if surviving or pruned:
+            click.echo(
+                f"  Strategies: surviving={', '.join(surviving) or '(none)'} "
+                f"pruned={', '.join(pruned) or '(none)'}"
+            )
+        rounds = result.get("strategy_rounds") or []
+        if rounds:
+            click.echo("  Tournament:")
+            for rnd in rounds:
+                bits = []
+                for trial in rnd.get("trials") or []:
+                    mark = ""
+                    if trial.get("pruned"):
+                        mark = " [pruned]"
+                    elif trial.get("kept"):
+                        mark = " [kept]"
+                    bits.append(
+                        f"{trial.get('strategy')}={trial.get('similarity', 0.0):.3f}{mark}"
+                    )
+                click.echo(f"    Round {rnd.get('round')}: " + ", ".join(bits))
         
         history = result.get("transformation_history_for_report") or result.get("transformation_history") or []
         if verbose and history:
@@ -235,7 +260,7 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
     
     click.echo(f"\nSummary:")
     click.echo(f"  Average final similarity: {avg_similarity:.3f}")
-    click.echo(f"  Average iterations: {avg_iterations:.1f}")
+    click.echo(f"  Average tournament rounds: {avg_iterations:.1f}")
 
 
 @cli.command()

@@ -2,18 +2,17 @@
 """
 Demonstration of barrier analysis functionality.
 
-This script shows how to compare public and private FAISS indexes
-to find closest matches via cosine distance.
+Pair level: cosine nearest-neighbour distance.
+Neighborhood: top-1/top-2 margin and top-k entropy.
+Corpus: Semantic Separation (JS over cluster occupancy). High JS is not
+barrier integrity — one leaked fact can miss the occupancy histogram.
 """
 
 import sys
 from pathlib import Path
 
-# Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from moyo.publicside.barrierprobe.barrier_analyzer import analyze_barriers, BarrierAnalyzer
 from moyo.publicside.barrierprobe.schema import BarrierProbeConfig
@@ -22,7 +21,10 @@ from moyo.publicside.gatherpublicsources.schema import PublicSource, SourceType
 from moyo.privateside.mapcorpus.builder import CorpusBuilder
 from moyo.privateside.mapcorpus.schema import DocumentChunk, CorpusConfig
 from shared_utils import embed, generate_id
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 from datetime import datetime
+
+EMBEDDING_MODEL = DEFAULT_MODEL_NAME
 
 
 def create_mock_public_sources():
@@ -120,7 +122,7 @@ def build_demo_indexes():
     
     public_config = IndexConfig(
         index_type=IndexType.FLAT,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=EMBEDDING_MODEL,
         chunk_size=200,
         chunk_overlap=30,
         output_directory="examples/demo_indexes",
@@ -154,7 +156,7 @@ def build_demo_indexes():
         
         for i, chunk_content in enumerate(chunks):
             # Create embedding
-            embedding = embed([chunk_content], model_name="all-MiniLM-L6-v2")[0]
+            embedding = embed([chunk_content], model_name=EMBEDDING_MODEL)[0]
             
             # Create document chunk
             chunk = DocumentChunk(
@@ -175,7 +177,7 @@ def build_demo_indexes():
     
     # Build and save private index
     private_config = CorpusConfig(
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=EMBEDDING_MODEL,
         chunk_size=200,
         chunk_overlap=30,
         output_directory="examples/demo_indexes/private_demo_index",
@@ -220,6 +222,18 @@ def demonstrate_barrier_analysis(public_index_path: str, private_index_path: str
     )
     print(f"Pairwise Exposure: {result.pairwise_exposure}")
     print(f"Concentrated Matches: {result.concentrated_matches}")
+    print(
+        "Note: high Semantic Separation is not barrier integrity — "
+        "review concentrated pairs."
+    )
+    diag = result.distribution_diagnostics or {}
+    if diag.get("kl_private_to_public") is not None:
+        print(
+            f"KL diagnostic (not in headline): "
+            f"private→public={diag['kl_private_to_public']:.3f}, "
+            f"public→private={diag['kl_public_to_private']:.3f}"
+        )
+    print(f"Neighborhood k: {diag.get('neighborhood_k', 20)}")
     
     # Index information
     print(f"\nIndex Information:")
@@ -235,9 +249,17 @@ def demonstrate_barrier_analysis(public_index_path: str, private_index_path: str
     
     # Closest matches
     if result.metadata.get('closest_matches'):
-        print(f"\nTop 10 Closest Matches (Cosine Distance):")
+        print(f"\nTop closest matches (cosine + neighborhood):")
         for match in result.metadata['closest_matches']:
-            print(f"  {match['rank']}. Distance: {match['distance']:.4f}")
+            margin = match.get("margin")
+            ent = match.get("normalized_entropy")
+            concentrated = "yes" if match.get("concentrated") else ""
+            margin_txt = "n/a" if margin is None else f"{margin:.4f}"
+            ent_txt = "n/a" if ent is None else f"{ent:.3f}"
+            print(
+                f"  {match['rank']}. Distance: {match['distance']:.4f}  "
+                f"margin={margin_txt}  H_norm={ent_txt}  {concentrated}"
+            )
             print(f"     Public: {match['public_content']}")
             print(f"     Private: {match['private_content']}")
             print()
@@ -269,14 +291,29 @@ def demonstrate_individual_analyses(public_index_path: str, private_index_path: 
     if not analyzer.load_indexes():
         print("❌ Failed to load indexes")
         return
+
+    layer = analyzer.score_distribution_layer()
+    print("Distribution layer headline:")
+    for line in layer.headline_lines():
+        print(f"  {line}")
     
-    # Find closest matches
     print("\nFinding closest matches...")
     closest_matches = analyzer.find_closest_matches(top_k=5)
+    by_private = layer.by_private_index()
     
     print(f"Top 5 Closest Matches:")
     for match in closest_matches:
+        score = by_private.get(match.get("private_index"))
+        margin = None if score is None else score.margin
+        ent = None if score is None else score.normalized_entropy
+        concentrated = bool(score and score.concentrated)
         print(f"  {match['rank']}. Distance: {match['distance']:.4f}")
+        margin_txt = "n/a" if margin is None else f"{margin:.4f}"
+        ent_txt = "n/a" if ent is None else f"{ent:.3f}"
+        print(
+            f"     margin={margin_txt}  H_norm={ent_txt}  "
+            f"concentrated={'yes' if concentrated else 'no'}"
+        )
         print(f"     Public: {match['public_content']}")
         print(f"     Private: {match['private_content']}")
         print()
@@ -302,7 +339,7 @@ def main():
         
         print("\n" + "=" * 50)
         print("✅ Demonstration completed successfully!")
-        print("   The barrier analysis functionality is working correctly.")
+        print("   Pair + neighborhood + corpus layers on the same cosine matrix.")
         
     except Exception as e:
         print(f"\n❌ Demonstration failed: {e}")

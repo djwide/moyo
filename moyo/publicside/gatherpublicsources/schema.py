@@ -129,7 +129,7 @@ class CrawlConfig(BaseModel):
     language: str = "en"
     include_metadata: bool = True
     save_raw_data: bool = True
-    output_directory: str = "data/public_sources"
+    output_directory: str = ""
     
     # Rate limiting
     requests_per_second: float = 1.0

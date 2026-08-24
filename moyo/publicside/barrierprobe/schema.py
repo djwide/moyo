@@ -111,7 +111,7 @@ class BarrierProbeConfig(BaseModel):
     private_index_path: str
     similarity_threshold: float = 0.8
     max_comparisons: int = 1000
-    output_directory: str = "data/barrierprobe/results"
+    output_directory: str = "cache/barrierprobe"
     save_detailed_results: bool = True
     include_metadata: bool = True
     # Distribution layer (JS / entropy / margin) sits on top of cosine NN.

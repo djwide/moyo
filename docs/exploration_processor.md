@@ -98,7 +98,7 @@ You do **not** need XeLaTeX.
 ### Step A — Place or point at the exploration
 
 1. Finish an explore run (or copy an existing folder), e.g.  
-   `data/public_sources/what_is_the_recipe_for_coca_cola/exploration.md`
+   `projects/what_is_the_recipe_for_coca_cola/public_sources/exploration.md`
 2. Decide a **run id** (slug). Default = parent folder name  
    (`what_is_the_recipe_for_coca_cola`).
 
@@ -117,7 +117,7 @@ CLI overrides. Typical pre-run checks:
 ```bash
 # From repo root (once build_report.py is wired)
 python reports/build_report.py \
-  --exploration data/public_sources/what_is_the_recipe_for_coca_cola/exploration.md \
+  --exploration projects/what_is_the_recipe_for_coca_cola/public_sources/exploration.md \
   --run-id what_is_the_recipe_for_coca_cola
 ```
 
@@ -199,8 +199,11 @@ Open the HTML in a browser first; PDF via WeasyPrint should match closely.
 
 ### Step G — Ship / archive
 
-Copy or commit the `reports/build/<run-id>/` folder (or export only the PDFs).
-Keep `claims.jsonl` + `report_data.json` with the PDFs so findings stay auditable.
+Local `build_report` runs also upload finished artifacts to
+`gs://senteguard-website-moyo-reports/reports/<storageFolder>/` by default
+(same object names as Cloud Run). Pass `--no-upload` to skip. A copy stays
+under `reports/build/<run-id>/`. Keep `claims.jsonl` + `report_data.json`
+with the PDFs so findings stay auditable.
 
 ---
 

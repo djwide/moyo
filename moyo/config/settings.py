@@ -135,7 +135,7 @@ class RedTeamSettings(BaseSettings):
     helper_provider: str = Field(default="openai", description="Helper LLM provider")
     helper_model: str = Field(default="gpt-4o-mini", description="Helper LLM model")
     helper_api_key: Optional[str] = Field(default=None, description="Helper LLM API key")
-    secrets_file: str = Field(default="data/secrets.json", description="Path to secrets file (whitebox mode)")
+    secrets_file: str = Field(default="secrets.json", description="Path to secrets file (whitebox mode)")
     attack_strategies: List[str] = Field(
         default=["direct", "indirect", "roleplay", "fewshot", "context", "authority"],
         description="Active attack strategies",
@@ -144,7 +144,6 @@ class RedTeamSettings(BaseSettings):
     similarity_threshold: float = Field(default=0.75, description="Cosine sim threshold for 'revealed'")
     blackbox_max_rounds: int = Field(default=10, description="Max rounds for black-box campaigns")
     hypothesis_source: str = Field(default="llm", description="Black-box hypothesis source")
-    output_dir: str = Field(default="output/redteam", description="Red team output directory")
 
     model_config = ConfigDict(env_prefix="MOYO_REDTEAM_")
 
@@ -153,10 +152,8 @@ class Settings(BaseSettings):
     """Application settings with comprehensive configuration."""
 
     # Core settings
-    data_dir: str = Field(default="data", description="Data directory")
     index_dir: str = Field(default="indexes", description="Legacy global index directory")
     cache_dir: str = Field(default="cache", description="Cache directory")
-    output_dir: str = Field(default="output", description="Output directory")
     projects_dir: str = Field(
         default="projects",
         description="Directory of per-engagement project folders",
@@ -188,7 +185,7 @@ class Settings(BaseSettings):
             raise ValueError(f'Environment must be one of: {valid_envs}')
         return v
     
-    @field_validator('data_dir', 'index_dir', 'cache_dir', 'output_dir')
+    @field_validator('index_dir', 'cache_dir')
     @classmethod
     def ensure_directories_exist(cls, v):
         """Ensure directories exist."""

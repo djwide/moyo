@@ -11,10 +11,8 @@ import random
 from pathlib import Path
 
 # Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from moyo.publicside.barrierprobe.iterative_llm_search import IterativeLLMSearch
 from moyo.publicside.barrierprobe.barrier_analyzer import BarrierAnalyzer
@@ -270,6 +268,8 @@ def demonstrate_iterative_search():
         low_risk_breaches=0,
         processing_time=1.0,
         recommendations=[],
+        pairwise_exposure="High",
+        concentrated_matches=1,
         metadata={'closest_matches': mock_matches[:5]}
     )
     

@@ -8,10 +8,6 @@ from typing import Iterable
 
 from moyo.privateside.phrases.schema import PhraseRecord, phrase_id, utc_now
 
-# Legacy path — do not use. Phrases live in projects/<name>/phrases/.
-DEFAULT_CORPUS_DIR = Path("data/private/phrases")
-
-
 class PhraseStore:
     """``pending.jsonl`` for review, ``corpus.jsonl`` + ``corpus.txt`` approved."""
 

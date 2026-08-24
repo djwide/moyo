@@ -51,7 +51,7 @@ moyo-probe analyze \
     --similarity-threshold 0.8 \
     --top-k 20 \
     --llm-top-k 10 \
-    --output-json data/barrierprobe/results/report.json
+    --output-json cache/barrierprobe/report.json
 ```
 
 For multi-round iterative search (more than the single refinement pass the CLI

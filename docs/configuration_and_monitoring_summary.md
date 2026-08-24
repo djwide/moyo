@@ -200,7 +200,7 @@ Spanish, French, Mandarin Chinese). ``typo`` is optional a la carte. See
 [`docs/crawler.md`](crawler.md).
 
 **Embedding model selection** persists in `config/model_config.json` (not under
-`data/`). The shared synonym JSON map has been removed; local transformers use
+`config/`). The shared synonym JSON map has been removed; local transformers use
 built-in synonym tables.
 
 ### Local Ollama setup

@@ -38,23 +38,23 @@ moyo-gather check-llms
 moyo-gather check-llms --json
 
 # Optional: summary.md from an existing exploration.md (not written by explore)
-moyo-gather summarize --dir data/public_sources/what_is_the_recipe_for_coca_cola
+moyo-gather summarize --dir projects/what_is_the_recipe_for_coca_cola/public_sources
 moyo-gather summarize -e path/to/exploration.md -o path/to/summary.md
 
 # Optional: deliverable from exploration.md + summary.md via Grok (xAI)
-moyo-gather deliverable --dir data/public_sources/what_is_the_recipe_for_coca_cola
-moyo-gather summarize --dir data/... --with-deliverable
+moyo-gather deliverable --dir projects/what_is_the_recipe_for_coca_cola/public_sources
+moyo-gather summarize --dir projects/<slug>/public_sources --with-deliverable
 
 # Structured exploration processor (claims → one-pager + full report PDF)
 # See docs/exploration_processor.md
 python reports/build_report.py \
-  --exploration data/public_sources/what_is_the_recipe_for_coca_cola/exploration.md \
+  --exploration projects/what_is_the_recipe_for_coca_cola/public_sources/exploration.md \
   --run-id what_is_the_recipe_for_coca_cola
 ```
 
 Claims / narrative synthesis uses **local Ollama** (`llama3.1:8b` by default), not the remote `MOYO_LLM_*` default. Ollama’s default context window is only ~2048–4096 tokens even though Llama 3.1 can go much higher; moyo raises it via `MOYO_SUMMARY_NUM_CTX` (default `32768`). Larger `num_ctx` needs more RAM/VRAM.
 
-Outputs land under `data/public_sources/<slug>/`:
+Outputs land under `projects/<slug>/public_sources/` (or `<output-dir>/<prompt-slug>/` when `--output-dir` is given):
 
 | File | Contents |
 |------|----------|
@@ -154,7 +154,7 @@ from moyo.privateside.mapcorpus import tokens_for_corpus
 from moyo.publicside.gatherpublicsources.crawler import PublicSourcesCrawler
 
 centroids, topic_tokens, labels, texts = tokens_for_corpus(
-    Path("data/private/corpus.txt"), top_k=8
+    Path("projects/my_case/phrases/corpus.txt"), top_k=8
 )
 tokens = [t for cluster in topic_tokens for t in cluster][:25]
 
@@ -163,7 +163,7 @@ result = crawler.crawl_with_tokens(tokens)
 print(result.message, result.output_path)
 ```
 
-Outputs under `data/public_sources/<topic>/` when persistence is enabled:
+Outputs under `projects/<slug>/public_sources/<topic>/` when persistence is enabled:
 
 - `sources.json` — normalized sources
 - `summary.json` — counts, types, date ranges

@@ -12,15 +12,24 @@ Reader glossary (HTML): [`design-system/terminology.html`](design-system/termino
 
 ```bash
 # From repo root
-pip install -e ".[reports]"   # jinja2 + weasyprint
+pip install -e ".[reports]"   # jinja2 + weasyprint + GCS upload
 
 python reports/build_report.py \
-  --exploration data/public_sources/what_is_the_recipe_for_coca_cola/exploration.md \
+  --exploration projects/what_is_the_recipe_for_coca_cola/public_sources/exploration.md \
   --run-id what_is_the_recipe_for_coca_cola
 
 # No LLM / smoke test
 python reports/build_report.py -e path/to/exploration.md --dry-run
+
+# Keep artifacts on disk only (default is to also push to the reports bucket)
+python reports/build_report.py -e path/to/exploration.md --no-upload
 ```
+
+Finished local runs upload to `gs://senteguard-website-moyo-reports/reports/<storageFolder>/`
+with the same object names as Cloud Run jobs (`report.pdf`, `report.json`,
+`manifest.json`, …). `storageFolder` is the prompt's primary topic plus a short
+suffix from the project slug. Opt out with `--no-upload` or
+`MOYO_REPORTS_SKIP_UPLOAD=1`.
 
 ## Per-run package
 
@@ -66,11 +75,11 @@ synthesize → graphics → render`), selected with `--report`:
 ```bash
 # Comprehensive Basis Report from an exploration.md
 python reports/build_report.py \
-  -e data/public_sources/<slug>/exploration.md --report basis
+  -e projects/<slug>/public_sources/exploration.md --report basis
 
 # Both products, re-rendering only (reuse existing run artifacts + charts)
 python reports/build_report.py --run-id <id> \
-  -e data/public_sources/<slug>/exploration.md \
+  -e projects/<slug>/public_sources/exploration.md \
   --report both --from-stage render --keep-graphics
 
 # Opt in to mitigations / remediations (ISVF + follow-up playbook)

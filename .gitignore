@@ -8,9 +8,7 @@ build/
 dist/
 *.whl
 
-# Private data and indexes
-data/private/*
-!data/private/.gitignore
+# Private indexes (legacy global tree; new work lives under projects/)
 indexes/private/*
 !indexes/private/.gitignore
 
@@ -26,7 +24,6 @@ logs/
 *.log
 cache/
 .cache/
-output/
 results/
 
 # Generated demo artifacts (examples create their own indexes/outputs)

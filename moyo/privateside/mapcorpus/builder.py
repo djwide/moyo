@@ -8,7 +8,15 @@ from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 import json
 
-from shared_utils import embed, get_embedding_model, chunk_text, FAISSIndex, ensure_directory, generate_id
+from shared_utils import (
+    embed,
+    get_embedding_model,
+    chunk_text,
+    FAISSIndex,
+    ensure_directory,
+    generate_id,
+    resolve_index_directory,
+)
 from shared_utils.chunking import (
     chunk_text_multi_granularity,
     keep_granular_chunk,
@@ -526,7 +534,7 @@ class CorpusBuilder:
             CorpusBuilder with loaded corpus or None
         """
         try:
-            index_dir = Path(index_path)
+            index_dir = resolve_index_directory(Path(index_path))
             
             # Load corpus info
             info_path = index_dir / "corpus_info.json"

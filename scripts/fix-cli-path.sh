@@ -27,7 +27,7 @@ else
 fi
 
 STALE_DIR="${HOME}/.local/bin"
-STALE=(moyo moyo-datainput moyo-corpus moyo-gather moyo-probe moyo-redteam moyo-gui)
+STALE=(moyo moyo-datainput moyo-corpus moyo-gather moyo-probe moyo-gui moyo-redteam)
 FOUND=()
 for name in "${STALE[@]}"; do
   if [[ -x "${STALE_DIR}/${name}" ]]; then

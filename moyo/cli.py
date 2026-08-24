@@ -128,12 +128,5 @@ try:
 except ImportError:
     pass
 
-try:
-    from .redteam.cli import cli as redteam_cli
-    cli.add_command(redteam_cli, name="redteam")
-except ImportError:
-    pass
-
-
 if __name__ == "__main__":
     cli()

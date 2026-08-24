@@ -352,7 +352,9 @@ def submit_cloud_compute(
     if cfg.wait:
         wait_for_execution(cfg, execution, progress=_p)
         _p("Cloud execution finished.")
-    gcs_prefix = f"gs://senteguard-website-moyo-reports/reports/{folder}/"
+    from moyo.report_storage import gcs_prefix_for
+
+    gcs_prefix = gcs_prefix_for(folder)
     _p(f"Artifacts (when complete): {gcs_prefix}")
     return CloudSubmitResult(
         order_id=order_id,

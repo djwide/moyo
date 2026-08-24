@@ -59,7 +59,7 @@ def _safe_rel_path(key: str) -> str:
 
 
 def _store_paths(base_dir: str, src_key: str) -> tuple[str, str, str]:
-    # return paths under data/private/{raw,normalized,chunks}
+    # return paths under {base_dir}/{raw,normalized,chunks}
     src_key = src_key.lstrip("/")
     rel = _safe_rel_path(src_key)
     raw_path = f"{base_dir}/raw/{rel}"
@@ -132,7 +132,7 @@ def uuid4() -> str:
     return str(uuid.uuid4())
 
 
-def ingest_paths(paths: Sequence[str], *, policy_tags: List[str], cfg: IngestConfig, store: Storage, base_dir: str = "data/private") -> List[ManifestRecord]:
+def ingest_paths(paths: Sequence[str], *, policy_tags: List[str], cfg: IngestConfig, store: Storage, base_dir: str = "cache/ingest") -> List[ManifestRecord]:
     """Ingest list of paths or storage keys into the given storage.
 
     Returns list of records written (skips duplicates by bytes_sha256).

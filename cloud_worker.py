@@ -28,13 +28,13 @@ Storefront order fields used here::
     output.jsonPath      reports/{storageFolder}/report.json
     output.markdownPath  reports/{storageFolder}/report.md
     output.htmlPath      reports/{storageFolder}/report.html
-    storageFolder        first prompt words + short order suffix (GCS prefix)
+    storageFolder        primary prompt topic + short order suffix (GCS prefix)
 
 ``awaiting_qc`` is the canonical human-QC state. ``qc_pending`` is accepted
 only as a legacy alias when reading status.
 
 One report per prompt. GCS folders are ``reports/{storageFolder}/`` where
-``storageFolder`` is the first few prompt words plus a short unique suffix
+``storageFolder`` is the prompt's primary topic plus a short unique suffix
 (not the Firestore ``ord_xxx`` id). A single-prompt order writes artifacts
 at that prefix (the path QC reads via ``output.pdfPath``). Multi-prompt
 orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root
@@ -65,6 +65,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from moyo.llm.client import ensure_env_loaded
 from moyo.order_storage import order_storage_folder
+from moyo.report_storage import (
+    DEFAULT_MOYO_REPORTS_BUCKET,
+    reports_bucket_name as _storage_bucket_name,
+    upload_files as _upload_files,
+)
 
 logger = logging.getLogger("moyo.cloud_worker")
 
@@ -125,8 +130,6 @@ GENERATION_MODE_ALIASES = {
     "fromstage": "from_stage",
 }
 
-# Dedicated worker/QC bucket. Not the Firebase Auth app bucket.
-DEFAULT_MOYO_REPORTS_BUCKET = "senteguard-website-moyo-reports"
 CANONICAL_AWAITING_QC = "awaiting_qc"
 LEGACY_AWAITING_QC = "qc_pending"
 AWAITING_QC_STATUSES = frozenset({CANONICAL_AWAITING_QC, LEGACY_AWAITING_QC})
@@ -326,6 +329,7 @@ def rebuild_build_argv(
         argv.append("--keep-graphics")
     if plan.keep_content:
         argv.append("--keep-content")
+    argv.append("--no-upload")
     return argv
 
 
@@ -1008,6 +1012,7 @@ def _run_one_prompt(
         argv.append("--include-remediation")
     if test_mode:
         argv.append("--test")
+    argv.append("--no-upload")
 
     progress(f"[{index}/{len(spec.prompts)}] build_report {spec.product}")
     rc = build_report_main(argv)
@@ -1345,25 +1350,6 @@ def _firebase_project_id() -> str | None:
     )
 
 
-def _normalize_storage_bucket_name(value: str) -> str:
-    text = value.strip()
-    if text.lower().startswith("gs://"):
-        text = text[5:]
-    return text.strip().strip("/")
-
-
-def _storage_bucket_name() -> str | None:
-    """Dedicated reports bucket, never the Firebase Auth app bucket."""
-    explicit = (
-        os.environ.get("MOYO_REPORTS_STORAGE_BUCKET")
-        or os.environ.get("STORAGE_BUCKET")
-        or ""
-    ).strip()
-    if explicit:
-        return _normalize_storage_bucket_name(explicit)
-    return DEFAULT_MOYO_REPORTS_BUCKET
-
-
 def _init_firebase_app():
     """Initialize the default Firebase app (Firestore does not need a bucket)."""
     import firebase_admin
@@ -1449,34 +1435,6 @@ def _upload_runs(
     )
     urls[f"{prefix}/manifest.json"] = f"gs://{bucket.name}/{prefix}/manifest.json"
     return {"manifest": manifest, "urls": urls}
-
-
-def _content_type_for(path: Path) -> str | None:
-    ext = path.suffix.lower()
-    return {
-        ".pdf": "application/pdf",
-        ".json": "application/json; charset=utf-8",
-        ".md": "text/markdown; charset=utf-8",
-        ".html": "text/html; charset=utf-8",
-        ".svg": "image/svg+xml",
-        ".txt": "text/plain; charset=utf-8",
-    }.get(ext)
-
-
-def _upload_files(bucket, pairs: list[tuple[str, Path]]) -> dict[str, str]:
-    urls: dict[str, str] = {}
-    for object_path, path in pairs:
-        if not path.exists():
-            continue
-        blob = bucket.blob(object_path)
-        content_type = _content_type_for(path)
-        if content_type:
-            blob.upload_from_filename(str(path), content_type=content_type)
-        else:
-            blob.upload_from_filename(str(path))
-        urls[object_path] = f"gs://{bucket.name}/{object_path}"
-        logger.info("uploaded %s", urls[object_path])
-    return urls
 
 
 def main() -> int:

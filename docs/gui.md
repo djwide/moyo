@@ -129,7 +129,7 @@ Two modes:
      `moyo-report-worker` (explore → extract → cluster → PDFs). Rewording,
      translation, clustering, and summaries use OpenRouter Llama 3.1 8B
      Instruct (`OPENROUTER_API_KEY`), not local Ollama. Artifacts land in
-     `gs://senteguard-website-moyo-reports/reports/<order-id>/`.
+     `gs://senteguard-website-moyo-reports/reports/<storageFolder>/`.
      Requires `gcloud` auth. Optional: wait and stream execution logs.
 
    Preflight LLM status streams into the log at scan start for local runs.
@@ -166,8 +166,12 @@ are documented in [`docs/embeddings.md`](embeddings.md). The default is
 
 Renders MOYO report products from an `exploration.md` via
 `reports/build_report.py`. Choose Exposure Snapshot, Basis Report, or both.
-**Compute location** can be local (this machine) or **Cloud** (same Cloud Run
-worker as explore: re-runs the prompt, does not upload `exploration.md`).
+Local builds also upload finished artifacts to
+`gs://senteguard-website-moyo-reports/reports/<storageFolder>/` by default
+(same object names as Cloud Run). Uncheck **Upload artifacts to GCS** or pass
+`--no-upload` to skip. **Compute location** can be local (this machine) or
+**Cloud** (same Cloud Run worker as explore: re-runs the prompt, does not
+upload `exploration.md`).
 **From stage** resumes the pipeline at a chosen step (earlier stages are
 skipped if their artifacts already exist). The local GUI and the website admin
 QC panel use the same list. Locally you pick an `exploration.md` on disk;
@@ -335,7 +339,6 @@ no Ollama, no network:
 ```bash
 moyo-gather --test explore -p "What is X?"
 moyo-probe --test test-llm
-moyo-redteam --test whitebox --secrets-file secrets.txt --target-provider test
 python reports/build_report.py -e path/to/exploration.md --test
 ```
 

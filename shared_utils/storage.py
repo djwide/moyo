@@ -298,12 +298,12 @@ def get_storage(config: Optional[dict] = None) -> Storage:
 
     Env vars supported:
     - STORAGE_BACKEND=local|s3
-    - LOCAL_ROOT=./data
+    - LOCAL_ROOT=./cache
     - S3_BUCKET, S3_PREFIX, S3_REGION, S3_ENDPOINT_URL, S3_ADDRESSING
     """
     cfg = {**{
         "backend": os.environ.get("STORAGE_BACKEND", "local"),
-        "local_root": os.environ.get("LOCAL_ROOT", "./data"),
+        "local_root": os.environ.get("LOCAL_ROOT", "./cache"),
         "s3_bucket": os.environ.get("S3_BUCKET"),
         "s3_prefix": os.environ.get("S3_PREFIX", ""),
         "s3_region": os.environ.get("S3_REGION"),

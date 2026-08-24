@@ -105,7 +105,7 @@ def get_sente_data_dir() -> pathlib.Path:
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
     
-    # 2. Try to find the new centralized data/sente directory
+    # 2. Try to find an existing data/sente directory (sente layouts only)
     try:
         # Look for data/sente relative to shared_utils location
         shared_utils_path = pathlib.Path(__file__).resolve()
@@ -117,10 +117,8 @@ def get_sente_data_dir() -> pathlib.Path:
     except Exception:
         pass
     
-    # 3. Fallback to current working directory / data
-    fallback_dir = pathlib.Path.cwd() / "data"
-    fallback_dir.mkdir(parents=True, exist_ok=True)
-    return fallback_dir
+    # 3. Do not create a repo-root data/ directory. Cache is the fallback.
+    return pathlib.Path.cwd() / "cache" / "sente_data"
 
 
 # Global data directory that all components should use
@@ -605,7 +603,9 @@ def initialize_data_directories() -> None:
 
 
 def ensure_data_directory() -> None:
-    """Ensure the data directory exists and has required subdirectories."""
+    """Ensure the sente data directory exists when explicitly configured."""
+    if not os.environ.get("SENTE_DATA_DIR"):
+        return
     SENTE_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # Keep only directories that are actively used. The former static_hits /

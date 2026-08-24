@@ -10,14 +10,13 @@ import sys
 from pathlib import Path
 
 # Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from moyo.publicside.barrierprobe.schema import IndexConfig, IndexType
 from moyo.publicside.barrierprobe.public_index_builder import PublicIndexBuilder
 from moyo.publicside.gatherpublicsources.schema import PublicSource, SourceType
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 from datetime import datetime
 
 
@@ -106,7 +105,7 @@ def main():
     print(f"\nBuilding FAISS index...")
     config = IndexConfig(
         index_type=IndexType.FLAT,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=DEFAULT_MODEL_NAME,
         chunk_size=200,
         chunk_overlap=30,
         output_directory="examples/demo_indexes",

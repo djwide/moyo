@@ -23,9 +23,11 @@ from shared_utils import (
     FAISSIndex,
     ensure_directory,
     generate_id,
+    resolve_index_directory,
 )
 from shared_utils.chunking import keep_granular_chunk, resolve_chunk_max_tokens
-from shared_utils.index_spec import spec_from_config
+from shared_utils.index_spec import load_index_spec, spec_from_config
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -490,40 +492,65 @@ def build_public_index_from_sources(
 
 def load_public_index(index_path: str) -> Optional[PublicIndexBuilder]:
     """Load a public index from disk.
-    
-    Args:
-        index_path: Path to the index directory
-        
-    Returns:
-        PublicIndexBuilder with loaded index or None
+
+    Accepts a PublicIndexBuilder directory (``chunks.json`` + builder
+    ``metadata.json``) or a GUI phrase-style index (``*.faiss`` +
+    ``index_info.json``). Parent folders such as ``indexes/public`` resolve
+    to the newest nested ``*.faiss``.
     """
     try:
-        index_dir = Path(index_path)
-        
-        # Load metadata
+        index_dir = resolve_index_directory(Path(index_path))
         metadata_path = index_dir / "metadata.json"
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
-        
-        # Load chunks
         chunks_path = index_dir / "chunks.json"
-        with open(chunks_path, 'r', encoding='utf-8') as f:
-            chunks_data = json.load(f)
-        
-        # Create builder
-        config = IndexConfig(**metadata["config"])
+        builder_meta = _read_builder_metadata(metadata_path)
+        if builder_meta is not None and chunks_path.is_file():
+            chunks_data = json.loads(chunks_path.read_text(encoding="utf-8"))
+            config = IndexConfig(**builder_meta["config"])
+            builder = PublicIndexBuilder(config)
+            builder.chunks = [PublicChunk(**chunk_data) for chunk_data in chunks_data]
+            if list(index_dir.glob("*.faiss")):
+                builder.faiss_index = FAISSIndex.load(str(index_dir))
+            logger.info("Loaded public builder index from %s", index_dir)
+            return builder
+
+        spec = load_index_spec(index_dir)
+        config = IndexConfig(
+            embedding_model=(
+                spec.embedding_model
+                if spec and spec.embedding_model
+                else DEFAULT_MODEL_NAME
+            ),
+            normalize_embeddings=spec.normalize_embeddings if spec else True,
+            chunk_size=spec.chunk_size if spec and spec.chunk_size else 512,
+            chunk_overlap=(
+                spec.chunk_overlap
+                if spec and spec.chunk_overlap is not None
+                else 50
+            ),
+            max_tokens=spec.max_tokens if spec else None,
+            min_chunk_length=(
+                spec.min_chunk_length if spec and spec.min_chunk_length else 50
+            ),
+            deduplication_enabled=spec.deduplication_enabled if spec else True,
+        )
         builder = PublicIndexBuilder(config)
-        
-        # Load chunks
-        builder.chunks = [PublicChunk(**chunk_data) for chunk_data in chunks_data]
-        
-        # Load FAISS index (named after the public index)
-        if list(index_dir.glob("*.faiss")):
-            builder.faiss_index = FAISSIndex.load(str(index_dir))
-        
-        logger.info(f"Loaded index from {index_path}")
+        builder.faiss_index = FAISSIndex.load(str(index_dir))
+        logger.info("Loaded GUI/phrase public index from %s", index_dir)
         return builder
-        
+
     except Exception as e:
         logger.error(f"Error loading index from {index_path}: {e}")
         return None
+
+
+def _read_builder_metadata(path: Path) -> Optional[Dict[str, Any]]:
+    """Return PublicIndexBuilder metadata only when it has a ``config`` block."""
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if isinstance(data, dict) and isinstance(data.get("config"), dict):
+        return data
+    return None

@@ -437,6 +437,17 @@ def main(argv: list[str] | None = None) -> int:
             "(no PDF/email; same as --from-stage graphics --stop-after graphics)"
         ),
     )
+    ap.add_argument(
+        "--upload",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Push finished artifacts to gs://<bucket>/reports/<storageFolder>/ "
+            "using the same names as Cloud Run jobs (default: on). "
+            "Skip with --no-upload or MOYO_REPORTS_SKIP_UPLOAD=1. "
+            "Cloud Run jobs skip this (the worker uploads once)."
+        ),
+    )
     args = ap.parse_args(argv)
 
     if args.test:
@@ -473,7 +484,9 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id or (cfg.get("output") or {}).get("run_id")
     if not run_id:
         if exploration:
-            run_id = exploration.parent.name
+            from moyo.report_storage import infer_local_run_id
+
+            run_id = infer_local_run_id(exploration)
         else:
             raise SystemExit("Provide --run-id (or --exploration to infer it).")
 
@@ -749,6 +762,33 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  → {label[key]}: {outputs[key]}", file=sys.stderr)
 
     print(f"Done → {run_dir}", file=sys.stderr)
+
+    from moyo.report_storage import publish_local_report, should_upload_local_report
+
+    if should_upload_local_report(
+        upload=bool(args.upload),
+        test_mode=bool(args.test),
+        rendered=want("render"),
+        graphics_only=bool(args.graphics_only),
+    ):
+        print("[6] upload GCS", file=sys.stderr)
+        try:
+            published = publish_local_report(
+                run_dir=run_dir,
+                run_id=run_id,
+                product=args.report,
+                exploration=exploration,
+                prompts=list((report_data or {}).get("prompts") or []),
+            )
+        except Exception as exc:
+            print(f"  → GCS upload failed: {exc}", file=sys.stderr)
+            raise SystemExit(
+                "Local report files were written, but upload to the reports "
+                "bucket failed. Fix gcloud ADC (`gcloud auth application-default "
+                "login`) or pass --no-upload / MOYO_REPORTS_SKIP_UPLOAD=1."
+            ) from exc
+        print(f"  → {published.gcs_prefix}", file=sys.stderr)
+
     return 0
 
 

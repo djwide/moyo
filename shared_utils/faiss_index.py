@@ -116,6 +116,27 @@ class StringStore:
         return instance
 
 
+def resolve_index_directory(path: Union[str, Path]) -> Path:
+    """Return the directory that actually holds a ``*.faiss`` file.
+
+    Accepts a ``.faiss`` file, a corpus folder, or a parent such as
+    ``indexes/public`` that contains a nested per-corpus index.
+    """
+    path = Path(path)
+    if path.is_file() and path.suffix == ".faiss":
+        return path.parent
+    if not path.exists():
+        raise FileNotFoundError(f"Index path not found: {path}")
+    if (path / "index.faiss").exists() or list(path.glob("*.faiss")):
+        return path
+    nested = sorted(
+        path.rglob("*.faiss"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    if nested:
+        return nested[0].parent
+    raise FileNotFoundError(f"No .faiss file found in: {path}")
+
+
 class FAISSIndex:
     """Wrapper for FAISS index with metadata tracking and persistence."""
     
@@ -135,6 +156,7 @@ class FAISSIndex:
         self.metadata: List[Dict[str, Any]] = []
         self.is_trained = False
         self.string_store = StringStore()  # Store for original text strings
+        self.embedding_model: Optional[str] = None
         
     def _create_index(self):
         """Create FAISS index based on type with GPU support."""
@@ -281,8 +303,8 @@ class FAISSIndex:
         """
         if self.index.ntotal == 0:
             return [], [], []
-        
-        query_array = np.array([query_vector], dtype=np.float32)
+
+        query_array = self._query_matrix(query_vector)
         distances, indices = self.index.search(query_array, min(k, self.index.ntotal))
         
         # Get metadata for returned indices
@@ -294,6 +316,23 @@ class FAISSIndex:
                 metadata.append({"id": idx, "error": "metadata_not_found"})
         
         return distances[0].tolist(), indices[0].tolist(), metadata
+
+    def _query_matrix(self, query_vector: List[float]) -> np.ndarray:
+        """Shape a query to ``(1, d)`` and reject embedding-model mismatches."""
+        arr = np.asarray(query_vector, dtype=np.float32)
+        arr = np.squeeze(arr)
+        if arr.ndim == 0:
+            raise ValueError("Query embedding is empty")
+        if arr.ndim > 1:
+            arr = arr.reshape(-1)
+        index_dim = int(getattr(self.index, "d", self.dimension) or self.dimension)
+        if int(arr.shape[0]) != index_dim:
+            model = self.embedding_model or "the same model used to build the index"
+            raise ValueError(
+                f"Query embedding has {int(arr.shape[0])} dimensions but the "
+                f"index is {index_dim}-d. Embed the query with {model}."
+            )
+        return arr.reshape(1, -1)
     
     def search_with_texts(
         self, query_vector: List[float], k: int = 10
@@ -421,27 +460,14 @@ class FAISSIndex:
                 single ``*.faiss`` file (``index.faiss`` is preferred when
                 present, for backward compatibility).
         """
-        path = Path(path)
-
-        if path.is_file() and path.suffix == ".faiss":
-            index_path = path
-        elif (path / "index.faiss").exists():
-            index_path = path / "index.faiss"
+        directory = resolve_index_directory(path)
+        if (directory / "index.faiss").exists():
+            index_path = directory / "index.faiss"
         else:
-            # A single corpus directory, or a root containing per-corpus
-            # subdirectories. Prefer a top-level .faiss, else the most recently
-            # built nested one.
-            faiss_files = sorted(path.glob("*.faiss"))
+            faiss_files = sorted(directory.glob("*.faiss"))
             if not faiss_files:
-                faiss_files = sorted(
-                    path.rglob("*.faiss"), key=lambda p: p.stat().st_mtime, reverse=True
-                )
-            if not faiss_files:
-                raise FileNotFoundError(f"No .faiss file found in: {path}")
+                raise FileNotFoundError(f"No .faiss file found in: {directory}")
             index_path = faiss_files[0]
-
-        # Companion files live alongside the .faiss file
-        directory = index_path.parent
         metadata_path = directory / "metadata.json"
         info_path = directory / "index_info.json"
         
@@ -455,9 +481,11 @@ class FAISSIndex:
         # Create instance
         instance = cls(dimension=info["dimension"], index_type=info["index_type"])
         instance.is_trained = info["is_trained"]
+        instance.embedding_model = info.get("embedding_model") or info.get("model_name")
         
         # Load FAISS index
         instance.index = faiss.read_index(str(index_path))
+        instance.dimension = int(instance.index.d)
         
         # Load metadata
         if metadata_path.exists():

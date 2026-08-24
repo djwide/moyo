@@ -10,10 +10,8 @@ import sys
 from pathlib import Path
 
 # Add the moyo package and shared_utils to the path
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "shared_utils"))
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from moyo.privateside.datainput.gui_bridge import (
     GUIBridge, 
@@ -21,6 +19,7 @@ from moyo.privateside.datainput.gui_bridge import (
     process_text_and_build_index,
     process_files_and_build_index
 )
+from shared_utils.model_config import DEFAULT_MODEL_NAME
 
 
 def example_text_processing():
@@ -48,7 +47,7 @@ def example_text_processing():
     config = ProcessingConfig(
         chunk_size=200,
         chunk_overlap=30,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=DEFAULT_MODEL_NAME,
         index_type="flat",
         save_index=True,
         output_dir="examples/output"
@@ -158,7 +157,7 @@ def example_gui_bridge_usage():
     config = ProcessingConfig(
         chunk_size=300,
         chunk_overlap=50,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model=DEFAULT_MODEL_NAME,
         index_type="flat",
         save_index=False  # Keep in memory only
     )

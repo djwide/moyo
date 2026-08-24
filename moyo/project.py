@@ -306,6 +306,30 @@ def resolve_private_index_dir(
     return proj.private_index_dir
 
 
+def resolve_public_sources_dir(
+    *,
+    project: Optional[str] = None,
+    output_dir: Optional[Union[str, Path]] = None,
+    create: bool = True,
+) -> Path:
+    """CLI/GUI helper: explicit output dir wins, else the project's public_sources/."""
+    if output_dir:
+        path = Path(output_dir)
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+    name = project or os.environ.get("MOYO_PROJECT") or _settings_project_name()
+    if not name:
+        raise ValueError(
+            "No project selected. Pass --project NAME, set MOYO_PROJECT, "
+            "or pass --output-dir. Public sources are per-project."
+        )
+    proj = get_project(name, create=create)
+    if create:
+        proj.ensure()
+    return proj.public_sources_dir
+
+
 def load_saved_project() -> Optional[MoyoProject]:
     data = _read_state()
     raw = (data or {}).get("root") or (data or {}).get("name")

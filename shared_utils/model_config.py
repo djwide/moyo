@@ -16,7 +16,7 @@ CONFIG_DIR = pathlib.Path(os.environ.get("MOYO_CONFIG_DIR", _REPO_ROOT / "config
 CONFIG_FILE = CONFIG_DIR / "model_config.json"
 
 # Legacy alias — some callers still import DATA_DIR for corpus paths.
-DATA_DIR = pathlib.Path(os.environ.get("SENTE_DATA_DIR", "data"))
+DATA_DIR = pathlib.Path(os.environ.get("SENTE_DATA_DIR", "cache"))
 
 # Full catalog: key → metadata. GUI and CLI should prefer this over hard-coded lists.
 # ``backend``: "local" uses sentence-transformers; "openai" uses the OpenAI API.

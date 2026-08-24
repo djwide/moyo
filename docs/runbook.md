@@ -23,7 +23,7 @@ moyo is an experimental tooling system for corpus mapping and barrier probing. I
 
 - **Private Side**: Ingest local data and map into FAISS-backed corpus
 - **Public Side**: Gather open-source information and probe barriers between corpora
-- **Barrier Analysis**: LLM-assisted techniques to probe information boundaries
+- **Barrier Analysis**: Cosine pair ranking plus a JS / entropy / margin layer; LLM-assisted fuzzing to probe information boundaries
 - **Corpus Management**: Build, maintain, and query knowledge corpora
 
 ### Architecture
@@ -102,14 +102,11 @@ After setup, the following structure should exist:
 
 ```
 moyo/
-├── indexes/             # FAISS indexes only (named per corpus, not index.faiss)
+├── indexes/             # legacy global FAISS (prefer projects/<slug>/indexes/)
 │   ├── private/
 │   └── public/
 ├── config/              # retrieval_llms.json, model_config.json, …
-├── data/
-│   ├── private/
-│   ├── public/
-│   └── public_sources/  # explore reports + crawl outputs
+├── projects/            # per-engagement phrases + FAISS + public sources
 ├── .env                 # API keys + MOYO_LLM_* (from .env.example)
 └── logs/
 ```
@@ -244,21 +241,6 @@ desktop; OpenRouter Llama 3.1 8B Instruct on Cloud Run via
 `config/retrieval_llms.json`, compiles/labels/translates responses, then
 writes `exploration.md` only.
 
-To seed explore from black-box red-team hypotheses **without changing** the
-`explore` command, use the bridge:
-
-```bash
-# Write prompts only, then run explore yourself
-moyo-redteam blackbox-explore -d "political opposition research" \
-  --probe-path political_opposition_research --prompts-only \
-  -f /tmp/bb_prompts.txt
-moyo-gather explore -f /tmp/bb_prompts.txt --fuzz-mode basic
-
-# Or generate hypotheses and run the same explore library path in-process
-moyo-redteam blackbox-explore -d "pharmaceutical research" --n-hypotheses 5 \
-  --output-dir data/public_sources --fuzz-mode basic
-```
-
 ```bash
 # basic (default): English seeds; default strategies paraphrase/translate/summarize
 moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic
@@ -348,6 +330,85 @@ result = builder.build_index("Public AI Index", "AI-related public sources")
 ```
 
 ## Barrier Analysis
+
+Public and private indexes must share chunk size, overlap, and embedding model.
+`moyo-probe analyze` ranks pairs by cosine nearest-neighbor distance, then adds
+a distribution layer on the same matrix. See
+[`docs/barrier_analysis_guide.md`](barrier_analysis_guide.md) for interpretation
+detail.
+
+| Level | Question | What to read |
+| --- | --- | --- |
+| Pair | Which public passage is closest to this private chunk? | Cosine NN distance; Pairwise Exposure |
+| Neighborhood | Is that match specific, or generic topic overlap? | Top-1/top-2 margin; normalized entropy over `k=20` public neighbors; Concentrated Matches |
+| Corpus | How much semantic territory is shared? | **Semantic Separation** (JS distance over joint cluster occupancy) |
+
+Headline on CLI, GUI, JSON, and HTML:
+
+```
+Semantic Separation: 0.63
+Pairwise Exposure: High
+Concentrated Matches: 7
+```
+
+High Semantic Separation is **not** barrier integrity. One leaked fact can
+barely move global occupancy — use Pairwise Exposure and Concentrated Matches
+for that. Directional KL (private→public / public→private) is a diagnostic in
+`distribution_diagnostics` only; it is not part of the headline score.
+
+Pairwise Exposure bands (closest private→public NN): High `≤0.1`, Medium
+`≤0.3`, Low `≤0.5`, else None. A match is concentrated when `d₁ ≤ 0.30` and
+either the top-1/top-2 margin is `≥0.08` or normalized top-k entropy is
+`≤0.70`.
+
+### Calibrate the cosine-distance cutoff
+
+Absolute distances do not transfer across embedding models. Re-run after any
+index rebuild that changes the model.
+
+```bash
+# Profiles: strict = closest 5%; balanced = 10%; recall = 25%
+moyo-probe calibrate \
+  --public-index indexes/public \
+  --private-index indexes/private \
+  --profile balanced \
+  --output cache/barrierprobe/calibration.json
+```
+
+Use the recommended value as `--similarity-threshold` on `analyze` (that flag
+is a cosine-**distance** cutoff: smaller = closer). The default `0.8` is
+intentionally loose.
+
+### Analyze public vs private indexes
+
+```bash
+moyo-probe analyze \
+  --public-index indexes/public \
+  --private-index indexes/private \
+  --similarity-threshold 0.8 \
+  --top-k 10 \
+  --neighborhood-k 20
+
+# Write JSON / HTML (includes margin, entropy, concentrated per row)
+moyo-probe analyze \
+  -p indexes/public \
+  -r indexes/private \
+  --similarity-threshold 0.7 \
+  --top-k 20 \
+  --neighborhood-k 20 \
+  --llm-top-k 5 \
+  --output-json cache/barrierprobe/report.json \
+  --output-html cache/barrierprobe/report.html
+```
+
+`--neighborhood-k` is the public-neighbor window for margin and entropy
+(default 20). Do not compute entropy over the entire public corpus — corpus
+size would change the score. `analyze` still runs a round of iterative LLM
+refinement on the suspicious pairs (`--llm-top-k`).
+
+GUI: Barrier Probe tab → **Calibrate Threshold**, then **Run Barrier Analysis**.
+The summary line is the headline trio plus breach counts; the table adds Margin,
+Entropy, and Concentrated columns.
 
 ### LLM-Assisted Fuzzing
 
@@ -449,7 +510,7 @@ moyo info
 find indexes/ -name "*.index" -exec echo "Checking {}" \; -exec python -c "import faiss; faiss.read_index('{}')" \;
 
 # Check disk space
-df -h indexes/ data/ logs/
+df -h projects/ logs/
 ```
 
 #### Weekly Checks
@@ -560,6 +621,20 @@ python -c "import faiss; faiss.read_index('path/to/index')"
 rm -rf indexes/private/corrupted_index
 moyo-datainput process --file source.txt
 ```
+
+#### Barrier analysis scores look wrong
+
+**Problem**: Semantic Separation is high (corpora look separated) but you still see High Pairwise Exposure or Concentrated Matches.
+
+**Cause**: JS occupancy is a corpus-level mix score. One leaked passage barely moves cluster histograms.
+
+**Action**: Treat Pairwise Exposure and Concentrated Matches as the leak signal. Review those rows (distance + margin + entropy). Do not treat Semantic Separation as barrier integrity.
+
+**Problem**: `analyze` / `calibrate` distances look unlike a previous run.
+
+**Cause**: Public and private indexes were built with different embedding models, chunk size, or overlap — or you reused a MiniLM cutoff on MPNet/BGE.
+
+**Action**: Rebuild both indexes with the same model and packing, then re-run `moyo-probe calibrate` before `analyze`.
 
 #### LLM API Errors
 
@@ -715,7 +790,7 @@ chmod 644 indexes/public/*
 
 # Use dedicated user for processing
 sudo useradd -r -s /bin/false moyo
-sudo chown -R moyo:moyo indexes/ data/ logs/
+sudo chown -R moyo:moyo projects/ logs/
 ```
 
 #### Audit Logging
@@ -734,10 +809,10 @@ tail -f /var/log/auth.log | grep moyo
 
 ```bash
 # Implement data retention policies
-find data/ -mtime +365 -exec echo "Old data: {}" \;
+find projects/ -mtime +365 -exec echo "Old data: {}" \;
 
 # Archive old data
-tar -czf archive_$(date +%Y%m%d).tar.gz data/old/
+tar -czf archive_$(date +%Y%m%d).tar.gz projects/old/
 ```
 
 #### Privacy Impact Assessment
@@ -821,6 +896,8 @@ moyo setup           # Initial setup
 moyo-datainput process [text|--file|--files]  # Process data (indexes under indexes/)
 
 # Barrier probe commands
+moyo-probe calibrate # Cosine-distance cutoff from unlabeled NN distances
+moyo-probe analyze   # Pair + neighborhood + corpus layer (JS / margin / entropy)
 moyo-probe fuzz      # LLM-assisted fuzzing (--fuzz-mode basic|multilingual)
 moyo-probe search    # Corpus search (text preview + source from metadata)
 moyo-probe test-llm  # Test LLM configuration
@@ -838,14 +915,16 @@ moyo-gather deliverable --dir <explore-dir> # summary+exploration -> deliverable
 #   basis              = Basis Report (comprehensive)
 #   both
 # Remediations off by default; add --include-remediation to opt in.
+# Finished local runs also upload to gs://senteguard-website-moyo-reports/
+# reports/<storageFolder>/ (same layout as Cloud Run). Pass --no-upload to skip.
 # See docs/exploration_processor.md for knobs and human QA steps.
 python reports/build_report.py \
-  --exploration data/public_sources/<slug>/exploration.md \
+  --exploration projects/<slug>/public_sources/exploration.md \
   --run-id <slug> --report snapshot
 # Comprehensive Basis Report:
-python reports/build_report.py -e data/public_sources/<slug>/exploration.md --report basis
+python reports/build_report.py -e projects/<slug>/public_sources/exploration.md --report basis
 # With mitigations / remediations:
-python reports/build_report.py -e data/public_sources/<slug>/exploration.md \
+python reports/build_report.py -e projects/<slug>/public_sources/exploration.md \
   --report both --include-remediation
 # Offline / no Ollama: add --dry-run. GUI: moyo-gui → "Build Report" tab.
 ```
@@ -882,5 +961,5 @@ python reports/build_report.py -e data/public_sources/<slug>/exploration.md \
 ---
 
 **Last Updated**: August 2026  
-**Version**: 1.2  
+**Version**: 1.3  
 **Maintainer**: moyo Operations Team
