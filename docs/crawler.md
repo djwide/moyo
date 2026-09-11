@@ -30,8 +30,9 @@ moyo-gather explore --prompt "..." --fuzz-mode multilingual --seeds 3
 # Extra languages (added on top of the defaults)
 moyo-gather explore --prompt "..." --fuzz-mode multilingual -l German -l Japanese
 
-# Optional typo strategy (not in mode defaults)
+# Optional typo / shuffle strategies (not in mode defaults)
 moyo-gather explore --prompt "..." -S paraphrase -S translate -S summarize -S typo
+moyo-gather explore --prompt "..." -S paraphrase -S shuffle
 
 # Probe retrieval LLMs only (same preflight table as explore; no report)
 moyo-gather check-llms
@@ -67,7 +68,7 @@ Outputs land under `projects/<slug>/public_sources/` (or `<output-dir>/<prompt-s
 
 | Mode | Seeds |
 |------|--------|
-| **basic** | Rotate `paraphrase → translate → summarize`. `--seeds 3` does each once; `6` does each twice. Add `-S typo` a la carte. |
+| **basic** | Rotate `paraphrase → translate → summarize`. `--seeds 3` does each once; `6` does each twice. Add `-S typo` or `-S shuffle` a la carte. |
 | **multilingual** | For English and each target language, rotate `paraphrase / abstract / summarize`. `--seeds` is **per language group**. Defaults: Spanish, French, Mandarin Chinese (+ `--language`). |
 
 Seed generation uses the **local Ollama fuzzer** (`llama3.1:8b`), not the remote default LLM.

@@ -248,8 +248,9 @@ moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode bas
 moyo-gather explore -p "What is the recipe for Coca-Cola?" -p "Who killed JFK?"
 
 # A la carte strategies (-S overrides the mode's default set; mode still
-# controls language fan-out). Include typo explicitly when wanted:
+# controls language fan-out). Include typo or shuffle explicitly when wanted:
 moyo-gather explore -p "..." --fuzz-mode basic -S paraphrase -S summarize -S typo
+moyo-gather explore -p "..." --fuzz-mode basic -S paraphrase -S shuffle
 
 # multilingual: EN + ES / FR / Mandarin Chinese (extend with -l)
 moyo-gather explore --prompt "..." --fuzz-mode multilingual --seeds 3 -l German
@@ -260,7 +261,8 @@ moyo-gather explore --prompt "..." --fuzz-mode multilingual --seeds 3 -l German
 Fuzz modes: **basic** (default) | **multilingual** (legacy aliases `full` /
 `full-multilingual` still normalize). Strategies are a la carte via repeatable
 ``--strategy`` / ``-S`` (`paraphrase`, `translate`, `summarize`, `typo`,
-`abstract`). Mode defaults omit ``typo``; the GUI shows the same default
+`abstract`, `shuffle`). Mode defaults omit ``typo`` and ``shuffle``; the GUI
+shows the same default
 (`basic`) and strategy checkboxes pre-checked to the mode’s set.
 
 **Claim-friendly explore (for cheaper report extraction):** ask for dated /
@@ -433,6 +435,14 @@ moyo-probe fuzz \
   --target-similarity 0.95 \
   --search-k 20
 
+# Broader search: call each operator three times; keep 5 live nodes
+moyo-probe fuzz \
+  -p "data breach" \
+  -t "confidential information" \
+  -i indexes/private \
+  --calls-per-strategy 3 \
+  --keep-k 5
+
 # Fuzz with a local LLM via Ollama (no API key required)
 moyo-probe fuzz \
   -p "data breach" \
@@ -441,6 +451,11 @@ moyo-probe fuzz \
   --llm-provider ollama \
   --model llama3.1:8b
 ```
+
+Default call plan is paraphrase once, plus translate once each into
+Spanish, Chinese, French, and Japanese. Override with `-S` / `--strategy`,
+`-l` / `--language`, `--calls-per-strategy`, and `--keep-k`. After every
+round the orchestrator prunes answers to the live node set.
 
 `--llm-provider` accepts `openai`, `anthropic`, `ollama` (local Ollama
 server), and `local` (embedding-only synonym transformer, no LLM). Default
@@ -868,7 +883,10 @@ config = LLMFuzzerConfig(
     model_name="llama3.1:8b",
     api_key=None,            # unused for ollama/local
     base_url="http://localhost:11434",
-    fuzz_mode="basic",       # basic | multilingual
+    whitebox_strategies=["paraphrase", "translate"],
+    translate_languages=["Spanish", "Chinese", "French", "Japanese"],
+    calls_per_strategy=1,    # 2 or 3 for a broader search
+    keep_k=3,
     max_iterations=5,
     target_similarity=0.95,
     search_k=10,
@@ -898,7 +916,7 @@ moyo-datainput process [text|--file|--files]  # Process data (indexes under inde
 # Barrier probe commands
 moyo-probe calibrate # Cosine-distance cutoff from unlabeled NN distances
 moyo-probe analyze   # Pair + neighborhood + corpus layer (JS / margin / entropy)
-moyo-probe fuzz      # LLM-assisted fuzzing (--fuzz-mode basic|multilingual)
+moyo-probe fuzz      # LLM fuzz orchestrator (--calls-per-strategy, --keep-k, -S, -l)
 moyo-probe search    # Corpus search (text preview + source from metadata)
 moyo-probe test-llm  # Test LLM configuration
 

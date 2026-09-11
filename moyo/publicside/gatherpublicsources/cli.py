@@ -207,7 +207,7 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
          "Spanish / French / Mandarin Chinese (extend with --language). "
          "Default strategy sets: basic = paraphrase/translate/summarize; "
          "multilingual = paraphrase/abstract/summarize. Override with -S "
-         "(typo available a la carte).",
+         "(typo and shuffle available a la carte).",
 )
 @click.option(
     "--strategy",
@@ -215,7 +215,7 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
     "strategies",
     multiple=True,
     type=click.Choice(
-        ["paraphrase", "translate", "summarize", "typo", "abstract"],
+        ["paraphrase", "translate", "summarize", "typo", "abstract", "shuffle"],
         case_sensitive=False,
     ),
     help="A la carte fuzz strategy (repeatable). Overrides the mode's default "

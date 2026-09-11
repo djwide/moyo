@@ -196,7 +196,8 @@ preflight `name / status / reason` table at scan start; providers without a key
 
 **Fuzz modes:** `basic` (paraphrase / translate / summarize) or
 `multilingual` (paraphrase / abstract / summarize per language; defaults
-Spanish, French, Mandarin Chinese). ``typo`` is optional a la carte. See
+Spanish, French, Mandarin Chinese). ``typo`` and ``shuffle`` are optional a la
+carte. See
 [`docs/crawler.md`](crawler.md).
 
 **Embedding model selection** persists in `config/model_config.json` (not under

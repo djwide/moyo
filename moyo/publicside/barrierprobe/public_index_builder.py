@@ -388,10 +388,12 @@ class PublicIndexBuilder:
             chunks_data = [chunk.dict() for chunk in self.chunks]
             with open(chunks_path, 'w', encoding='utf-8') as f:
                 json.dump(chunks_data, f, indent=2, default=str)
-            
-            # Save index metadata
-            metadata_path = index_dir / "metadata.json"
-            with open(metadata_path, 'w', encoding='utf-8') as f:
+
+            # Catalog for PublicIndexBuilder.load. Must not overwrite the
+            # per-vector list that FAISSIndex.save wrote to metadata.json —
+            # the fuzzer indexes by vector id into that list.
+            catalog_path = index_dir / "public_index.json"
+            with open(catalog_path, "w", encoding="utf-8") as f:
                 json.dump(public_index.dict(), f, indent=2, default=str)
             
             logger.info(f"Index saved to {index_dir}")
@@ -502,7 +504,9 @@ def load_public_index(index_path: str) -> Optional[PublicIndexBuilder]:
         index_dir = resolve_index_directory(Path(index_path))
         metadata_path = index_dir / "metadata.json"
         chunks_path = index_dir / "chunks.json"
-        builder_meta = _read_builder_metadata(metadata_path)
+        builder_meta = _read_builder_metadata(
+            index_dir / "public_index.json"
+        ) or _read_builder_metadata(metadata_path)
         if builder_meta is not None and chunks_path.is_file():
             chunks_data = json.loads(chunks_path.read_text(encoding="utf-8"))
             config = IndexConfig(**builder_meta["config"])

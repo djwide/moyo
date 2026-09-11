@@ -306,16 +306,48 @@ class FAISSIndex:
 
         query_array = self._query_matrix(query_vector)
         distances, indices = self.index.search(query_array, min(k, self.index.ntotal))
-        
-        # Get metadata for returned indices
-        metadata = []
-        for idx in indices[0]:
-            if 0 <= idx < len(self.metadata):
-                metadata.append(self.metadata[idx])
-            else:
-                metadata.append({"id": idx, "error": "metadata_not_found"})
-        
+        metadata = [self._metadata_row(idx) for idx in indices[0]]
         return distances[0].tolist(), indices[0].tolist(), metadata
+
+    def _metadata_row(self, idx: int) -> Dict[str, Any]:
+        """Per-vector metadata for a FAISS id, falling back to the string store.
+
+        ``metadata.json`` is sometimes a per-vector list (GUI phrase indexes)
+        and sometimes a corpus-level dict (PublicIndexBuilder). Never treat
+        the FAISS id as a dict key unless that key actually exists.
+        """
+        idx = int(idx)
+        row: Dict[str, Any] = {"id": idx}
+        meta = self.metadata
+        if isinstance(meta, list):
+            if 0 <= idx < len(meta) and isinstance(meta[idx], dict):
+                row = dict(meta[idx])
+                row.setdefault("id", idx)
+        elif isinstance(meta, dict):
+            hit = meta.get(idx, meta.get(str(idx)))
+            if isinstance(hit, dict):
+                row = dict(hit)
+                row.setdefault("id", idx)
+        text = row.get("text") or row.get("text_preview") or ""
+        store = getattr(self, "string_store", None)
+        if not text and store is not None:
+            tid = row.get("text_id")
+            if tid is None:
+                tid = idx
+            try:
+                tid_int = int(tid)
+            except (TypeError, ValueError):
+                tid_int = idx
+            stored = store.get(tid_int)
+            if stored:
+                text = stored
+                row["text"] = stored
+                row["text_id"] = tid_int
+        elif text:
+            row.setdefault("text", text)
+        if not row.get("text") and not row.get("text_preview"):
+            row.setdefault("error", "metadata_not_found")
+        return row
 
     def _query_matrix(self, query_vector: List[float]) -> np.ndarray:
         """Shape a query to ``(1, d)`` and reject embedding-model mismatches."""

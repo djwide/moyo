@@ -33,6 +33,18 @@ def test_build_order_payload_shape():
     assert payload["source"] == "gui"
     assert payload["seeds"] == 2
     assert payload["includeRemediation"] is True
+    assert "organization" not in payload
+    assert "title" not in payload
+
+
+def test_build_order_payload_includes_project_name():
+    payload = build_order_payload(
+        prompts=["What is the Coke recipe?"],
+        product="basis",
+        organization="Coke Recipe",
+    )
+    assert payload["organization"] == "Coke Recipe"
+    assert payload["title"] == "Coke Recipe Basis Report"
 
 
 def test_order_storage_folder_for_gui_id():

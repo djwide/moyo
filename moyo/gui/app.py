@@ -1237,8 +1237,14 @@ class GatherPublicSourcesTab(QWidget):
             "summarize",
             "typo",
             "abstract",
+            "shuffle",
         ):
             cb = QCheckBox(name)
+            if name == "shuffle":
+                cb.setToolTip(
+                    "Swap type-similar tokens (lists, IDs, amounts, paths). "
+                    "Optional; not in mode defaults."
+                )
             self._explore_strategy_checks[name] = cb
             strategy_layout.addWidget(cb)
         strategy_layout.addStretch(1)
@@ -1524,7 +1530,7 @@ class GatherPublicSourcesTab(QWidget):
             QMessageBox.warning(self, "Missing input", str(exc))
             return
 
-        from moyo.gui.cloud_compute import submit_cloud_compute
+        from moyo.gui.cloud_compute import gui_project_name, submit_cloud_compute
 
         cfg = _cloud_cfg_from_widgets(self._compute)
         product = "snapshot"
@@ -1548,6 +1554,7 @@ class GatherPublicSourcesTab(QWidget):
                 fuzz_mode=fuzz_mode,
                 strategies=strategies,
                 languages=extra_languages or [],
+                organization=gui_project_name(self),
                 cfg=cfg,
                 progress=progress,
             )
@@ -2710,8 +2717,20 @@ class FuzzerTab(QWidget):
         if project is None:
             return
         project.ensure()
-        priv = project.latest_private_index() or project.private_index_dir
-        self.corpus_path.setText(str(priv))
+        pub = project.latest_public_index() or project.public_index_dir
+        self.corpus_path.setText(str(pub))
+        try:
+            from moyo.privateside.phrases.store import PhraseStore
+
+            phrases = PhraseStore(project.phrases_dir).load_approved()
+            if phrases:
+                self.phrases_input.setPlainText(
+                    "\n".join(rec.text for rec in phrases)
+                )
+            else:
+                self.phrases_input.clear()
+        except Exception:
+            pass
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -2721,13 +2740,10 @@ class FuzzerTab(QWidget):
         layout.addWidget(title)
 
         desc = QLabel(
-            "Use an LLM (default: local Ollama llama3.1:8b) to transform input "
-            "phrases toward a target concept. Each round applies every remaining "
-            "strategy independently (paraphrase / translate / summarize in basic; "
-            "paraphrase / abstract / summarize in multilingual), scores closeness "
-            "to the target, keeps the best result, and prunes the weakest strategy. "
-            "Foreign-language outputs are translated back to English with a language "
-            "annotation in saved reports."
+            "Barrier Probe direction: rewrite the closest public chunks toward "
+            "every approved private phrase. Each private phrase is its own "
+            "target — there is no separate global concept. Leave Target blank "
+            "for that default. Filling Target uses the legacy single-concept path."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -2736,7 +2752,7 @@ class FuzzerTab(QWidget):
         corpus_group = QGroupBox("Corpus")
         corpus_layout = QFormLayout()
         self.corpus_path = QLineEdit("")
-        self.corpus_path.setPlaceholderText("Current project's indexes/private/")
+        self.corpus_path.setPlaceholderText("Current project's indexes/public/")
         corp_btn = QPushButton("Browse…")
         corp_btn.clicked.connect(lambda: self._pick(self.corpus_path, "Corpus Index"))
         corp_row = QHBoxLayout()
@@ -2747,14 +2763,18 @@ class FuzzerTab(QWidget):
         layout.addWidget(corpus_group)
 
         # --- Inputs
-        input_group = QGroupBox("Phrases & Target")
+        input_group = QGroupBox("Private phrases (targets)")
         input_layout = QFormLayout()
         self.target_input = QLineEdit()
-        self.target_input.setPlaceholderText("Target concept, e.g. 'confidential information'")
-        input_layout.addRow("Target concept:", self.target_input)
+        self.target_input.setPlaceholderText(
+            "Leave blank: each private phrase is the target. Optional legacy global concept."
+        )
+        input_layout.addRow("Target concept (optional):", self.target_input)
 
         self.phrases_input = QPlainTextEdit()
-        self.phrases_input.setPlaceholderText("One phrase per line, e.g.\ndata breach\nsecurity incident")
+        self.phrases_input.setPlaceholderText(
+            "One private phrase per line. Loaded from the project's approved corpus."
+        )
         self.phrases_input.setMinimumHeight(90)
         input_layout.addRow("Phrases:", self.phrases_input)
         input_group.setLayout(input_layout)
@@ -2792,7 +2812,21 @@ class FuzzerTab(QWidget):
         self.max_iter_spin = QSpinBox()
         self.max_iter_spin.setRange(1, 100)
         self.max_iter_spin.setValue(5)
-        fuzz_layout.addRow("Max tournament rounds:", self.max_iter_spin)
+        fuzz_layout.addRow("Max rounds:", self.max_iter_spin)
+
+        self.keep_k_spin = QSpinBox()
+        self.keep_k_spin.setRange(1, 50)
+        self.keep_k_spin.setValue(3)
+        fuzz_layout.addRow("Live nodes (keep-k):", self.keep_k_spin)
+
+        self.calls_per_strategy_spin = QSpinBox()
+        self.calls_per_strategy_spin.setRange(1, 5)
+        self.calls_per_strategy_spin.setValue(1)
+        self.calls_per_strategy_spin.setToolTip(
+            "How many times to call each operator per live node per round. "
+            "2 or 3 searches more broadly. Translate is repeated in each language."
+        )
+        fuzz_layout.addRow("Calls per strategy:", self.calls_per_strategy_spin)
 
         self.target_sim_spin = QDoubleSpinBox()
         self.target_sim_spin.setRange(0.0, 1.0)
@@ -2804,6 +2838,14 @@ class FuzzerTab(QWidget):
         self.search_k_spin.setRange(1, 1000)
         self.search_k_spin.setValue(10)
         fuzz_layout.addRow("Search K (neighbours):", self.search_k_spin)
+
+        self.public_seeds_spin = QSpinBox()
+        self.public_seeds_spin.setRange(1, 20)
+        self.public_seeds_spin.setValue(1)
+        self.public_seeds_spin.setToolTip(
+            "How many nearest public chunks to rewrite toward each private phrase."
+        )
+        fuzz_layout.addRow("Public seeds per phrase:", self.public_seeds_spin)
 
         self.sim_threshold_spin = QDoubleSpinBox()
         self.sim_threshold_spin.setRange(0.0, 1.0)
@@ -2817,14 +2859,31 @@ class FuzzerTab(QWidget):
         self.temperature_spin.setValue(0.7)
         fuzz_layout.addRow("Temperature:", self.temperature_spin)
 
-        self.fuzz_mode_combo = QComboBox()
-        self.fuzz_mode_combo.addItem(
-            "basic (paraphrase / translate / summarize)", "basic"
+        self.strategy_checks = {}
+        strat_row = QHBoxLayout()
+        for name, default_on in (
+            ("paraphrase", True),
+            ("translate", True),
+            ("typo", False),
+            ("shuffle", False),
+        ):
+            box = QCheckBox(name)
+            box.setChecked(default_on)
+            if name == "shuffle":
+                box.setToolTip(
+                    "Swap type-similar tokens (lists, IDs, amounts, paths). "
+                    "Optional; not on by default."
+                )
+            self.strategy_checks[name] = box
+            strat_row.addWidget(box)
+        strat_row.addStretch(1)
+        fuzz_layout.addRow("Strategies:", strat_row)
+
+        self.translate_langs_input = QLineEdit("Spanish, Chinese, French, Japanese")
+        self.translate_langs_input.setToolTip(
+            "Comma-separated languages used when the translate strategy is enabled."
         )
-        self.fuzz_mode_combo.addItem(
-            "multilingual (paraphrase / abstract / summarize)", "multilingual"
-        )
-        fuzz_layout.addRow("Fuzz mode:", self.fuzz_mode_combo)
+        fuzz_layout.addRow("Translate languages:", self.translate_langs_input)
 
         fuzz_group.setLayout(fuzz_layout)
         layout.addWidget(fuzz_group)
@@ -2856,9 +2915,9 @@ class FuzzerTab(QWidget):
         layout.addLayout(action_row)
 
         # --- Results
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
-            ["Original", "Fuzzed", "Final similarity", "Rounds"]
+            ["Private target", "Public seed", "Fuzzed public", "Final similarity", "Rounds"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setMinimumHeight(180)
@@ -2910,6 +2969,12 @@ class FuzzerTab(QWidget):
     def _make_config(self):
         from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzerConfig
         base_url = self.base_url_input.text().strip() or None
+        strategies = [name for name, box in self.strategy_checks.items() if box.isChecked()]
+        langs = [
+            part.strip()
+            for part in self.translate_langs_input.text().split(",")
+            if part.strip()
+        ]
         return LLMFuzzerConfig(
             llm_provider=self.provider_combo.currentText(),
             model_name=self.model_input.text().strip(),
@@ -2920,7 +2985,11 @@ class FuzzerTab(QWidget):
             similarity_threshold=self.sim_threshold_spin.value(),
             max_iterations=self.max_iter_spin.value(),
             target_similarity=self.target_sim_spin.value(),
-            fuzz_mode=self.fuzz_mode_combo.currentData() or "basic",
+            whitebox_strategies=strategies,
+            translate_languages=langs,
+            calls_per_strategy=self.calls_per_strategy_spin.value(),
+            keep_k=self.keep_k_spin.value(),
+            public_seeds_per_phrase=self.public_seeds_spin.value(),
         )
 
     def _start_ollama(self):
@@ -2980,29 +3049,30 @@ class FuzzerTab(QWidget):
             return
 
         target = self.target_input.text().strip()
-        if not target:
-            QMessageBox.warning(self, "Missing input", "Enter a target concept.")
-            return
         phrases = [p.strip() for p in self.phrases_input.toPlainText().splitlines() if p.strip()]
         if not phrases:
-            QMessageBox.warning(self, "Missing input", "Enter at least one phrase.")
+            QMessageBox.warning(self, "Missing input", "Enter at least one private phrase.")
             return
         corpus = Path(self.corpus_path.text().strip())
         if not corpus.exists():
-            QMessageBox.warning(self, "Path missing", f"Corpus not found: {corpus}")
+            QMessageBox.warning(self, "Path missing", f"Public index not found: {corpus}")
             return
 
         try:
             from shared_utils import FAISSIndex
-            from moyo.publicside.barrierprobe.llm_fuzzer import fuzz_phrases_for_barrier_analysis
+            from moyo.publicside.barrierprobe.llm_fuzzer import (
+                fuzz_phrases_for_barrier_analysis,
+                fuzz_public_toward_private_phrases,
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Import error", str(exc))
             return
 
         cfg = self._make_config()
+        public_seeds = self.public_seeds_spin.value()
 
         def job():
-            print(f"Loading corpus index from {corpus}…")
+            print(f"Loading public index from {corpus}…")
             index = FAISSIndex.load(str(corpus))
             model = getattr(index, "embedding_model", None) or cfg.embedding_model
             if model:
@@ -3011,8 +3081,19 @@ class FuzzerTab(QWidget):
                 f"Loaded {index.get_vector_count()} vectors "
                 f"(dim={index.dimension}, model={model})"
             )
-            print(f"Fuzzing {len(phrases)} phrases toward '{target}'…")
-            return fuzz_phrases_for_barrier_analysis(phrases, target, index, cfg)
+            if target:
+                print(f"Legacy: fuzzing {len(phrases)} phrases toward '{target}'…")
+                return fuzz_phrases_for_barrier_analysis(phrases, target, index, cfg)
+            print(
+                f"Fuzzing public corpus toward {len(phrases)} private phrase(s) "
+                f"({public_seeds} seed(s) each)…"
+            )
+            return fuzz_public_toward_private_phrases(
+                phrases,
+                index,
+                cfg,
+                public_seeds_per_phrase=public_seeds,
+            )
 
         self.log.clear()
         self.log.append(f"Starting fuzzer with {len(phrases)} phrases…")
@@ -3030,39 +3111,60 @@ class FuzzerTab(QWidget):
             self._last_results = results or []
             self.table.setRowCount(len(self._last_results))
             for row, r in enumerate(self._last_results):
-                self.table.setItem(row, 0, QTableWidgetItem(str(r.get("original_phrase", ""))))
+                private = r.get("private_phrase") or r.get("target_concept") or ""
+                seed = r.get("public_seed") or r.get("original_phrase", "")
                 fuzzed = r.get("fuzzed_phrase_for_report") or r.get("fuzzed_phrase", "")
-                self.table.setItem(row, 1, QTableWidgetItem(str(fuzzed)))
-                self.table.setItem(row, 2, QTableWidgetItem(f"{r.get('final_similarity', 0.0):.3f}"))
-                self.table.setItem(row, 3, QTableWidgetItem(str(r.get("iterations", 0))))
+                self.table.setItem(row, 0, QTableWidgetItem(str(private)))
+                self.table.setItem(row, 1, QTableWidgetItem(str(seed)))
+                self.table.setItem(row, 2, QTableWidgetItem(str(fuzzed)))
+                self.table.setItem(row, 3, QTableWidgetItem(f"{r.get('final_similarity', 0.0):.3f}"))
+                self.table.setItem(row, 4, QTableWidgetItem(str(r.get("iterations", 0))))
             if self._last_results:
                 avg_sim = sum(r.get("final_similarity", 0.0) for r in self._last_results) / len(self._last_results)
-                mode = self._last_results[0].get("fuzz_mode", "basic")
+                keep_k = self._last_results[0].get("keep_k")
                 self.log.append(
-                    f"✅ Done (mode={mode}). Average final similarity: {avg_sim:.3f}"
+                    f"✅ Done (keep-k={keep_k}). Average final similarity: {avg_sim:.3f}"
                 )
                 for r in self._last_results:
                     orig = r.get("original_phrase", "")
-                    surviving = ", ".join(r.get("surviving_strategies") or []) or "(none)"
-                    pruned = ", ".join(r.get("pruned_strategies") or []) or "(none)"
                     self.log.append(
                         f"  {orig!r}: sim={r.get('final_similarity', 0.0):.3f} "
-                        f"surviving={surviving} pruned={pruned}"
+                        f"live={len(r.get('live_nodes') or [])}"
                     )
                     for rnd in r.get("strategy_rounds") or []:
                         bits = []
                         for trial in rnd.get("trials") or []:
-                            mark = ""
-                            if trial.get("pruned"):
-                                mark = "*"
-                            elif trial.get("kept"):
-                                mark = "+"
+                            mark = "*" if trial.get("pruned") else ("+" if trial.get("kept") else "")
+                            label = trial.get("strategy") or ""
+                            if trial.get("language"):
+                                label = f"{label}/{trial['language']}"
                             bits.append(
-                                f"{trial.get('strategy')}={trial.get('similarity', 0.0):.3f}{mark}"
+                                f"{label}={trial.get('similarity', 0.0):.3f}{mark}"
                             )
                         self.log.append(
-                            f"    round {rnd.get('round')}: " + ", ".join(bits)
+                            f"    round {rnd.get('round')} live={len(rnd.get('live_after') or [])}: "
+                            + ", ".join(bits)
                         )
+                    chain = r.get("winning_prompt_chain") or []
+                    if chain:
+                        self.log.append("    Prompt chain (public seed → toward private phrase):")
+                        for hop in chain:
+                            strat = hop.get("strategy") or hop.get("role") or "hop"
+                            if hop.get("language"):
+                                strat = f"{strat}/{hop['language']}"
+                            self.log.append(
+                                f"      {hop.get('step', 0)}. [{strat}] "
+                                f"sim={hop.get('similarity', 0.0):.3f}  "
+                                f"{(hop.get('phrase') or '')[:120]}"
+                            )
+                            neighbors = hop.get("public_neighbors") or []
+                            if neighbors:
+                                top = neighbors[0]
+                                self.log.append(
+                                    f"         public: "
+                                    f"{(top.get('title') or top.get('role') or 'neighbor')} "
+                                    f"{(top.get('text') or '')[:100]}"
+                                )
                 self.save_btn.setEnabled(True)
             else:
                 self.log.append("⚠️  Fuzzer returned no results.")
@@ -3949,8 +4051,14 @@ class MoyoScanTab(QWidget):
             "summarize",
             "typo",
             "abstract",
+            "shuffle",
         ):
             cb = QCheckBox(name)
+            if name == "shuffle":
+                cb.setToolTip(
+                    "Swap type-similar tokens (lists, IDs, amounts, paths). "
+                    "Optional; not in mode defaults."
+                )
             self._strategy_checks[name] = cb
             strategy_layout.addWidget(cb)
         strategy_layout.addStretch(1)
@@ -4029,6 +4137,7 @@ class MoyoScanTab(QWidget):
         try:
             from moyo.gui.cloud_compute import (
                 CloudComputeConfig,
+                gui_project_name,
                 submit_cloud_compute,
             )
         except Exception as exc:
@@ -4053,6 +4162,7 @@ class MoyoScanTab(QWidget):
                 fuzz_mode=fuzz_mode,
                 strategies=strategies,
                 languages=extra_languages or [],
+                organization=gui_project_name(self),
                 cfg=cfg,
                 progress=progress,
             )

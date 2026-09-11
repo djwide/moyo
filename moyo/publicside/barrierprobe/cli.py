@@ -6,7 +6,19 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from .llm_fuzzer import LLMFuzzer, LLMFuzzerConfig, fuzz_phrases_for_barrier_analysis
+from .llm_fuzzer import (
+    LLMFuzzer,
+    LLMFuzzerConfig,
+    fuzz_phrases_for_barrier_analysis,
+    fuzz_public_toward_private_phrases,
+    texts_from_faiss_index,
+)
+from .llm_fuzzer import (
+    DEFAULT_TRANSLATE_LANGUAGES,
+    OPTIONAL_FUZZ_STRATEGIES,
+    WHITEBOX_FUZZ_STRATEGIES,
+    strategies_for_fuzz_mode,
+)
 from .barrier_analyzer import BarrierAnalyzer
 from .iterative_llm_search import refine_suspicious_pairs
 from .schema import BarrierProbeConfig
@@ -101,7 +113,8 @@ def cli(verbose: bool, debug: bool, test_mode: bool):
     
     \b
     Examples:
-    • Fuzz phrases: moyo-probe fuzz -p "data breach" -t "confidential info" -i corpus.index
+    • Fuzz public toward private: moyo-probe fuzz --project kfc-_11_herbs_and_spices
+    • Legacy single target: moyo-probe fuzz -p "data breach" -t "confidential info" -i corpus.index
     • Search corpus: moyo-probe search -c corpus_dir -q "security incident" -k 10
     • Test LLM: moyo-probe test-llm --llm-provider openai --model gpt-4
     """
@@ -119,10 +132,14 @@ def cli(verbose: bool, debug: bool, test_mode: bool):
 
 
 @cli.command()
-@click.option('--phrases', '-p', multiple=True, help='Phrases to fuzz')
-@click.option('--phrases-file', '-f', type=click.Path(exists=True), help='File containing phrases to fuzz')
-@click.option('--target-concept', '-t', required=True, help='Target concept to move towards')
-@click.option('--corpus-index', '-i', type=click.Path(exists=True), required=True, help='Path to corpus FAISS index')
+@click.option('--project', '-P', default=None, help='Project slug: approved private phrases + public index')
+@click.option('--phrases', '-p', multiple=True, help='Private phrases (targets). Repeat.')
+@click.option('--phrases-file', '-f', type=click.Path(exists=True), help='File of private phrases, one per line')
+@click.option('--private-index', type=click.Path(exists=True), default=None, help='Private FAISS; stored texts become targets')
+@click.option('--target-concept', '-t', default=None, help='Legacy: one global target. Omit so each private phrase is the target.')
+@click.option('--corpus-index', '-i', type=click.Path(exists=True), default=None, help='Public FAISS (chunks that get rewritten)')
+@click.option('--public-index', type=click.Path(exists=True), default=None, help='Alias for --corpus-index')
+@click.option('--public-seeds', default=1, show_default=True, type=int, help='Closest public chunks to rewrite per private phrase')
 @click.option('--output', '-o', type=click.Path(), help='Output file for results')
 @click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local', 'test']), help='LLM provider')
 @click.option(
@@ -132,52 +149,131 @@ def cli(verbose: bool, debug: bool, test_mode: bool):
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
-@click.option('--max-iterations', default=5, help='Maximum tournament rounds (each round scores remaining strategies, then prunes the weakest)')
+@click.option('--max-iterations', default=5, help='Maximum orchestrator rounds (each round expands live nodes, then prunes to --keep-k)')
 @click.option('--target-similarity', default=0.95, help='Target similarity to achieve')
 @click.option('--search-k', default=10, help='Number of similar phrases to retrieve')
 @click.option('--similarity-threshold', default=0.8, help='Minimum similarity threshold')
 @click.option(
     '--fuzz-mode',
     type=click.Choice(['basic', 'multilingual'], case_sensitive=False),
-    default='basic',
+    default=None,
+    help='Optional shortcut for the strategy list (explore-style). '
+         'Default white-box set is paraphrase / translate.',
+)
+@click.option(
+    '--strategy',
+    '-S',
+    'strategies',
+    multiple=True,
+    type=click.Choice(['paraphrase', 'translate', 'typo', 'shuffle']),
+    help='Fuzzer operator to include (repeat). Default: paraphrase, translate. '
+         'typo and shuffle are optional add-ons.',
+)
+@click.option(
+    '--calls-per-strategy',
+    default=1,
     show_default=True,
-    help='basic = paraphrase / translate / summarize; '
-         'multilingual = paraphrase / abstract / summarize '
-         '(typo available via config override)',
+    type=int,
+    help='How many times to call each operator per live node per round (2 or 3 for a broader search). '
+         'Translate is called this many times in each --language.',
+)
+@click.option(
+    '--keep-k',
+    default=3,
+    show_default=True,
+    type=int,
+    help='Live search nodes kept after each round (highest cosine to the target).',
+)
+@click.option(
+    '--language',
+    '-l',
+    'languages',
+    multiple=True,
+    help='Translate target language (repeat). Default: Spanish, Chinese, French, Japanese.',
 )
 @click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-def fuzz(phrases, phrases_file, target_concept, corpus_index, output, 
+def fuzz(project, phrases, phrases_file, private_index, target_concept, corpus_index,
+         public_index, public_seeds, output,
          llm_provider, model, api_key, base_url, max_iterations, target_similarity, 
-         search_k, similarity_threshold, fuzz_mode, verbose):
-    """Fuzz phrases using LLM-assisted semantic transformation."""
+         search_k, similarity_threshold, fuzz_mode, strategies, calls_per_strategy,
+         keep_k, languages, verbose):
+    """Rewrite public chunks toward each private phrase.
+
+    Default Barrier Probe direction: the public corpus is fuzzed; every
+    approved private phrase is its own target. ``--target-concept`` is the
+    legacy single-target path (rewrite the given phrases toward one string).
+    """
 
     model = _resolve_llm_model(llm_provider, model)
     api_key = _resolve_api_key(llm_provider, api_key)
 
-    # Set up logging
     if verbose:
         import logging
         logging.basicConfig(level=logging.INFO)
-    
-    # Load phrases
+
     all_phrases = list(phrases)
     if phrases_file:
         with open(phrases_file, 'r') as f:
-            file_phrases = [line.strip() for line in f if line.strip()]
-            all_phrases.extend(file_phrases)
-    
+            all_phrases.extend(line.strip() for line in f if line.strip())
+
+    public_path = public_index or corpus_index
+    if project:
+        from moyo.project import get_project
+        from moyo.privateside.phrases.store import PhraseStore
+
+        proj = get_project(project)
+        if not all_phrases:
+            all_phrases = [rec.text for rec in PhraseStore(proj.phrases_dir).load_approved()]
+        if not public_path:
+            found = proj.latest_public_index()
+            public_path = str(found) if found else None
+        if private_index is None:
+            found_priv = proj.latest_private_index()
+            if found_priv and not all_phrases:
+                private_index = str(found_priv)
+
+    if private_index and not all_phrases:
+        try:
+            priv = FAISSIndex.load(private_index)
+            all_phrases = texts_from_faiss_index(priv)
+        except Exception as e:
+            click.echo(f"Error loading private index: {e}", err=True)
+            return
+
     if not all_phrases:
-        click.echo("Error: No phrases provided. Use --phrases or --phrases-file.", err=True)
+        click.echo(
+            "Error: No private phrases. Use --project, --phrases, --phrases-file, "
+            "or --private-index.",
+            err=True,
+        )
         return
-    
-    # Load corpus index
+
+    if not public_path:
+        click.echo(
+            "Error: No public index. Use --project, --public-index, or --corpus-index.",
+            err=True,
+        )
+        return
+
     try:
-        index = FAISSIndex.load(corpus_index)
-        click.echo(f"Loaded corpus index with {index.get_vector_count()} vectors")
+        index = FAISSIndex.load(public_path)
+        click.echo(f"Loaded public index with {index.get_vector_count()} vectors")
     except Exception as e:
-        click.echo(f"Error loading corpus index: {e}", err=True)
+        click.echo(f"Error loading public index: {e}", err=True)
         return
     
+    allowed = set(WHITEBOX_FUZZ_STRATEGIES) | set(OPTIONAL_FUZZ_STRATEGIES)
+    if strategies:
+        whitebox = [s for s in strategies if s in allowed]
+    elif fuzz_mode:
+        whitebox = [
+            s for s in strategies_for_fuzz_mode(fuzz_mode) if s in allowed
+        ]
+    else:
+        whitebox = []
+    whitebox = whitebox or list(WHITEBOX_FUZZ_STRATEGIES)
+    translate_langs = list(languages) if languages else list(DEFAULT_TRANSLATE_LANGUAGES)
+
     # Configure fuzzer
     config = LLMFuzzerConfig(
         llm_provider=llm_provider,
@@ -188,16 +284,44 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
         target_similarity=target_similarity,
         search_k=search_k,
         similarity_threshold=similarity_threshold,
-        fuzz_mode=fuzz_mode,
+        fuzz_mode=fuzz_mode or "basic",
+        whitebox_strategies=whitebox,
+        translate_languages=translate_langs,
+        calls_per_strategy=calls_per_strategy,
+        keep_k=keep_k,
+        public_seeds_per_phrase=public_seeds,
     )
     
-    # Run fuzzing
-    click.echo(f"Starting LLM-assisted fuzzing for {len(all_phrases)} phrases...")
-    click.echo(f"Target concept: {target_concept}")
+    toward_private = not target_concept
+    if toward_private:
+        click.echo(
+            f"Fuzzing public corpus toward {len(all_phrases)} private phrase(s) "
+            f"({public_seeds} public seed(s) each)..."
+        )
+    else:
+        click.echo(
+            f"Legacy mode: rewriting {len(all_phrases)} phrase(s) toward "
+            f"one target concept..."
+        )
+        click.echo(f"Target concept: {target_concept}")
     click.echo(f"LLM provider: {llm_provider}, Model: {model}")
-    click.echo(f"Fuzz mode: {config.fuzz_mode} ({', '.join(config.fuzz_strategies)})")
+    click.echo(
+        f"Call plan: {', '.join(whitebox)} × {config.calls_per_strategy} "
+        f"(translate → {', '.join(config.translate_languages)})"
+    )
+    click.echo(f"Keep-k live nodes: {config.keep_k}  rounds: {config.max_iterations}")
     
-    results = fuzz_phrases_for_barrier_analysis(all_phrases, target_concept, index, config)
+    if toward_private:
+        results = fuzz_public_toward_private_phrases(
+            all_phrases,
+            index,
+            config,
+            public_seeds_per_phrase=public_seeds,
+        )
+    else:
+        results = fuzz_phrases_for_barrier_analysis(
+            all_phrases, target_concept, index, config
+        )
     
     # Display results
     click.echo("\n" + "="*60)
@@ -207,6 +331,9 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
     for i, result in enumerate(results):
         report_phrase = result.get("fuzzed_phrase_for_report") or result["fuzzed_phrase"]
         click.echo(f"\nPhrase {i+1}:")
+        private = result.get("private_phrase") or result.get("target_concept")
+        if result.get("direction") == "public_toward_private" and private:
+            click.echo(f"  Private:  {private}")
         click.echo(f"  Original: {result['original_phrase']}")
         click.echo(f"  Fuzzed:   {result['fuzzed_phrase']}")
         if result.get("fuzzed_phrase_original_language"):
@@ -219,28 +346,60 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
         if baseline is not None:
             click.echo(f"  Baseline:   {baseline:.3f}")
         click.echo(f"  Rounds:     {result['iterations']}")
-        surviving = result.get("surviving_strategies") or []
-        pruned = result.get("pruned_strategies") or []
-        if surviving or pruned:
-            click.echo(
-                f"  Strategies: surviving={', '.join(surviving) or '(none)'} "
-                f"pruned={', '.join(pruned) or '(none)'}"
-            )
+        click.echo(f"  Keep-k:     {result.get('keep_k')}")
+        live = result.get("live_nodes") or []
+        if live:
+            click.echo("  Live nodes:")
+            for node in live:
+                lang = node.get("language")
+                tag = node.get("strategy") or "seed"
+                if lang:
+                    tag = f"{tag}/{lang}"
+                click.echo(
+                    f"    {node.get('similarity', 0.0):.3f}  [{tag}]  "
+                    f"{(node.get('phrase') or '')[:90]}"
+                )
+        chain = result.get("winning_prompt_chain") or []
+        if chain:
+            click.echo("  Prompt chain (public seed → toward private phrase):")
+            for hop in chain:
+                role = hop.get("role") or "rewrite"
+                strat = hop.get("strategy") or role
+                if hop.get("language"):
+                    strat = f"{strat}/{hop['language']}"
+                click.echo(
+                    f"    {hop.get('step', 0)}. [{strat}]  "
+                    f"sim={hop.get('similarity', 0.0):.3f}  "
+                    f"{(hop.get('phrase') or '')[:90]}"
+                )
+                neighbors = hop.get("public_neighbors") or []
+                if neighbors:
+                    top = neighbors[0]
+                    click.echo(
+                        f"       public: {(top.get('title') or top.get('role') or 'neighbor')} "
+                        f"sim={top.get('similarity')}  {(top.get('text') or '')[:80]}"
+                    )
+                if verbose and hop.get("prompt"):
+                    click.echo("       prompt:")
+                    for line in str(hop["prompt"]).strip().splitlines()[:24]:
+                        click.echo(f"         {line}")
+                if verbose and hop.get("response"):
+                    click.echo(f"       response: {str(hop['response']).strip()[:240]}")
         rounds = result.get("strategy_rounds") or []
         if rounds:
-            click.echo("  Tournament:")
+            click.echo("  Rounds:")
             for rnd in rounds:
                 bits = []
                 for trial in rnd.get("trials") or []:
-                    mark = ""
-                    if trial.get("pruned"):
-                        mark = " [pruned]"
-                    elif trial.get("kept"):
-                        mark = " [kept]"
-                    bits.append(
-                        f"{trial.get('strategy')}={trial.get('similarity', 0.0):.3f}{mark}"
-                    )
-                click.echo(f"    Round {rnd.get('round')}: " + ", ".join(bits))
+                    mark = " [pruned]" if trial.get("pruned") else (" [kept]" if trial.get("kept") else "")
+                    label = trial.get("strategy") or ""
+                    if trial.get("language"):
+                        label = f"{label}/{trial['language']}"
+                    bits.append(f"{label}={trial.get('similarity', 0.0):.3f}{mark}")
+                n_live = len(rnd.get("live_after") or [])
+                click.echo(
+                    f"    Round {rnd.get('round')} (live={n_live}): " + ", ".join(bits)
+                )
         
         history = result.get("transformation_history_for_report") or result.get("transformation_history") or []
         if verbose and history:
@@ -260,7 +419,7 @@ def fuzz(phrases, phrases_file, target_concept, corpus_index, output,
     
     click.echo(f"\nSummary:")
     click.echo(f"  Average final similarity: {avg_similarity:.3f}")
-    click.echo(f"  Average tournament rounds: {avg_iterations:.1f}")
+    click.echo(f"  Average orchestrator rounds: {avg_iterations:.1f}")
 
 
 @cli.command()

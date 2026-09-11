@@ -75,6 +75,25 @@ def new_gui_order_id() -> str:
     return f"ord_gui_{stamp}_{uuid.uuid4().hex[:8]}"
 
 
+def product_label(product: str) -> str:
+    aliases = {
+        "snapshot": "Exposure Snapshot",
+        "basis": "Basis Report",
+        "both": "Exposure Snapshot & Basis Report",
+    }
+    key = (product or "").strip().lower()
+    return aliases.get(key, (product or "").strip() or "Report")
+
+
+def gui_project_name(widget: Any) -> str:
+    """Moyo GUI project name (folder label), not the GCP project id."""
+    projects = getattr(widget, "_projects", None)
+    current = getattr(projects, "current", None) if projects else None
+    if current is None:
+        return ""
+    return str(getattr(current, "name", "") or "").strip()
+
+
 def build_order_payload(
     *,
     prompts: list[str],
@@ -84,11 +103,15 @@ def build_order_payload(
     languages: list[str] | None = None,
     include_remediation: bool = False,
     seeds: int = 3,
+    organization: str | None = None,
+    title: str | None = None,
 ) -> dict[str, Any]:
     cleaned = [str(p).strip() for p in prompts if str(p).strip()]
     if not cleaned:
         raise ValueError("At least one prompt is required for a cloud run.")
-    return {
+    org = (organization or "").strip()
+    heading = (title or "").strip()
+    payload: dict[str, Any] = {
         "orderId": None,  # filled by submit
         "prompts": cleaned,
         "customerPrompts": cleaned,
@@ -105,6 +128,12 @@ def build_order_payload(
         "source": "gui",
         "createdAt": utc_now(),
     }
+    if org:
+        payload["organization"] = org
+        payload["title"] = heading or f"{org} {product_label(product)}"
+    elif heading:
+        payload["title"] = heading
+    return payload
 
 
 def firestore_value(value: Any) -> dict[str, Any]:
@@ -320,6 +349,8 @@ def submit_cloud_compute(
     languages: list[str] | None = None,
     include_remediation: bool = False,
     seeds: int = 3,
+    organization: str | None = None,
+    title: str | None = None,
     cfg: CloudComputeConfig | None = None,
     progress: ProgressFn | None = None,
 ) -> CloudSubmitResult:
@@ -334,6 +365,8 @@ def submit_cloud_compute(
         languages=languages,
         include_remediation=include_remediation,
         seeds=seeds,
+        organization=organization,
+        title=title,
     )
     payload["orderId"] = order_id
     folder = order_storage_folder(order_id, prompts)

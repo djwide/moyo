@@ -61,8 +61,8 @@ Source adapters: USPTO/Google Patents, GDELT press, GitHub commits, arXiv/OpenAl
 #### Barrier Probe (`barrierprobe/`)
 Analyses information barriers between private and public FAISS indexes:
 - `barrier_analyzer.py` – cosine distance analysis
-- `llm_fuzzer.py` – LLM-assisted fuzzing; explore rewording; fuzz modes
-  `basic` / `multilingual` (local Ollama default for generation)
+- `llm_fuzzer.py` – LLM text modifications (paraphrase / translate)
+- `fuzz_orchestrator.py` – call schedule, live search nodes, pruning
 - `iterative_llm_search.py` – iterative refinement of closest matches
 - `two_layer_fuzzer.py` – two-layer architecture (real document graph + hypothesis graph)
 - `unified_fuzzing_engine.py` – unified entry point

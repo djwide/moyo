@@ -173,7 +173,7 @@ class RetrievalResult:
     # English / never translated. Non-English implies the response was translated
     # back to English for the report.
     language: Optional[str] = None
-    # Fuzz strategy that produced the seed (paraphrase / abstract / summarize / typo).
+    # Fuzz strategy that produced the seed (paraphrase / abstract / summarize / typo / shuffle).
     strategy: Optional[str] = None
     # Original (untranslated) response body, kept when ``text`` was translated.
     original_text: Optional[str] = None
@@ -295,7 +295,7 @@ def reword_prompt(
     summarize; ``multilingual`` emits ``n`` seeds per language (English
     plus each language in ``languages``) rotating paraphrase / abstract /
     summarize. Pass ``strategies`` to override the mode default rotation
-    a la carte (include ``typo`` explicitly). ``llm`` is ignored (kept for
+    a la carte (include ``typo`` or ``shuffle`` explicitly). ``llm`` is ignored (kept for
     call-site compatibility).
     Pass ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer`.
     """
@@ -1480,7 +1480,8 @@ def explore_topic(
     ``num_seeds`` of paraphrase / abstract / summarize per language
     (English plus Spanish / French / Mandarin Chinese and any
     ``extra_languages``). Pass ``strategies`` to override that rotation a la
-    carte (include ``typo`` explicitly); mode still controls language fan-out.
+    carte (include ``typo`` or ``shuffle`` explicitly); mode still controls
+    language fan-out.
     Every seed is sent to every retrieval LLM.
 
     ``impact_definition`` / ``impact_definition_files`` add user-specific

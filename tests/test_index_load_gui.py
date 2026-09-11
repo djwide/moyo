@@ -62,6 +62,23 @@ def test_load_public_index_gui_phrase_layout(tmp_path: Path):
     assert isinstance(raw, list)
 
 
+def test_search_uses_string_store_when_metadata_is_corpus_dict(tmp_path: Path):
+    directory = _write_gui_index(tmp_path / "idx", dim=8, model="toy-8d", n=4)
+    index = FAISSIndex.load(directory)
+    # PublicIndexBuilder writes corpus-level metadata.json, not a per-vector list.
+    index.metadata = {
+        "id": "corpus",
+        "config": {"embedding_model": "toy-8d"},
+        "chunk_count": 4,
+    }
+    query = index.index.reconstruct(0).tolist()
+    _distances, _indices, rows = index.search(query, k=2)
+    assert rows
+    assert rows[0].get("text")
+    assert "phrase" in rows[0]["text"]
+    assert rows[0].get("error") != "metadata_not_found"
+
+
 def test_fuzzer_prefers_index_embedding_model():
     index = FAISSIndex(dimension=768, index_type="flat")
     index.embedding_model = "BAAI/bge-base-en-v1.5"

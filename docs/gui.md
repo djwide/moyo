@@ -205,10 +205,9 @@ and the same embedding model on both sides.
 ### LLM Fuzzer
 
 Iteratively rewrites input phrases toward a target concept and probes how
-close they land to corpus content. Fuzz modes: **basic** (paraphrase /
-translate / summarize) or **multilingual** (paraphrase / abstract /
-summarize, plus a translate step in white-box fuzz). ``typo`` remains
-available a la carte. Supports:
+close they land to corpus content. White-box operators: **paraphrase** and
+**translate** (into Spanish, Chinese, French, and Japanese by default).
+``typo`` and ``shuffle`` remain available a la carte. Supports:
 
 - `local` — embedding-only synonym shuffler (no API key, no server)
 - `ollama` — a **real local LLM** served by [Ollama](https://ollama.com);
@@ -221,8 +220,9 @@ available a la carte. Supports:
 - `custom` — any OpenAI-compatible endpoint (base URL + key)
 
 A **Test LLM Connection** button verifies the provider before a full run.
-Parameters: max iterations, target similarity, search-K, similarity
-threshold, temperature, fuzz mode.
+Parameters: max rounds, live nodes (keep-k), calls per strategy, target
+similarity, search-K, similarity threshold, temperature, strategies
+(paraphrase / translate; typo and shuffle a la carte), and translate languages.
 
 #### Local LLM setup (Ollama)
 

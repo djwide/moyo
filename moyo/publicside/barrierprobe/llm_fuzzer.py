@@ -34,13 +34,14 @@ DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 #   multilingual — same strategy rotation as the former full-multilingual scan:
 #                  paraphrase / abstract / summarize, applied once in
 #                  English and once per target language.
-# ``typo`` is optional a la carte (CLI ``-S typo`` / GUI checkbox), not a default.
+# ``typo`` and ``shuffle`` are optional a la carte (CLI ``-S`` / GUI checkbox),
+# not part of the default mode rotation.
 BASIC_FUZZ_STRATEGIES = ("paraphrase", "translate", "summarize")
 MULTILINGUAL_LANGUAGE_STRATEGIES = ("paraphrase", "abstract", "summarize")
 # Back-compat aliases used by older call sites / white-box fuzz paths.
 FULL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
 MULTILINGUAL_FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES
-OPTIONAL_FUZZ_STRATEGIES = ("typo",)
+OPTIONAL_FUZZ_STRATEGIES = ("typo", "shuffle")
 FUZZ_STRATEGIES = tuple(
     dict.fromkeys(
         BASIC_FUZZ_STRATEGIES
@@ -58,6 +59,12 @@ _FUZZ_MODE_ALIASES = {
 # and Mandarin Chinese. Callers may append additional languages.
 DEFAULT_MULTILINGUAL_LANGUAGES = ("Spanish", "French", "Mandarin Chinese")
 
+# White-box orchestrator defaults (``moyo-probe fuzz`` / LLM Fuzzer tab).
+# Translate is expanded once per language; raise ``calls_per_strategy``
+# to 2 or 3 for a broader search.
+WHITEBOX_FUZZ_STRATEGIES = ("paraphrase", "translate")
+DEFAULT_TRANSLATE_LANGUAGES = ("Spanish", "Chinese", "French", "Japanese")
+
 
 def normalize_fuzz_mode(mode: Optional[str]) -> str:
     """Map a fuzz-mode string (including legacy aliases) onto ``FUZZ_MODES``."""
@@ -73,8 +80,10 @@ def strategies_for_fuzz_mode(mode: str) -> List[str]:
 
     - ``basic`` -> paraphrase / translate / summarize
     - ``multilingual`` -> paraphrase / abstract / summarize
-      (explore applies these per language; white-box fuzz rotates the list)
-    ``typo`` remains available a la carte via ``normalize_fuzz_strategies``.
+      (explore applies these per language)
+    White-box fuzz uses ``WHITEBOX_FUZZ_STRATEGIES`` (paraphrase / translate).
+    ``typo`` and ``shuffle`` remain available a la carte via
+    :func:`normalize_fuzz_strategies`.
     """
     key = normalize_fuzz_mode(mode)
     if key == "multilingual":
@@ -614,8 +623,8 @@ class LLMFuzzerConfig:
     similarity_threshold: float = 0.8  # Minimum similarity to consider
     
     # Fuzzing Configuration
-    # White-box ``fuzz_phrase``: max tournament rounds. Each round applies
-    # every remaining strategy independently, then prunes the weakest.
+    # White-box ``fuzz_phrase``: max orchestrator rounds. Each round applies
+    # the call plan to every live node, then prunes answers down to ``keep_k``.
     max_iterations: int = 5
     target_similarity: float = 0.95  # Target similarity to achieve
     # Similarity / FAISS neighbour lookup. Overridden by the index's
@@ -623,15 +632,29 @@ class LLMFuzzerConfig:
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     # ``basic`` = paraphrase / translate / summarize;
     # ``multilingual`` = paraphrase / abstract / summarize per language
-    # in ``multilingual_languages`` (plus English). ``typo`` is a la carte.
-    # White-box fuzz scores every strategy each round and drops the weakest;
-    # explore seed generation still fans these out (n=3 => each once).
+    # in ``multilingual_languages`` (plus English). ``typo`` and ``shuffle``
+    # are a la carte.
+    # Explore seed generation still fans these out (n=3 => each once).
+    # White-box search uses ``whitebox_strategies`` / ``translate_languages``.
     fuzz_mode: str = "basic"
     # Explicit override; when empty, derived from ``fuzz_mode``.
     fuzz_strategies: List[str] = field(default_factory=list)
     # Target languages for explore ``multilingual``; empty -> defaults
     # (Spanish, French, Mandarin Chinese).
     multilingual_languages: List[str] = field(default_factory=list)
+    # White-box orchestrator. Empty ``whitebox_strategies`` ->
+    # paraphrase / translate. Translate is invoked once per language in
+    # ``translate_languages``. ``calls_per_strategy`` 2 or 3 repeats every
+    # operator (including each language).
+    whitebox_strategies: List[str] = field(default_factory=list)
+    translate_languages: List[str] = field(
+        default_factory=lambda: list(DEFAULT_TRANSLATE_LANGUAGES)
+    )
+    calls_per_strategy: int = 1
+    keep_k: int = 3
+    # Barrier Probe default: rewrite this many nearest public chunks toward
+    # each private phrase. 1 = closest neighbor only.
+    public_seeds_per_phrase: int = 1
     prompt_template: str = """
 You are an expert at semantic text transformation for information retrieval and barrier probing.
 
@@ -647,7 +670,8 @@ Similar phrases from the corpus (optional context):
 Instructions:
 1. Apply ONLY the named fuzz strategy to the original phrase.
 2. Prefer keeping the phrase useful for retrieving information about the target concept.
-3. Return only the transformed phrase, no explanations or quotes.
+3. Do not copy the target concept verbatim; rewrite the original phrase.
+4. Return only the transformed phrase, no explanations or quotes.
 
 Transformed phrase:"""
 
@@ -658,6 +682,15 @@ Transformed phrase:"""
             self.multilingual_languages = list(DEFAULT_MULTILINGUAL_LANGUAGES)
         if not self.fuzz_strategies:
             self.fuzz_strategies = strategies_for_fuzz_mode(self.fuzz_mode)
+        if not self.translate_languages:
+            self.translate_languages = list(DEFAULT_TRANSLATE_LANGUAGES)
+        if not self.whitebox_strategies:
+            self.whitebox_strategies = list(WHITEBOX_FUZZ_STRATEGIES)
+        self.calls_per_strategy = max(1, int(self.calls_per_strategy or 1))
+        self.keep_k = max(1, int(self.keep_k or 3))
+        self.public_seeds_per_phrase = max(
+            1, int(self.public_seeds_per_phrase or 1)
+        )
 
 
 STRATEGY_INSTRUCTIONS = {
@@ -666,9 +699,8 @@ STRATEGY_INSTRUCTIONS = {
         "Keep the result in English."
     ),
     "translate": (
-        "Translate the phrase into another natural language (prefer Spanish, French, "
-        "or Mainland/Simplified Chinese). Return the foreign-language phrase only — do "
-        "not translate it back to English in this step."
+        "Translate the phrase into {language}. Return the {language} phrase only — "
+        "do not translate it back to English in this step."
     ),
     "abstract": (
         "Raise the level of abstraction: replace concrete specifics with more general "
@@ -682,6 +714,11 @@ STRATEGY_INSTRUCTIONS = {
         "misspellings while keeping the phrase readable to a human. Keep the language "
         "of the original phrase."
     ),
+    "shuffle": (
+        "Keep the sentence frame. Replace homogeneous slots (coordinated list "
+        "items, identifiers, amounts, paths, names) with different values of "
+        "the same inferred type. Do not paraphrase the whole phrase."
+    ),
 }
 
 REWORD_SYSTEM = (
@@ -691,12 +728,15 @@ REWORD_SYSTEM = (
 
 
 class LLMFuzzer:
-    """LLM-assisted fuzzer for semantic barrier probing.
+    """LLM-assisted text modifier for semantic barrier probing.
 
-    White-box paths (``fuzz_phrase``) score every remaining strategy against
-    a known target concept each round and prune the weakest. Black-box
-    helpers such as :meth:`reword_for_retrieval` do not take a target
-    concept — they only diversify a naive prompt for downstream probing.
+    ``modify_text`` applies one named strategy to a phrase and returns the
+    rewrite. White-box search (how many calls, which languages, which
+    candidates stay alive) lives in ``fuzz_orchestrator.FuzzOrchestrator``.
+    ``fuzz_phrase`` is a thin wrapper around that orchestrator.
+
+    Black-box helpers such as :meth:`reword_for_retrieval` do not take a
+    target concept — they only diversify a naive prompt for downstream probing.
     """
     
     def __init__(self, config: Optional[LLMFuzzerConfig] = None):
@@ -720,6 +760,8 @@ class LLMFuzzer:
         self.interaction_log: List[Dict[str, str]] = []
         # Protects interaction_log when localize/query runs across workers.
         self._log_lock = threading.Lock()
+        # Catalog of shuffle variants keyed by (phrase, similar_texts).
+        self._shuffle_variants_cache: Dict[Tuple[str, Tuple[str, ...]], List[str]] = {}
 
     @classmethod
     def local_ollama(
@@ -1080,8 +1122,8 @@ class LLMFuzzer:
           language) rotating paraphrase / abstract / summarize
 
         Pass ``strategies`` to override the mode's default strategy rotation
-        (a la carte; include ``typo`` explicitly). Mode still controls language
-        fan-out.
+        (a la carte; include ``typo`` or ``shuffle`` explicitly). Mode still
+        controls language fan-out.
         """
         return [
             s.text
@@ -1274,6 +1316,7 @@ class LLMFuzzer:
         seeds: List[QuerySeed] = []
         seen: set = set()
         translate_cycle = 0
+        shuffle_cycle = 0
         group_is_foreign = bool(language) and language.strip().lower() not in {
             "english", "en", "eng",
         }
@@ -1294,8 +1337,13 @@ class LLMFuzzer:
                 seed_language = target if transformed else None
             else:
                 transformed = self._apply_blackbox_strategy(
-                    prompt, strategy, language=language
+                    prompt,
+                    strategy,
+                    language=language,
+                    repeat_index=shuffle_cycle if strategy == "shuffle" else 0,
                 )
+                if strategy == "shuffle":
+                    shuffle_cycle += 1
 
             if not transformed:
                 continue
@@ -1337,6 +1385,7 @@ class LLMFuzzer:
         phrase: str,
         strategy: str,
         language: Optional[str] = None,
+        repeat_index: int = 0,
     ) -> Optional[str]:
         """Apply one fuzz strategy to a prompt without a target concept.
 
@@ -1354,6 +1403,15 @@ class LLMFuzzer:
             local = self._apply_intentional_typos(phrase.strip())
             if local and local.strip().lower() != phrase.strip().lower():
                 return local.strip()
+
+        if strategy_key == "shuffle":
+            local = self._apply_type_shuffle(
+                phrase.strip(), repeat_index=repeat_index
+            )
+            if local and local.strip().lower() != phrase.strip().lower():
+                return local.strip()
+            if not foreign:
+                return None
 
         instructions = STRATEGY_INSTRUCTIONS.get(
             strategy_key, STRATEGY_INSTRUCTIONS["paraphrase"]
@@ -1520,8 +1578,9 @@ class LLMFuzzer:
         original_phrase: str,
         similar_phrases: List[Dict[str, Any]],
         strategy: str = "paraphrase",
+        language: Optional[str] = None,
     ) -> str:
-        """Create a prompt for LLM-assisted fuzzing with a named strategy."""
+        """Create a prompt for one named modification strategy."""
         phrases_text = ""
         for i, phrase_info in enumerate(similar_phrases[:5]):
             phrases_text += (
@@ -1532,6 +1591,10 @@ class LLMFuzzer:
         instructions = STRATEGY_INSTRUCTIONS.get(
             strategy_key, STRATEGY_INSTRUCTIONS["paraphrase"]
         )
+        if "{language}" in instructions:
+            instructions = instructions.format(
+                language=(language or "Spanish").strip()
+            )
         return self.config.prompt_template.format(
             target_concept=target_concept,
             original_phrase=original_phrase,
@@ -1574,29 +1637,116 @@ class LLMFuzzer:
             return 0.0
         return sum(x * y for x, y in zip(a, b)) / denom
 
+    def modify_text(
+        self,
+        text: str,
+        strategy: str,
+        *,
+        language: Optional[str] = None,
+        target_concept: str = "",
+        similar_phrases: Optional[List[Dict[str, Any]]] = None,
+        repeat_index: int = 0,
+        index: Optional[Any] = None,
+    ) -> Tuple[Optional[str], str, str]:
+        """Apply one named modification to ``text``.
+
+        This does not score, prune, or iterate. The orchestrator decides how
+        many times to call this and with which strategy / language.
+
+        Returns ``(raw_text_or_none, prompt, raw_response)``.
+        """
+        return self._transform_with_strategy(
+            strategy,
+            text,
+            target_concept,
+            similar_phrases or [],
+            language=language,
+            repeat_index=repeat_index,
+            index=index,
+        )
+
+    def _apply_type_shuffle(
+        self,
+        phrase: str,
+        *,
+        repeat_index: int = 0,
+        similar_phrases: Optional[List[Dict[str, Any]]] = None,
+        index: Optional[Any] = None,
+    ) -> Optional[str]:
+        """Local type-similar token shuffle (no LLM rewrite)."""
+        from .type_shuffle import (
+            collect_shuffle_variants,
+            similar_texts_from_hits,
+        )
+
+        similar_texts = similar_texts_from_hits(similar_phrases)
+        cache_key = (phrase, tuple(similar_texts))
+        variants = self._shuffle_variants_cache.get(cache_key)
+        if variants is None:
+            neighbor_fn = None
+            if index is not None:
+                def neighbor_fn(span: str, _index=index) -> List[str]:
+                    hits = self.find_similar_phrases(
+                        span, _index, k=8, enforce_threshold=False
+                    )
+                    return similar_texts_from_hits(hits)
+
+            def embed_fn(texts: List[str]) -> List[List[float]]:
+                return self._embed_texts(texts, self.config.embedding_model)
+
+            variants = collect_shuffle_variants(
+                phrase,
+                similar_texts=similar_texts,
+                neighbor_fn=neighbor_fn,
+                embed_fn=embed_fn,
+            )
+            self._shuffle_variants_cache[cache_key] = variants
+        if not variants:
+            return None
+        return variants[int(repeat_index) % len(variants)]
+
     def _transform_with_strategy(
         self,
         strategy: str,
         current_phrase: str,
         target_concept: str,
         similar_phrases: List[Dict[str, Any]],
+        language: Optional[str] = None,
+        repeat_index: int = 0,
+        index: Optional[Any] = None,
     ) -> Tuple[Optional[str], str, str]:
         """Apply one fuzz strategy to ``current_phrase``.
 
         Returns ``(raw_text_or_none, prompt, raw_response)``.
         """
         prompt = self.create_fuzzing_prompt(
-            target_concept, current_phrase, similar_phrases or [], strategy=strategy
+            target_concept,
+            current_phrase,
+            similar_phrases or [],
+            strategy=strategy,
+            language=language,
         )
-        if strategy == "typo" and self.config.llm_provider == "local":
+        strategy_key = (strategy or "").lower()
+        if strategy_key == "shuffle":
+            raw = self._apply_type_shuffle(
+                current_phrase,
+                repeat_index=repeat_index,
+                similar_phrases=similar_phrases,
+                index=index,
+            ) or ""
+            if not (raw or "").strip():
+                return None, prompt, raw or ""
+            return raw, prompt, raw
+        if strategy_key == "typo" and self.config.llm_provider == "local":
             raw = self._apply_intentional_typos(current_phrase)
         else:
             raw = self.query_llm(prompt) or ""
-            if strategy == "typo" and raw:
+            if strategy_key == "typo" and raw:
                 if raw.strip().lower() == current_phrase.strip().lower():
                     raw = self._apply_intentional_typos(current_phrase)
         if not (raw or "").strip():
             return None, prompt, raw or ""
+        time.sleep(0.2)
         return raw, prompt, raw
 
     def _similarities_to_target(
@@ -1614,24 +1764,11 @@ class LLMFuzzer:
             return [0.0] * len(texts)
         return [self._cosine(emb, target_emb) for emb in embs]
 
-    @staticmethod
-    def _prune_weakest_strategy(
-        active: List[str],
-        trials: List[Dict[str, Any]],
-    ) -> Optional[str]:
-        """Drop the lowest-scoring strategy from ``active``. Ties drop the later one."""
-        if len(active) <= 1:
-            return None
-        by_strategy = {t["strategy"]: float(t["similarity"]) for t in trials}
-        ranked = [
-            (by_strategy.get(name, -1.0), idx, name)
-            for idx, name in enumerate(active)
-        ]
-        # Worst similarity first; later list position wins ties so we drop it.
-        ranked.sort(key=lambda row: (row[0], -row[1]))
-        dropped = ranked[0][2]
-        active.remove(dropped)
-        return dropped
+    def _embed_texts(self, texts: List[str], emb_model: str) -> List[List[float]]:
+        """Embed texts with the module-level ``embed`` (patchable in tests)."""
+        if not texts:
+            return []
+        return embed(texts, emb_model) or []
 
     def fuzz_phrase(
         self,
@@ -1639,167 +1776,17 @@ class LLMFuzzer:
         target_concept: str,
         index: FAISSIndex,
     ) -> Tuple[str, float, List[str], List[Dict[str, Any]]]:
-        """Fuzz a phrase toward ``target_concept`` by scoring every strategy.
+        """Search toward ``target_concept`` via the fuzz orchestrator.
 
-        Each round applies **all remaining strategies independently** to the
-        current best phrase (they are not chained). Results are ranked by
-        cosine closeness to ``target_concept``; the closest becomes the new
-        current phrase if it improved, and the weakest strategy is pruned.
-        Rounds continue until one strategy remains, ``max_iterations`` is
-        hit, or ``target_similarity`` is reached. Remaining rounds refine
-        with the surviving strategy.
+        The fuzzer only rewrites text. ``FuzzOrchestrator`` owns the call
+        plan (strategy × language × repeats), the live-node set, and pruning.
         """
-        current_phrase = original_phrase
-        transformation_history = [original_phrase]
-        interactions: List[Dict[str, Any]] = []
-        strategy_rounds: List[Dict[str, Any]] = []
-        pruned_strategies: List[str] = []
-        active = list(
-            self.config.fuzz_strategies
-            or strategies_for_fuzz_mode(self.config.fuzz_mode)
+        from .fuzz_orchestrator import FuzzOrchestrator, OrchestratorConfig
+
+        orch = FuzzOrchestrator(
+            self, OrchestratorConfig.from_fuzzer_config(self.config)
         )
-        emb_model = self._embedding_model_for_index(index)
-
-        logger.info("Starting fuzzing for phrase: %r", original_phrase)
-        logger.info("Target concept: %r", target_concept)
-        logger.info("Fuzz mode=%s strategies=%s", self.config.fuzz_mode, active)
-
-        target_embs = embed([target_concept], emb_model)
-        if not target_embs:
-            logger.warning("Failed to embed target concept; aborting fuzz")
-            return original_phrase, 0.0, transformation_history, interactions
-
-        target_emb = target_embs[0]
-        current_scores = self._similarities_to_target(
-            [current_phrase], target_emb, emb_model
-        )
-        current_similarity = current_scores[0] if current_scores else 0.0
-        logger.info("Baseline similarity to target: %.3f", current_similarity)
-
-        for round_idx in range(self.config.max_iterations):
-            if not active:
-                break
-            round_num = round_idx + 1
-            logger.info(
-                "Fuzzing round %d/%d strategies=%s",
-                round_num,
-                self.config.max_iterations,
-                active,
-            )
-
-            similar_phrases = self.find_similar_phrases(current_phrase, index)
-            trials: List[Dict[str, Any]] = []
-            for strategy in list(active):
-                raw, prompt, response = self._transform_with_strategy(
-                    strategy, current_phrase, target_concept, similar_phrases or []
-                )
-                phrase = (
-                    normalize_text(raw, self.normalization_config)
-                    if raw
-                    else ""
-                )
-                trial = {
-                    "round": round_num,
-                    "strategy": strategy,
-                    "parent_phrase": current_phrase,
-                    "prompt": prompt,
-                    "response": response,
-                    "phrase": phrase,
-                    "similarity": -1.0,
-                    "kept": False,
-                    "pruned": False,
-                }
-                trials.append(trial)
-                time.sleep(0.2)
-
-            scored_phrases = [t["phrase"] or current_phrase for t in trials]
-            scores = self._similarities_to_target(
-                scored_phrases, target_emb, emb_model
-            )
-            for trial, phrase, score in zip(trials, scored_phrases, scores):
-                if not trial["phrase"]:
-                    trial["similarity"] = -1.0
-                else:
-                    trial["phrase"] = phrase
-                    trial["similarity"] = score
-                logger.info(
-                    "Round %d [%s]: similarity = %.3f",
-                    round_num,
-                    trial["strategy"],
-                    trial["similarity"],
-                )
-
-            ranked = sorted(
-                trials, key=lambda t: t["similarity"], reverse=True
-            )
-            best = ranked[0]
-            moved = False
-            if best["phrase"] and best["similarity"] > current_similarity:
-                current_phrase = best["phrase"]
-                current_similarity = best["similarity"]
-                transformation_history.append(current_phrase)
-                moved = True
-            best["kept"] = True
-
-            pruned = None
-            if len(active) > 1:
-                pruned = self._prune_weakest_strategy(active, trials)
-                if pruned:
-                    pruned_strategies.append(pruned)
-                    for trial in trials:
-                        if trial["strategy"] == pruned:
-                            trial["pruned"] = True
-                    logger.info(
-                        "Round %d pruned strategy %r (remaining=%s)",
-                        round_num,
-                        pruned,
-                        active,
-                    )
-
-            for trial in trials:
-                interactions.append(trial)
-
-            strategy_rounds.append(
-                {
-                    "round": round_num,
-                    "parent_phrase": trials[0]["parent_phrase"] if trials else current_phrase,
-                    "trials": [
-                        {
-                            "strategy": t["strategy"],
-                            "phrase": t["phrase"],
-                            "similarity": t["similarity"],
-                            "kept": t["kept"],
-                            "pruned": t["pruned"],
-                        }
-                        for t in trials
-                    ],
-                    "kept_strategy": best["strategy"],
-                    "pruned_strategy": pruned,
-                    "moved": moved,
-                    "current_phrase": current_phrase,
-                    "current_similarity": current_similarity,
-                    "active_after": list(active),
-                }
-            )
-
-            if current_similarity >= self.config.target_similarity:
-                logger.info("Target similarity achieved: %.3f", current_similarity)
-                break
-
-        if interactions:
-            # Stash tournament metadata on the log so callers that only unpack
-            # the 4-tuple can still recover prune decisions.
-            interactions.append(
-                {
-                    "tournament": True,
-                    "strategy_rounds": strategy_rounds,
-                    "pruned_strategies": pruned_strategies,
-                    "surviving_strategies": list(active),
-                    "baseline_similarity": current_scores[0] if current_scores else 0.0,
-                }
-            )
-
-        return current_phrase, current_similarity, transformation_history, interactions
+        return orch.run(original_phrase, target_concept, index).as_fuzz_phrase_tuple()
 
     def batch_fuzz_phrases(self,
                           phrases: List[str],
@@ -1849,18 +1836,117 @@ class LLMFuzzer:
                 "iterations": n_rounds or max(0, len(history) - 1),
                 "target_concept": target_concept,
                 "fuzz_mode": self.config.fuzz_mode,
-                "fuzz_strategies": list(self.config.fuzz_strategies),
+                "fuzz_strategies": list(
+                    tournament.get("surviving_strategies")
+                    or self.config.whitebox_strategies
+                    or self.config.fuzz_strategies
+                ),
                 "pruned_strategies": list(tournament.get("pruned_strategies") or []),
                 "surviving_strategies": list(tournament.get("surviving_strategies") or []),
                 "strategy_rounds": list(tournament.get("strategy_rounds") or []),
                 "prompt_response_log": trial_log,
+                "live_nodes": list(tournament.get("live_nodes") or []),
+                "call_plan": list(tournament.get("call_plan") or []),
+                "keep_k": tournament.get("keep_k"),
+                "calls_per_strategy": tournament.get("calls_per_strategy"),
+                "translate_languages": list(tournament.get("translate_languages") or []),
+                "winning_prompt_chain": list(tournament.get("winning_prompt_chain") or []),
+                "live_prompt_chains": list(tournament.get("live_prompt_chains") or []),
                 "analysis": analysis,
             })
             
-            # Rate limiting between phrases
-            time.sleep(2)
+            # Rate limiting between phrases (skip in test / fake clients)
+            if self.config.llm_provider not in {"test", "local"}:
+                time.sleep(2)
         
         return results
+
+    def fuzz_public_toward_private(
+        self,
+        private_phrases: List[str],
+        public_index: FAISSIndex,
+        *,
+        public_seeds_per_phrase: Optional[int] = None,
+        analyzer: Optional[Any] = None,
+        analysis_top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Rewrite public chunks toward every private phrase.
+
+        Each private phrase is its own target. For each one, the closest
+        public neighbors are the seeds that get fuzzed. There is no separate
+        global target concept.
+        """
+        n_seeds = int(
+            public_seeds_per_phrase
+            if public_seeds_per_phrase is not None
+            else getattr(self.config, "public_seeds_per_phrase", 1) or 1
+        )
+        n_seeds = max(1, n_seeds)
+        results: List[Dict[str, Any]] = []
+        targets = [p.strip() for p in private_phrases if (p or "").strip()]
+        for i, private in enumerate(targets):
+            logger.info(
+                "Private target %d/%d (%d public seeds): %s",
+                i + 1,
+                len(targets),
+                n_seeds,
+                private[:80],
+            )
+            hits = self.find_similar_phrases(
+                private,
+                public_index,
+                k=n_seeds,
+                enforce_threshold=False,
+            ) or []
+            seeds: List[str] = []
+            seed_hits: List[Dict[str, Any]] = []
+            seen: set[str] = set()
+            for hit in hits:
+                text = " ".join((hit.get("text") or "").split())
+                if not text:
+                    continue
+                key = text.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                seeds.append(text)
+                seed_hits.append(hit)
+            if not seeds:
+                logger.warning("No public neighbors for private phrase: %s", private[:80])
+                continue
+            batch = self.batch_fuzz_phrases(
+                seeds,
+                private,
+                public_index,
+                analyzer=analyzer,
+                analysis_top_k=analysis_top_k,
+            )
+            for row, hit in zip(batch, seed_hits):
+                row["direction"] = "public_toward_private"
+                row["private_phrase"] = private
+                row["target_concept"] = private
+                row["public_seed"] = row.get("original_phrase")
+                row["public_seed_similarity"] = hit.get("similarity")
+                results.append(row)
+        return results
+
+
+def texts_from_faiss_index(index: FAISSIndex) -> List[str]:
+    """Approved-style phrase list from a FAISS string store / metadata."""
+    n = int(index.get_vector_count() or 0)
+    out: List[str] = []
+    store = getattr(index, "string_store", None)
+    meta = getattr(index, "metadata", None)
+    for i in range(n):
+        text = ""
+        if store is not None:
+            text = store.get(i) or ""
+        if not text and isinstance(meta, list) and i < len(meta) and isinstance(meta[i], dict):
+            text = meta[i].get("text") or meta[i].get("text_preview") or ""
+        cleaned = " ".join((text or "").split())
+        if cleaned:
+            out.append(cleaned)
+    return out
 
 
 def _split_tournament_log(
@@ -1870,7 +1956,7 @@ def _split_tournament_log(
     trials: List[Dict[str, Any]] = []
     meta: Dict[str, Any] = {}
     for item in interactions or []:
-        if item.get("tournament"):
+        if item.get("tournament") or item.get("orchestrator"):
             meta = item
         else:
             trials.append(item)
@@ -1896,16 +1982,26 @@ def fuzz_phrases_for_barrier_analysis(phrases: List[str],
                                     config: Optional[LLMFuzzerConfig] = None,
                                     analyzer: Optional[Any] = None,
                                     analysis_top_k: int = 5) -> List[Dict[str, Any]]:
-    """Convenience function for fuzzing phrases for barrier analysis.
-    
-    Args:
-        phrases: List of phrases to fuzz
-        target_concept: The target concept to move towards
-        index: FAISS index for semantic search
-        config: Optional fuzzer configuration
-        
-    Returns:
-        List of fuzzing results
-    """
+    """Rewrite ``phrases`` toward a single target (legacy global-concept path)."""
     fuzzer = LLMFuzzer(config)
     return fuzzer.batch_fuzz_phrases(phrases, target_concept, index, analyzer=analyzer, analysis_top_k=analysis_top_k)
+
+
+def fuzz_public_toward_private_phrases(
+    private_phrases: List[str],
+    public_index: FAISSIndex,
+    config: Optional[LLMFuzzerConfig] = None,
+    *,
+    public_seeds_per_phrase: Optional[int] = None,
+    analyzer: Optional[Any] = None,
+    analysis_top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """Barrier Probe default: fuzz public neighbors toward each private phrase."""
+    fuzzer = LLMFuzzer(config)
+    return fuzzer.fuzz_public_toward_private(
+        private_phrases,
+        public_index,
+        public_seeds_per_phrase=public_seeds_per_phrase,
+        analyzer=analyzer,
+        analysis_top_k=analysis_top_k,
+    )

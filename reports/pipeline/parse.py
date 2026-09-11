@@ -265,7 +265,7 @@ def topic_from_exploration(path: Path) -> str:
 
 
 _STRATEGY_RE = re.compile(
-    r"`(paraphrase|translate|summarize|typo|abstract)`",
+    r"`(paraphrase|translate|summarize|typo|abstract|shuffle)`",
     re.I,
 )
 _FUZZ_MODE_RE = re.compile(r"_Fuzz mode:\s*`([^`]+)`_", re.I)

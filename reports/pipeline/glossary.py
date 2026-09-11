@@ -193,7 +193,7 @@ _GROUPS: list[dict[str, Any]] = [
             (
                 "Technique",
                 "How a prompt was reworded before retrieval: paraphrase, "
-                "translate, summarize, abstract, or typo.",
+                "translate, summarize, abstract, typo, or shuffle.",
             ),
             (
                 "Remediation / follow-up",
