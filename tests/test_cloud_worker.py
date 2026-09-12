@@ -156,6 +156,8 @@ def test_normalize_generation_mode():
     assert cw.normalize_generation_mode("synthesize") == "from_stage"
     assert cw.normalize_generation_mode("render") == "from_stage"
     assert cw.normalize_generation_mode("from-stage") == "from_stage"
+    assert cw.normalize_generation_mode("preview") == "exposure_preview"
+    assert cw.normalize_generation_mode("exposure_preview") == "exposure_preview"
 
 
 def test_parse_order_generation_mode():

@@ -16,7 +16,8 @@ Storefront order fields used here::
     qcRequired           false skips human QC (agent orders → delivered).
                          GUI and Checkout default true when the field is missing.
     qcStatus             pending | not_required
-    generationMode       full | pdf_from_markdown | rebuild_graphics | from_stage
+    generationMode       full | exposure_preview | pdf_from_markdown |
+                         rebuild_graphics | from_stage
                          (or a pipeline stage name: parse…render)
     fromStage            parse | extract | cluster | score | synthesize |
                          graphics | render  (rebuilds; same as local --from-stage)
@@ -128,6 +129,8 @@ GENERATION_MODE_ALIASES = {
     "graphics_only": "rebuild_graphics",
     "from_stage": "from_stage",
     "fromstage": "from_stage",
+    "exposure_preview": "exposure_preview",
+    "preview": "exposure_preview",
 }
 
 CANONICAL_AWAITING_QC = "awaiting_qc"
@@ -250,7 +253,7 @@ def default_keep_content(from_stage: str) -> bool:
 
 def resolve_rebuild_plan(spec: OrderSpec) -> RebuildPlan | None:
     """None means a full explore; otherwise rebuild from existing artifacts."""
-    if spec.generation_mode == "full":
+    if spec.generation_mode in {"full", "exposure_preview"}:
         return None
     from_stage = spec.from_stage
     if from_stage not in PIPELINE_STAGES:
@@ -1437,6 +1440,55 @@ def _upload_runs(
     return {"manifest": manifest, "urls": urls}
 
 
+def run_exposure_preview(
+    spec: OrderSpec,
+    *,
+    mark: Callable[[dict[str, Any]], None],
+    started: str,
+) -> int:
+    """Write preview.json from the cheap topic preprocessor. No model calls."""
+    from moyo.exposure_preview import estimate_exposure_preview
+
+    topic = spec.prompts[0] if spec.prompts else ""
+    preview = estimate_exposure_preview(topic)
+    work = work_dir_for(spec.order_id)
+    work.mkdir(parents=True, exist_ok=True)
+    preview_path = work / "preview.json"
+    preview_path.write_text(json.dumps(preview, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    urls: dict[str, str] = {}
+    if not _skip_firebase():
+        _db, bucket, _fs = _init_firebase()
+        if bucket is None:
+            raise RuntimeError("Storage bucket name not set for exposure preview.")
+        object_path = f"{spec.reports_prefix()}/preview.json"
+        urls = _upload_files(bucket, [(object_path, preview_path)])
+
+    finished = utc_now()
+    mark(
+        {
+            "reportStatus": "delivered",
+            "qcRequired": False,
+            "qcStatus": "not_required",
+            "generationMode": "exposure_preview",
+            "generationStartedAt": started,
+            "generationFinishedAt": finished,
+            "preview": preview,
+            "output": {
+                "jsonPath": f"{spec.reports_prefix()}/preview.json",
+                "pdfPath": None,
+                "markdownPath": None,
+                "htmlPath": None,
+                "summaryPath": None,
+            },
+            "artifactPaths": urls,
+            "error": None,
+        }
+    )
+    logger.info("order %s exposure_preview delivered paths=%s", spec.order_id, preview["candidatePaths"])
+    return 0
+
+
 def main() -> int:
     logging.basicConfig(
         level=os.environ.get("MOYO_LOG_LEVEL", "INFO"),
@@ -1478,6 +1530,8 @@ def main() -> int:
                 "error": None,
             }
         )
+        if spec.generation_mode == "exposure_preview":
+            return run_exposure_preview(spec, mark=_mark, started=started)
 
         uploaded: dict[str, Any] = {}
         bucket = None
