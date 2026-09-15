@@ -5,6 +5,11 @@ This is the search-space preprocessor the Cloud worker uses for
 public web. Numbers are deterministic for a topic so the storefront and
 the Docker image stay aligned.
 
+Black-box estimates are grounded in ``moyo-gather explore`` (basic fuzz:
+paraphrase / translate / summarize, 3 seeds, ``config/retrieval_llms.json``)
+and in what Snapshot vs Basis PDFs actually print. Red-teaming estimates
+are grounded in ``moyo-probe analyze`` (barrier probe) report fields.
+
 Shown on /exposure in about five seconds. Do not surface word counts.
 """
 
@@ -17,17 +22,13 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from moyo.publicside.barrierprobe.llm_fuzzer import (
-    BASIC_FUZZ_STRATEGIES,
-    DEFAULT_MULTILINGUAL_LANGUAGES,
-)
+from moyo.publicside.barrierprobe.llm_fuzzer import BASIC_FUZZ_STRATEGIES
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _RETRIEVAL_CONFIG = _REPO_ROOT / "config" / "retrieval_llms.json"
 
-# Cloud explore defaults (cloud_worker.OrderSpec).
+# Cloud explore defaults (cloud_worker.OrderSpec, fuzz_mode=basic).
 DEFAULT_SEEDS = 3
-FINDINGS_RANGE = "15–25"
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9'&./-]{1,40}")
 _ENTITY_RE = re.compile(
@@ -104,12 +105,12 @@ def configured_retrieval_model_count(path: Path | None = None) -> int:
         return 10
 
 
-def configured_languages() -> tuple[str, ...]:
-    return ("English",) + tuple(DEFAULT_MULTILINGUAL_LANGUAGES)
-
-
 def configured_prompt_cycles() -> int:
     return DEFAULT_SEEDS
+
+
+def configured_strategies() -> int:
+    return len(BASIC_FUZZ_STRATEGIES)
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -164,7 +165,7 @@ def _source_hints(category_ids: Iterable[str]) -> list[str]:
 
 
 def estimate_exposure_preview(topic: str) -> dict[str, Any]:
-    """Return curiosity-grade search-space metadata for one topic."""
+    """Return report-shaped estimates for Snapshot and Basis on one topic."""
     raw = (topic or "").strip()
     if len(raw) < 3:
         raise ValueError("Topic must be at least 3 characters.")
@@ -177,9 +178,8 @@ def estimate_exposure_preview(topic: str) -> dict[str, Any]:
     entities = _entities(normalized)
     categories = _categories(topic_lc)
     models = configured_retrieval_model_count()
-    languages = configured_languages()
     cycles = configured_prompt_cycles()
-    strategies = len(BASIC_FUZZ_STRATEGIES)
+    strategies = configured_strategies()
 
     entity_score = min(1.0, len(entities) / 5)
     category_score = min(1.0, len(categories) / 4)
@@ -187,32 +187,94 @@ def estimate_exposure_preview(topic: str) -> dict[str, Any]:
     richness = 0.45 * entity_score + 0.40 * category_score + 0.15 * length_score
     jitter = _jitter(topic_lc)
 
-    relationships = 8 + len(entities) * 3 + len(categories) * 2 + (jitter % 5)
-    clusters = 3 + min(7, len(categories) + len(entities) // 2)
-    dense_areas = max(1, len(categories)) + (1 if richness >= 0.45 else 0)
-    paths = 18 + relationships + clusters * 3 + dense_areas * 4 + int(richness * 18)
-    paths = _clamp(paths, 22, 86)
+    # Collapsed findings after black-box explore → extract → cluster.
+    # Basis prints every row in the inventory; Snapshot cover also prints
+    # this count, but only writes up a handful.
+    inventory = 8 + len(entities) * 2 + len(categories) * 3 + int(richness * 6) + (
+        jitter % 4
+    )
+    inventory = _clamp(inventory, 8, 25)
 
-    citations = 36 + paths + len(categories) * 8
-    claims = 64 + paths * 2
-    corroborated = 11 + clusters * 2 + dense_areas * 3
-    search_space = models * len(languages) * cycles * strategies
+    # Snapshot one-pager + abridged findings/evidence/claims (capped at 5)
+    # plus top finding / two specific callouts. Marketing range is 3–10.
+    notable = 3 + len(categories) + min(len(entities), 2) + (1 if richness >= 0.5 else 0)
+    notable = min(inventory, _clamp(notable, 3, 10))
+
+    high_sens = (
+        1
+        + len(categories)
+        + (1 if len(entities) >= 2 else 0)
+        + (1 if richness >= 0.55 else 0)
+    )
+    high_sens = _clamp(high_sens, 1, max(1, inventory - 1))
+
+    # Shared S1… source registry. Both PDFs include the Sources table.
+    citations = 5 + (inventory * 3) // 5 + len(categories) * 2 + (jitter % 3)
+    citations = _clamp(citations, 6, 24)
+
+    # Extract-stage claims in claims.jsonl before cluster collapse.
+    # Basis raw data includes this file; Snapshot still runs the same extract.
+    claims = 18 + inventory * 2 + len(entities) * 2 + len(categories) * 3 + (jitter % 8)
+    claims = _clamp(claims, 24, 80)
+
+    # Findings seen in 2+ model outputs (Basis "Corrob." / LLM corroborations).
+    corroborated = 2 + (inventory * 3) // 10 + len(categories)
+    corroborated = _clamp(corroborated, 2, max(2, inventory - 1))
+
+    # score.chain_count is 3; renderer keeps up to 5. Snapshot only teasers one.
+    chains = 3 + (1 if inventory >= 12 else 0) + (1 if richness >= 0.6 else 0)
+    chains = _clamp(chains, 3, 5)
+
+    # White-box moyo-probe analyze (default top_k=10). These print on the
+    # barrier-probe report, not on Snapshot / Basis.
+    breaches = 4 + len(entities) * 2 + len(categories) * 2 + (jitter % 3)
+    breaches = _clamp(breaches, 4, 10)
+    high_risk = 1 + len(categories) + (1 if richness >= 0.5 else 0)
+    high_risk = _clamp(high_risk, 1, max(1, breaches - 1))
+    concentrated = 2 + len(categories) + len(entities) + (jitter % 3)
+    concentrated = _clamp(concentrated, 2, breaches)
+    clusters = 3 + len(categories) + len(entities) // 2
+    clusters = _clamp(clusters, 2, 12)
+    paths = breaches + concentrated + clusters // 2
+    paths = _clamp(paths, 8, 24)
+
+    search_space = models * cycles * strategies
 
     return {
         "topic": normalized,
-        "headline": f"We found {paths} paths worth investigating.",
-        "subhead": "Run the full scan to see where they lead.",
+        "headline": (
+            f"A Snapshot would brief {notable} exposures. "
+            f"A Basis Report would inventory {inventory} findings."
+        ),
+        "subhead": (
+            "Black-box counts are what Snapshot and Basis print. "
+            "Red-teaming counts are what an authorized white-box probe would print."
+        ),
         "modelsPlus": models,
-        "languagesPlus": len(languages),
         "promptCyclesPlus": cycles,
-        "relationships": relationships,
-        "clusters": clusters,
-        "denseAreas": dense_areas,
-        "candidatePaths": paths,
-        "estimatedCitations": citations,
-        "estimatedClaims": claims,
-        "estimatedCorroborated": corroborated,
-        "estimatedFindings": FINDINGS_RANGE,
+        "strategiesPlus": strategies,
+        "snapshot": {
+            "notableExposures": notable,
+            "highSensitivity": high_sens,
+            "citedSources": citations,
+            "claims": claims,
+            "corroborated": corroborated,
+        },
+        "basis": {
+            "inventoryFindings": inventory,
+            "highSensitivity": high_sens,
+            "citedSources": citations,
+            "claims": claims,
+            "corroborated": corroborated,
+            "exposureChains": chains,
+        },
+        "redTeam": {
+            "potentialBreaches": breaches,
+            "highRiskBreaches": high_risk,
+            "concentratedMatches": concentrated,
+            "clusters": clusters,
+            "candidatePaths": paths,
+        },
         "searchSpace": search_space,
         "sensitiveCategories": [row["label"] for row in categories],
         "possibleSources": _source_hints(row["id"] for row in categories),
@@ -220,18 +282,26 @@ def estimate_exposure_preview(topic: str) -> dict[str, Any]:
             "3–10 notable exposures, scored",
             "A one-pager plus the snapshot report",
             "A teaser of the exposure chain",
-            "Example model output and minimal source attribution",
+            "Example model output and a sources table",
         ],
         "basisIncludes": [
-            "The full prioritized inventory (typically 15–25 findings)",
+            "The complete prioritized inventory",
             "Evidence graph and corroborating model outputs",
-            "Full exposure chains and remediation steps",
+            "Full exposure chains and exploitation implications",
             "Access to underlying raw data",
+        ],
+        "redTeamIncludes": [
+            "Reachability map and source attribution inside the pipeline",
+            "Barrier probe of RAG corpora and deployed assistants",
+            "Written authorization required before any white-box work",
+            "Optional validation re-test after mitigations",
         ],
         "disclaimer": (
             "This is a search-space read of your topic, not a finished investigation. "
-            "Sources listed are the kinds of public material a full scan looks at — "
-            "not a promise that each one will appear."
+            "Black-box numbers come from public-model explore. Red-teaming numbers "
+            "come from the authorized white-box probe and require a private corpus "
+            "plus written authorization. Sources listed are the kinds of public "
+            "material a full scan looks at — not a promise that each one will appear."
         ),
     }
 
@@ -249,10 +319,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(preview, indent=2, ensure_ascii=False))
     else:
         print(preview["headline"])
+        snap = preview["snapshot"]
+        basis = preview["basis"]
+        red = preview["redTeam"]
         print(
-            f"{preview['candidatePaths']} paths · "
-            f"{preview['relationships']} relationships · "
-            f"{preview['clusters']} clusters"
+            f"Snapshot {snap['notableExposures']} exposures · "
+            f"Basis {basis['inventoryFindings']} findings · "
+            f"{basis['citedSources']} citations · "
+            f"{basis['claims']} claims · "
+            f"{basis['corroborated']} corroborations · "
+            f"Red-team {red['potentialBreaches']} breaches"
         )
     return 0
 

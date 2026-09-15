@@ -76,6 +76,9 @@ logger = logging.getLogger("moyo.cloud_worker")
 
 PRODUCT_ALIASES = {
     "snapshot": "snapshot",
+    "snapshot_raw": "snapshot",
+    "moyo_snapshot_raw": "snapshot",
+    "exposure_report_raw": "snapshot",
     "exposure": "snapshot",
     "exposure_snapshot": "snapshot",
     "exposure-snapshot": "snapshot",
@@ -139,6 +142,8 @@ AWAITING_QC_STATUSES = frozenset({CANONICAL_AWAITING_QC, LEGACY_AWAITING_QC})
 HUMAN_QC_SOURCES = frozenset({"stripe_checkout", "admin", "gui"})
 PRODUCT_IDS = {
     "snapshot": "moyo_snapshot",
+    "snapshot_raw": "moyo_snapshot_raw",
+    "moyo_snapshot_raw": "moyo_snapshot_raw",
     "basis": "moyo_basis",
     "both": "moyo_basis",
     "moyo_snapshot": "moyo_snapshot",
@@ -1485,7 +1490,12 @@ def run_exposure_preview(
             "error": None,
         }
     )
-    logger.info("order %s exposure_preview delivered paths=%s", spec.order_id, preview["candidatePaths"])
+    logger.info(
+        "order %s exposure_preview delivered snapshot=%s basis=%s",
+        spec.order_id,
+        preview.get("snapshot", {}).get("notableExposures"),
+        preview.get("basis", {}).get("inventoryFindings"),
+    )
     return 0
 
 

@@ -148,6 +148,7 @@ def content_type_for(path: Path) -> str | None:
     return {
         ".pdf": "application/pdf",
         ".json": "application/json; charset=utf-8",
+        ".jsonl": "application/jsonl; charset=utf-8",
         ".md": "text/markdown; charset=utf-8",
         ".html": "text/html; charset=utf-8",
         ".svg": "image/svg+xml",
