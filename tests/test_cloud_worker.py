@@ -763,6 +763,60 @@ def test_parse_order_snapshot_mpp_is_queued_shape():
     assert spec.generation_mode == "full"
 
 
+def test_delivery_action_emails_when_validation_passes():
+    spec = cw.OrderSpec(order_id="ord", prompts=["Enron"], qc_required=False)
+    validation = cw.ValidationResult(ok=True, models_requested=10, models_tested=9, coverage=0.9)
+    assert cw.delivery_action(spec, validation=validation, retry_count=0) == "deliver"
+    assert cw.delivery_action(spec, validation=validation, retry_count=1) == "deliver"
+
+
+def test_delivery_action_retries_then_holds():
+    spec = cw.OrderSpec(order_id="ord", prompts=["Enron"], qc_required=False)
+    validation = cw.ValidationResult(
+        ok=False,
+        models_requested=10,
+        models_tested=3,
+        coverage=0.3,
+        reasons=["only 3 model(s) tested (need more than 4)"],
+    )
+    assert cw.delivery_action(spec, validation=validation, retry_count=0) == "retry"
+    assert cw.delivery_action(spec, validation=validation, retry_count=1) == "hold"
+
+
+def test_delivery_action_skips_validation_for_human_qc():
+    spec = cw.OrderSpec(order_id="ord", prompts=["Enron"], qc_required=True)
+    validation = cw.ValidationResult(ok=False, reasons=["only 3 model(s) tested"])
+    assert cw.delivery_action(spec, validation=validation, retry_count=0) == "qc"
+
+
+def test_retry_and_hold_update_fields():
+    validation = cw.ValidationResult(
+        ok=False,
+        models_requested=10,
+        models_tested=3,
+        coverage=0.3,
+        reasons=["only 3 model(s) tested (need more than 4)"],
+    )
+    retry = cw.retry_update_fields(
+        validation=validation,
+        retry_count=1,
+        started="t0",
+        finished="t1",
+    )
+    assert retry["reportStatus"] == "queued"
+    assert retry["validationRetryCount"] == 1
+    assert retry["reportStage"] is None
+    hold = cw.hold_update_fields(
+        validation=validation,
+        retry_count=1,
+        started="t0",
+        finished="t1",
+    )
+    assert hold["reportStatus"] == "held"
+    assert hold["holdNotifyStatus"] == "pending"
+    assert hold["reportStage"] == "validating"
+
+
 def test_canonical_report_json_aggregates_prompts(tmp_path: Path):
     a = tmp_path / "a"
     b = tmp_path / "b"

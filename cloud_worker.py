@@ -13,9 +13,15 @@ Storefront order fields used here::
     productId            moyo_snapshot | moyo_basis (optional)
     paymentStatus        informational
     reportStatus         queued → generating → awaiting_qc | delivered | failed
+                         | held (auto-validation failed after retry)
+    reportStage          querying_models | analyzing_results |
+                         generating_report | validating  (live customer progress)
     qcRequired           false skips human QC (agent orders → delivered).
                          GUI and Checkout default true when the field is missing.
+                         Auto-validation (coverage, required sections, retry/hold)
+                         runs only when qcRequired is false and generationMode=full.
     qcStatus             pending | not_required
+    validationRetryCount 0 on first attempt; 1 after a validation requeue
     generationMode       full | exposure_preview | pdf_from_markdown |
                          rebuild_graphics | from_stage
                          (or a pipeline stage name: parse…render)
@@ -71,6 +77,7 @@ from moyo.report_storage import (
     reports_bucket_name as _storage_bucket_name,
     upload_files as _upload_files,
 )
+from report_validation import ValidationResult, validate_prompt_runs
 
 logger = logging.getLogger("moyo.cloud_worker")
 
@@ -113,6 +120,14 @@ PIPELINE_STAGES = (
     "graphics",
     "render",
 )
+
+REPORT_STAGES = (
+    "querying_models",
+    "analyzing_results",
+    "generating_report",
+    "validating",
+)
+MAX_VALIDATION_RETRIES = 1
 REBUILD_INPUT_FILES = (
     "report.md",
     "report.yaml",
@@ -743,6 +758,7 @@ def success_update_fields(
     finished: str,
     urls: dict[str, str],
     manifest: dict[str, Any],
+    validation: ValidationResult | None = None,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "generationStartedAt": started,
@@ -753,6 +769,7 @@ def success_update_fields(
         "output": output_paths(spec.storage_folder, urls),
         "storageFolder": spec.storage_folder,
         "qcRequired": spec.qc_required,
+        "reportStage": None,
         "error": None,
     }
     if spec.qc_required:
@@ -762,7 +779,87 @@ def success_update_fields(
         fields["reportStatus"] = "delivered"
         fields["qcStatus"] = "not_required"
         fields["deliveredAt"] = finished
+    if validation is not None:
+        fields["validation"] = validation.to_firestore()
     return fields
+
+
+def _job_launch_clear_value() -> Any:
+    """Drop jobLaunchStatus so startReport can launch a validation retry."""
+    try:
+        from firebase_admin import firestore as fs
+
+        return fs.DELETE_FIELD
+    except Exception:
+        return None
+
+
+def should_auto_validate(spec: OrderSpec) -> bool:
+    """Coverage/section checks gate auto-email, not human-QC drafts or rebuilds."""
+    return (not spec.qc_required) and spec.generation_mode == "full"
+
+
+def delivery_action(
+    spec: OrderSpec,
+    *,
+    validation: ValidationResult | None,
+    retry_count: int,
+) -> str:
+    if spec.qc_required:
+        return "qc"
+    if not should_auto_validate(spec) or validation is None:
+        return "deliver"
+    if validation.ok:
+        return "deliver"
+    if retry_count < MAX_VALIDATION_RETRIES:
+        return "retry"
+    return "hold"
+
+
+def retry_update_fields(
+    *,
+    validation: ValidationResult,
+    retry_count: int,
+    started: str,
+    finished: str,
+) -> dict[str, Any]:
+    return {
+        "reportStatus": "queued",
+        "reportStage": None,
+        "validationRetryCount": retry_count,
+        "validation": validation.to_firestore(),
+        "generationStartedAt": started,
+        "generationFinishedAt": finished,
+        "jobLaunchStatus": _job_launch_clear_value(),
+        "error": validation.summary()[:2000],
+    }
+
+
+def hold_update_fields(
+    *,
+    validation: ValidationResult,
+    retry_count: int,
+    started: str,
+    finished: str,
+) -> dict[str, Any]:
+    return {
+        "reportStatus": "held",
+        "reportStage": "validating",
+        "validationRetryCount": retry_count,
+        "validation": validation.to_firestore(),
+        "holdNotifyStatus": "pending",
+        "generationStartedAt": started,
+        "generationFinishedAt": finished,
+        "error": validation.summary()[:2000],
+    }
+
+
+def parse_validation_retry_count(data: dict[str, Any] | None) -> int:
+    raw = (data or {}).get("validationRetryCount", 0)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _count_usable_raw_responses(raw_path: Path) -> tuple[int, int, list[str]]:
@@ -976,6 +1073,7 @@ def _run_one_prompt(
     explore_kwargs: dict[str, Any],
     test_mode: bool,
     progress: Callable[[str], None],
+    set_stage: Callable[[str], None] | None = None,
 ) -> PromptRun:
     from moyo.publicside.gatherpublicsources.explorer import explore_and_save
     from reports.build_report import main as build_report_main
@@ -985,6 +1083,12 @@ def _run_one_prompt(
     prompt_dir = work / slug
     prompt_dir.mkdir(parents=True, exist_ok=True)
 
+    def _stage(name: str) -> None:
+        if set_stage:
+            set_stage(name)
+        progress(f"[{index}/{len(spec.prompts)}] stage {name}")
+
+    _stage("querying_models")
     progress(f"[{index}/{len(spec.prompts)}] explore: {prompt}")
     result = explore_and_save(
         prompt,
@@ -998,6 +1102,7 @@ def _run_one_prompt(
         Path(result.output_path).read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    _stage("analyzing_results")
     _stage_retrieval_check(prompt_dir, result)
     (prompt_dir / "raw_responses.json").write_text(
         json.dumps(serialize_raw_responses([result]), indent=2, ensure_ascii=False),
@@ -1022,6 +1127,7 @@ def _run_one_prompt(
         argv.append("--test")
     argv.append("--no-upload")
 
+    _stage("generating_report")
     progress(f"[{index}/{len(spec.prompts)}] build_report {spec.product}")
     rc = build_report_main(argv)
     if rc != 0:
@@ -1227,6 +1333,7 @@ def run_moyo(
     *,
     work: Path | None = None,
     progress: Callable[[str], None] | None = None,
+    set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
     """Explore and build one report product per prompt."""
     work = work or work_dir_for(spec.order_id)
@@ -1295,6 +1402,7 @@ def run_moyo(
                 explore_kwargs=explore_kwargs,
                 test_mode=test_mode,
                 progress=_progress,
+                set_stage=set_stage,
             )
         )
     _progress(f"finished {len(runs)} report(s)")
@@ -1531,9 +1639,20 @@ def main() -> int:
                 return
             order_ref.update(fields)
 
+        retry_count = parse_validation_retry_count(data)
+
+        def _set_stage(name: str) -> None:
+            _mark(
+                {
+                    "reportStatus": "generating",
+                    "reportStage": name,
+                }
+            )
+
         _mark(
             {
                 "reportStatus": "generating",
+                "reportStage": "querying_models",
                 "generationStartedAt": started,
                 "generationFinishedAt": None,
                 "storageFolder": spec.storage_folder,
@@ -1556,10 +1675,11 @@ def main() -> int:
         if resolve_rebuild_plan(spec) is not None:
             if bucket is None:
                 raise RuntimeError("PDF/picture rebuild needs Storage artifacts.")
+            _set_stage("generating_report")
             runs = run_rebuild(spec, bucket=bucket, work=work)
             uploaded = _upload_runs(bucket, spec, runs, work=work)
         else:
-            runs = run_moyo(spec, work=work)
+            runs = run_moyo(spec, work=work, set_stage=_set_stage)
             if bucket is not None:
                 uploaded = _upload_runs(bucket, spec, runs, work=work)
             else:
@@ -1569,6 +1689,52 @@ def main() -> int:
         manifest = uploaded.get("manifest") or artifact_manifest(
             spec.order_id, runs, folder=spec.storage_folder
         )
+        validation: ValidationResult | None = None
+        if should_auto_validate(spec):
+            _set_stage("validating")
+            validation = validate_prompt_runs(runs)
+            logger.info("order %s %s", spec.order_id, validation.summary())
+
+        action = delivery_action(
+            spec, validation=validation, retry_count=retry_count
+        )
+        if action == "retry":
+            if validation is None:
+                raise RuntimeError("validation retry without a result")
+            next_retry = retry_count + 1
+            _mark(
+                retry_update_fields(
+                    validation=validation,
+                    retry_count=next_retry,
+                    started=started,
+                    finished=finished,
+                )
+            )
+            logger.warning(
+                "order %s validation failed; requeue attempt %s (%s)",
+                spec.order_id,
+                next_retry,
+                validation.summary() if validation else "no validation",
+            )
+            return 0
+        if action == "hold":
+            if validation is None:
+                raise RuntimeError("validation hold without a result")
+            _mark(
+                hold_update_fields(
+                    validation=validation,
+                    retry_count=retry_count,
+                    started=started,
+                    finished=finished,
+                )
+            )
+            logger.error(
+                "order %s held after validation retry (%s)",
+                spec.order_id,
+                validation.summary() if validation else "no validation",
+            )
+            return 0
+
         _mark(
             success_update_fields(
                 spec,
@@ -1576,6 +1742,7 @@ def main() -> int:
                 finished=finished,
                 urls=urls,
                 manifest=manifest,
+                validation=validation,
             )
         )
         status = CANONICAL_AWAITING_QC if spec.qc_required else "delivered"
