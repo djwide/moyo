@@ -109,6 +109,16 @@ CONTRACT_ARTIFACTS = (
     "evidence.json",
 )
 
+# Exposure Data stops after synthesize: claims + structured findings for the
+# hosted files and the on-site summary. PDFs are Snapshot / Snapshot Auto only.
+RAW_CONTRACT_ARTIFACTS = (
+    "claims.jsonl",
+    "report_data.json",
+    "raw_responses.json",
+    "evidence.json",
+    "report.json",
+)
+
 REBUILD_ARTIFACTS = ("report.md", "report.html", "report.pdf", "report.json")
 
 PIPELINE_STAGES = (
@@ -322,6 +332,56 @@ def required_rebuild_files(plan: RebuildPlan) -> tuple[str, ...]:
     return ("report_data.json",)
 
 
+def is_raw_product(spec: OrderSpec) -> bool:
+    """True for Exposure Data (scan + site summary, no packaged PDFs)."""
+    return spec.product_id == "moyo_snapshot_raw"
+
+
+def stop_after_for(spec: OrderSpec) -> str | None:
+    """Full Exposure Data runs stop after synthesize; Snapshot/Basis render PDFs."""
+    if is_raw_product(spec) and spec.generation_mode == "full":
+        return "synthesize"
+    return None
+
+
+def required_artifacts(spec: OrderSpec) -> tuple[str, ...]:
+    if spec.generation_mode in REBUILD_MODES:
+        return REBUILD_ARTIFACTS
+    if is_raw_product(spec):
+        return RAW_CONTRACT_ARTIFACTS
+    return CONTRACT_ARTIFACTS
+
+
+def full_build_argv(
+    spec: OrderSpec,
+    *,
+    exploration: Path,
+    run_id: str,
+    cfg_path: Path,
+    test_mode: bool = False,
+) -> list[str]:
+    """CLI args for a full explore→build_report run."""
+    argv: list[str] = [
+        "--exploration",
+        str(exploration),
+        "--run-id",
+        run_id,
+        "--config",
+        str(cfg_path),
+        "--report",
+        spec.product,
+    ]
+    if spec.include_remediation:
+        argv.append("--include-remediation")
+    stop_after = stop_after_for(spec)
+    if stop_after:
+        argv.extend(["--stop-after", stop_after])
+    if test_mode:
+        argv.append("--test")
+    argv.append("--no-upload")
+    return argv
+
+
 def rebuild_build_argv(
     spec: OrderSpec,
     plan: RebuildPlan,
@@ -476,7 +536,8 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if email is not None:
         email = str(email).strip() or None
 
-    product = normalize_product(_first(data, "product", default="snapshot"))
+    product_raw = _first(data, "product", default="snapshot")
+    product = normalize_product(product_raw)
     source = _first(data, "source", default=None)
     if source is not None:
         source = str(source).strip() or None
@@ -516,7 +577,8 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
             source,
         ),
         product_id=normalize_product_id(
-            _first(data, "productId", "product_id", default=None), product
+            _first(data, "productId", "product_id", default=None) or product_raw,
+            product,
         ),
         source=source,
         storage_folder=str(
@@ -1111,24 +1173,20 @@ def _run_one_prompt(
     pipeline_notes = note_explore_gaps(prompt_dir, prompt)
 
     cfg_path = _write_report_config(prompt_dir, spec, run_id)
-    argv = [
-        "--exploration",
-        str(exploration_path),
-        "--run-id",
-        run_id,
-        "--config",
-        str(cfg_path),
-        "--report",
-        spec.product,
-    ]
-    if spec.include_remediation:
-        argv.append("--include-remediation")
-    if test_mode:
-        argv.append("--test")
-    argv.append("--no-upload")
+    argv = full_build_argv(
+        spec,
+        exploration=exploration_path,
+        run_id=run_id,
+        cfg_path=cfg_path,
+        test_mode=test_mode,
+    )
 
     _stage("generating_report")
-    progress(f"[{index}/{len(spec.prompts)}] build_report {spec.product}")
+    stop_after = stop_after_for(spec)
+    progress(
+        f"[{index}/{len(spec.prompts)}] build_report {spec.product}"
+        + (f" stop-after={stop_after}" if stop_after else "")
+    )
     rc = build_report_main(argv)
     if rc != 0:
         raise RuntimeError(f"build_report exited with {rc} for {prompt!r}")
@@ -1152,7 +1210,7 @@ def _run_one_prompt(
         artifacts=artifacts,
     )
     write_prompt_report_json(prompt_dir, spec, run, evidence=evidence)
-    missing = [name for name in CONTRACT_ARTIFACTS if name not in run.artifacts]
+    missing = [name for name in required_artifacts(spec) if name not in run.artifacts]
     if missing:
         raise RuntimeError(
             f"Missing required artifacts for {prompt!r}: {', '.join(missing)}"
@@ -1318,7 +1376,7 @@ def run_rebuild(
             artifacts=artifacts,
         )
         write_prompt_report_json(prompt_dir, spec, run)
-        missing_out = [name for name in REBUILD_ARTIFACTS if name not in run.artifacts]
+        missing_out = [name for name in required_artifacts(spec) if name not in run.artifacts]
         if missing_out:
             raise RuntimeError(
                 f"Missing after rebuild for {prompt!r}: {', '.join(missing_out)}"
@@ -1779,14 +1837,31 @@ def main() -> int:
                 logger.exception("failed to upload retrieval check after error")
         if order_ref is not None:
             try:
-                order_ref.update(
-                    {
-                        "reportStatus": "failed",
-                        "generationStartedAt": started,
-                        "generationFinishedAt": utc_now(),
-                        "error": f"{type(exc).__name__}: {exc}"[:2000],
-                    }
-                )
+                message = f"{type(exc).__name__}: {exc}"[:2000]
+                if (
+                    spec is not None
+                    and spec.generation_mode in REBUILD_MODES
+                    and is_raw_product(spec)
+                ):
+                    # Packaging failed; keep the Exposure Data scan delivered.
+                    order_ref.update(
+                        {
+                            "reportStatus": "delivered",
+                            "packagedStatus": "failed",
+                            "packagedError": message,
+                            "generationStartedAt": started,
+                            "generationFinishedAt": utc_now(),
+                        }
+                    )
+                else:
+                    order_ref.update(
+                        {
+                            "reportStatus": "failed",
+                            "generationStartedAt": started,
+                            "generationFinishedAt": utc_now(),
+                            "error": message,
+                        }
+                    )
             except Exception:
                 logger.exception("failed to write error status")
         return 1
