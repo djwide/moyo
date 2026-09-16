@@ -528,7 +528,10 @@ class LLMClient:
             if provider == "anthropic":
                 from anthropic import Anthropic
 
-                kwargs = {"timeout": self._http_timeout()}
+                # Let Anthropic construct the timeout using its own HTTP
+                # transport. Newer SDK builds use ``httpx2`` and reject an
+                # ``httpx.Timeout`` instance created for the OpenAI client.
+                kwargs = {"timeout": float(self.spec.timeout or 120)}
                 if self.spec.api_key:
                     kwargs["api_key"] = self.spec.api_key
                 return Anthropic(**kwargs)
