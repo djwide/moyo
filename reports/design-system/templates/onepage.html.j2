@@ -1,4 +1,4 @@
-{% from "components/macros.j2" import severity_badge, language_badge %}
+{% from "components/macros.j2" import severity_badge, language_badge, source_refs %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,9 +37,6 @@
     </p>
     <p class="date-line">{{ content.meta.report_date }}</p>
     <h1 class="headline">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
-    {% if content.meta.coverage_note %}
-    <p class="coverage-note">{{ content.meta.coverage_note }}</p>
-    {% endif %}
 
     <div class="metrics{% if content.meta.counts.languages %} metrics--langs{% endif %}">
       <div class="metric">
@@ -94,7 +91,7 @@
             <span class="specific-lang">{{ f.language_annotation }}</span>
             {% endif %}
             {% if f.citations_display %}
-            <span class="specific-cited">Cited: {{ f.citations_display | map(attribute='short') | join('; ') }}</span>
+            <span class="specific-cited">Cited: {{ source_refs(f.citations_display) }}</span>
             {% endif %}
           </li>
           {% else %}

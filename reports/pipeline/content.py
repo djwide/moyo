@@ -26,9 +26,27 @@ from pipeline.language import (
     languages_from_findings,
     looks_like_english,
 )
-from pipeline.parse import summarize_collection_issues
 from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
+
+
+def _citation_markdown(entry: dict[str, Any] | str) -> str:
+    if isinstance(entry, str):
+        text = entry.strip()
+        if not text:
+            return ""
+        if " — " in text and ("http://" in text or "https://" in text):
+            label, url = text.split(" — ", 1)
+            label, url = label.strip(), url.strip()
+            return f"[{label or url}]({url})" if url else label
+        if text.startswith(("http://", "https://")):
+            return f"<{text}>"
+        return text
+    short = str(entry.get("short") or entry.get("label") or entry.get("ref") or "").strip()
+    url = str(entry.get("url") or "").strip()
+    if url and short:
+        return f"[{short}]({url})"
+    return short or url
 
 
 def _severity_label(sensitivity: int) -> str:
@@ -450,16 +468,6 @@ def _build_executive_page(
             f"corroboration {top_claim.get('corroboration') or 1})."
         )
 
-    coverage_note = summarize_collection_issues(
-        report_data.get("collection_issues")
-        or (report_data.get("explore_meta") or {}).get("collection_issues")
-    )
-    if coverage_note and not body:
-        body = (
-            "This report is based on the model answers that returned usable "
-            "content. Some retrieval or extract calls failed or came back empty."
-        )
-
     return {
         "body": strip_markdown(body),
         "pull_quote": plain_text(pull),
@@ -471,7 +479,6 @@ def _build_executive_page(
         "why_it_matters": strip_markdown(why),
         "defensive_action": strip_markdown(defensive),
         "exposure_teaser": plain_text(teaser),
-        "coverage_note": coverage_note,
     }
 
 
@@ -550,9 +557,6 @@ def build_content_doc(
     collection_issues = list(report_data.get("collection_issues") or [])
     if not collection_issues:
         collection_issues = list(explore_meta.get("collection_issues") or [])
-    coverage_note = summarize_collection_issues(collection_issues)
-    if coverage_note:
-        exec_page = {**exec_page, "coverage_note": coverage_note}
 
     prompt_languages = _prompt_languages(report_data, findings)
     foreign_languages = [x for x in prompt_languages if is_foreign_language(x)]
@@ -602,7 +606,6 @@ def build_content_doc(
             "languages": prompt_languages,
             "include_remediation": bool(include_remediation),
             "collection_issues": collection_issues,
-            "coverage_note": coverage_note,
             "counts": {
                 "findings": counts.get("findings", len(findings)),
                 "llms_tested": counts.get("llms_tested", 0),
@@ -656,10 +659,10 @@ def build_content_doc(
             "sources": {
                 "title": "Sources and Citations",
                 "lede": (
-                    "Real-world sources the model answers cited, numbered once "
-                    "for the whole run. Findings reference them as S1, S2, and "
-                    "so on. Presence here records what a model cited; it is not "
-                    "an endorsement of the source."
+                    "Real-world sources the model answers cited, deduplicated once "
+                    "for the whole run. Findings show short labels linked to the "
+                    "URL when one was extracted. Presence here records what a model "
+                    "cited; it is not an endorsement of the source."
                 ),
                 "empty": (
                     "No model answer in this run cited an external source, so "
@@ -715,11 +718,6 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
     ]
     exec_page = pages["executive_summary"]
-    if exec_page.get("coverage_note") or meta.get("coverage_note"):
-        lines += [
-            f"*{(exec_page.get('coverage_note') or meta.get('coverage_note')).strip()}*",
-            "",
-        ]
     if exec_page.get("pull_quote"):
         lines += [f"> {exec_page['pull_quote']}", ""]
     if exec_page.get("public_sources"):
@@ -766,17 +764,26 @@ def render_report_md(content: dict[str, Any]) -> str:
     for f in content.get("abridged_findings") or content.get("findings") or []:
         sev = _severity_label(int(f.get("sensitivity") or 0))
         source = f.get("source_cite") or f.get("source_model")
-        refs = ", ".join(f.get("source_refs") or [])
+        cites = [
+            _citation_markdown(c)
+            for c in (f.get("citations_display") or [])
+            if _citation_markdown(c)
+        ]
+        cite_note = f" · _Cited: {'; '.join(cites)}_" if cites else ""
         lines.append(
             f"- **{f.get('claim_id')}** [{f.get('status')}/{sev}] "
             f"{f.get('claim')} — _{source}_"
-            + (f" ({refs})" if refs else "")
+            + cite_note
         )
     if content.get("sources"):
         lines += ["", "## Sources and citations", ""]
         for src in content["sources"]:
-            url = f" — {src['url']}" if src.get("url") else ""
-            lines.append(f"- **{src.get('ref')}** {src.get('label')}{url}")
+            short = src.get("short") or src.get("label") or src.get("ref")
+            url = src.get("url") or ""
+            if url:
+                lines.append(f"- **{src.get('ref')}** [{short}]({url})")
+            else:
+                lines.append(f"- **{src.get('ref')}** {short}")
     if content.get("meta", {}).get("include_remediation") and content.get("followups"):
         lines += ["", "## Remediation", ""]
         for item in content.get("followups") or []:

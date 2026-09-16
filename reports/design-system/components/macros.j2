@@ -26,10 +26,53 @@
   <span class="source-cite">{{ label }}</span>
 {%- endmacro %}
 
-{# Compact pointers (S1, S4) into the report's Sources and Citations section. #}
-{% macro source_refs(refs) -%}
-  {%- if refs -%}
-  <span class="source-refs">{{ refs | join(' ') }}</span>
+{# Short label for a citation dict or raw string from model output. #}
+{% macro citation_short_text(c) -%}
+  {%- if c is mapping -%}
+    {{- c.short or c.label or c.ref -}}
+  {%- else -%}
+    {%- set text = (c | string).strip() -%}
+    {%- if ' — ' in text -%}
+      {{- text.split(' — ', 1)[0].strip() -}}
+    {%- elif 'http://' in text or 'https://' in text -%}
+      {{- text.split('/')[-1].split('?')[0] or text -}}
+    {%- else -%}
+      {{- text -}}
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{# One real-world citation as a short linked label (or plain text when no URL). #}
+{% macro citation_link(c) -%}
+  {%- if c is mapping -%}
+    {%- set text = c.short or c.label or c.ref -%}
+    {%- if c.url -%}
+      <a class="citation-link" href="{{ c.url }}">{{ text }}</a>
+    {%- else -%}
+      <span class="citation-link citation-link--text">{{ text }}</span>
+    {%- endif -%}
+  {%- else -%}
+    {%- set text = (c | string).strip() -%}
+    {%- if ' — ' in text and ('http://' in text or 'https://' in text) -%}
+      {%- set label = text.split(' — ', 1)[0].strip() -%}
+      {%- set url = text.split(' — ', 1)[1].strip() -%}
+      <a class="citation-link" href="{{ url }}">{{ label or url }}</a>
+    {%- elif text.startswith('http://') or text.startswith('https://') -%}
+      <a class="citation-link" href="{{ text }}">{{ citation_short_text(c) }}</a>
+    {%- elif text -%}
+      <span class="citation-link citation-link--text">{{ text }}</span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{# Inline list of citations (inventory / appendix). #}
+{% macro source_refs(citations) -%}
+  {%- if citations -%}
+  <span class="citation-links">
+    {%- for c in citations -%}
+      {{ citation_link(c) }}{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
+    {%- endfor -%}
+  </span>
   {%- endif -%}
 {%- endmacro %}
 
@@ -40,8 +83,7 @@
     <span class="citation-line__label">Cited</span>
     {%- for c in citations %}
     <span class="citation-line__item">
-      <span class="source-refs">{{ c.ref }}</span>
-      {{ c.label }}
+      {{ citation_link(c) }}
     </span>{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
     {%- endfor %}
   </div>

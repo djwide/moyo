@@ -217,6 +217,13 @@
   max-width: 140mm;
   max-height: 85mm;
 }
+.graphic.findings-llm {
+  max-height: calc(85mm + 30px);
+}
+.graphic.findings-llm svg,
+.graphic.findings-llm img {
+  max-height: calc(85mm + 30px);
+}
 .graphic--wide {
   max-width: 170mm;
   max-height: 100mm;
@@ -276,7 +283,19 @@
   color: var(--moyo-teal-deep);
   margin-right: 0.3rem;
 }
-.citation-line__item .source-refs { margin-right: 0.2rem; }
+.citation-line__item .citation-link { margin-right: 0.05rem; }
+
+.citation-link {
+  color: var(--moyo-teal-deep);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--moyo-teal-deep) 45%, transparent);
+  text-underline-offset: 0.12em;
+}
+.citation-link--text {
+  text-decoration: none;
+  color: var(--moyo-muted);
+}
+.citation-links .citation-line__sep { margin: 0 0.2rem; }
 
 .coverage-note {
   font-family: var(--font-sans);

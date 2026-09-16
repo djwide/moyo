@@ -132,9 +132,9 @@ _GROUPS: list[dict[str, Any]] = [
             ),
             (
                 "S# — Source reference",
-                "A real-world citation carried by the model answer (publication, "
-                "filing, or URL). Full labels and URLs are listed in the Sources "
-                "and Citations section.",
+                "Internal row id in the Sources and Citations table (S1, S2, …). "
+                "Findings show the short source label with a link when a URL was "
+                "extracted; the table lists the full label and link once per source.",
             ),
             (
                 "Cited by",

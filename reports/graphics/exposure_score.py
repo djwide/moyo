@@ -143,7 +143,7 @@ def _llm_row_score(row: Mapping[str, Any]) -> float:
 def llm_findings_bars_svg(
     rows: Sequence[Mapping[str, Any]],
     width: int = 520,
-    height: int = 320,
+    height: int = 350,
 ) -> str:
     """Bar chart of test LLMs scored by finding quantity and sensitivity.
 
@@ -156,7 +156,7 @@ def llm_findings_bars_svg(
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 
     # Title + subtitle sit above the panel (subtitle is 16px below the title).
-    left, right, top, bottom = 48, 20, 72, 68
+    left, right, top, bottom = 48, 20, 57, 83
     plot_w = width - left - right
     plot_h = height - top - bottom
     base = top + plot_h

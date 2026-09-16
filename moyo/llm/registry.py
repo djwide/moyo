@@ -146,6 +146,33 @@ def get_retrieval_specs() -> List[LLMSpec]:
     return kept if kept else specs
 
 
-def get_retrieval_llms() -> List[LLMClient]:
-    """Return an :class:`LLMClient` for each configured retrieval LLM."""
-    return [LLMClient(spec) for spec in get_retrieval_specs()]
+def retrieval_model_id(spec: LLMSpec) -> str:
+    """Stable id for storefront / order filtering (``provider:model``)."""
+    provider = (spec.provider or "echo").strip().lower()
+    model = (spec.model or "").strip()
+    return f"{provider}:{model}"
+
+
+def get_retrieval_llms(
+    model_ids: Optional[List[str]] = None,
+) -> List[LLMClient]:
+    """Return an :class:`LLMClient` for each configured retrieval LLM.
+
+    When ``model_ids`` is set, only specs whose :func:`retrieval_model_id`
+    appears in that list are included (order preserved). Unknown ids are
+    ignored. If nothing matches, falls back to the full configured set.
+    """
+    specs = get_retrieval_specs()
+    if not model_ids:
+        return [LLMClient(spec) for spec in specs]
+    wanted = {str(x).strip() for x in model_ids if str(x).strip()}
+    if not wanted:
+        return [LLMClient(spec) for spec in specs]
+    filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
+    if not filtered:
+        logger.warning(
+            "No retrieval LLMs matched model_ids=%s; using full configured set",
+            sorted(wanted),
+        )
+        filtered = specs
+    return [LLMClient(spec) for spec in filtered]

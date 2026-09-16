@@ -640,6 +640,29 @@ def test_required_llm_env_presence(monkeypatch):
     assert presence["MOONSHOT_API_KEY"] is False
 
 
+def test_health_check_env_keys_and_overall_status():
+    checks = cw.env_key_checks({"OPENAI_API_KEY": True, "ANTHROPIC_API_KEY": False})
+    assert checks[0]["ok"] is True
+    assert checks[1]["level"] == "warn"
+    assert "ANTHROPIC_API_KEY" in checks[1]["detail"]
+    assert cw.overall_health_status(checks) == "warn"
+    assert cw.overall_health_status([{**checks[0], "level": "fail"}]) == "fail"
+    assert cw.overall_health_status([cw._check("a", "A", ok=True, level="ok", detail="fine")]) == "ok"
+
+
+def test_health_check_redacts_secrets_and_sanitizes_id():
+    assert "[redacted]" in cw.redact_health_text("bad key sk-abc123456789 and Bearer tok_secret")
+    assert cw.sanitize_health_id("hc_ok-1") == "hc_ok-1"
+    assert "/" not in cw.sanitize_health_id("hc/../latest")
+
+
+def test_is_health_check_request(monkeypatch):
+    monkeypatch.delenv("HEALTH_CHECK", raising=False)
+    assert cw.is_health_check_request() is False
+    monkeypatch.setenv("HEALTH_CHECK", "1")
+    assert cw.is_health_check_request() is True
+
+
 def test_retrieval_check_storage_paths_single_and_multi(tmp_path: Path):
     slug = tmp_path / "01_enron"
     slug.mkdir()

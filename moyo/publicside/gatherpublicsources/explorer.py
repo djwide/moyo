@@ -275,6 +275,31 @@ def resolve_multilingual_languages(extra_languages: Optional[List[str]]) -> List
     return languages
 
 
+def resolve_explore_languages(
+    extra_languages: Optional[List[str]],
+    *,
+    language_selection_explicit: bool = False,
+) -> List[str]:
+    """Languages for ``multilingual`` explore besides English.
+
+    When ``language_selection_explicit`` is true (customer chose languages on
+    the storefront), use only ``extra_languages`` — an empty list means
+    English-only. Otherwise keep legacy GUI defaults via
+    :func:`resolve_multilingual_languages`.
+    """
+    if language_selection_explicit:
+        out: List[str] = []
+        seen: set[str] = set()
+        for lang in extra_languages or []:
+            cleaned = (lang or "").strip()
+            key = cleaned.lower()
+            if cleaned and key not in seen:
+                out.append(cleaned)
+                seen.add(key)
+        return out
+    return resolve_multilingual_languages(extra_languages)
+
+
 def reword_prompt(
     prompt: str,
     llm: Optional[LLMClient] = None,
@@ -1464,6 +1489,7 @@ def explore_topic(
     impact_definition_files: Optional[List[str]] = None,
     fuzz_mode: str = "basic",
     extra_languages: Optional[List[str]] = None,
+    language_selection_explicit: bool = False,
     strategies: Optional[List[str]] = None,
 ) -> ExploreResult:
     """Run the full naive-prompt exploration and return an :class:`ExploreResult`.
@@ -1518,7 +1544,10 @@ def explore_topic(
     mode = normalize_fuzz_mode(fuzz_mode)
     strat = normalize_fuzz_strategies(strategies, fuzz_mode=mode)
     languages = (
-        resolve_multilingual_languages(extra_languages)
+        resolve_explore_languages(
+            extra_languages,
+            language_selection_explicit=language_selection_explicit,
+        )
         if mode == "multilingual"
         else None
     )

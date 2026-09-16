@@ -24,7 +24,7 @@
         <td>{{ f.sensitivity }}</td>
         <td>
           <span class="source-cite">{{ f.source_cite or f.source_model }}</span>
-          {{ source_refs(f.source_refs) }}
+          {{ source_refs(f.citations_display) }}
         </td>
       </tr>
       {% endfor %}

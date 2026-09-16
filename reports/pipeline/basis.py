@@ -142,6 +142,7 @@ def build_basis_section(
             "corroboration": f.get("corroboration") or 1,
             "source_cite": f.get("source_cite") or f.get("source_model"),
             "source_refs": list(f.get("source_refs") or []),
+            "citations_display": list(f.get("citations_display") or []),
         }
         for f in findings
     ]

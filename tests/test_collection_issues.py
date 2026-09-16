@@ -171,7 +171,7 @@ def test_extract_unavailable_llm_falls_back_to_heuristic(tmp_path: Path, monkeyp
     assert isinstance(claims, list)
 
 
-def test_build_content_doc_includes_coverage_note():
+def test_build_content_doc_keeps_collection_issues_off_user_facing_copy():
     doc = build_content_doc(
         {
             "run_id": "t",
@@ -209,5 +209,11 @@ def test_build_content_doc_includes_coverage_note():
         },
         report_date="17 August 2026",
     )
-    assert "Grok" in (doc["meta"].get("coverage_note") or "")
-    assert "Grok" in (doc["pages"]["executive_summary"].get("coverage_note") or "")
+    issues = doc["meta"].get("collection_issues") or []
+    assert any(i.get("source") == "Grok" for i in issues)
+    assert not (doc["meta"].get("coverage_note") or "")
+    assert not (doc["pages"]["executive_summary"].get("coverage_note") or "")
+    body = doc["pages"]["executive_summary"].get("body") or ""
+    assert "Incomplete sources" not in body
+    assert "failed/empty" not in body
+    assert "Connection error" not in body

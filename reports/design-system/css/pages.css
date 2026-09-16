@@ -331,6 +331,7 @@ code, .mono {
 .source-table tr { break-inside: avoid; }
 .source-table td.num { text-align: center; }
 .source-table__label { display: block; color: var(--moyo-ink); }
+.source-table__label.citation-link { color: var(--moyo-teal-deep); }
 .source-table__url {
   display: block;
   font-family: var(--font-mono);

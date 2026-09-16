@@ -59,6 +59,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from dataclasses import asdict, dataclass, field
@@ -193,6 +194,8 @@ class OrderSpec:
     fuzz_mode: str = "basic"
     seeds: int = 3
     languages: list[str] = field(default_factory=list)
+    retrieval_models: list[str] = field(default_factory=list)
+    scan_language_selection: bool = False
     strategies: list[str] = field(default_factory=list)
     include_remediation: bool = False
     headline: str | None = None
@@ -518,6 +521,21 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if isinstance(languages, str):
         languages = [part.strip() for part in languages.split(",") if part.strip()]
 
+    retrieval_models = _first(data, "retrievalModels", "retrieval_models", default=[]) or []
+    if isinstance(retrieval_models, str):
+        retrieval_models = [
+            part.strip() for part in retrieval_models.split(",") if part.strip()
+        ]
+
+    scan_language_selection = _coerce_bool(
+        _first(
+            data,
+            "scanLanguageSelection",
+            "scan_language_selection",
+            default=False,
+        )
+    )
+
     strategies = _first(data, "strategies", default=[]) or []
     if isinstance(strategies, str):
         strategies = [part.strip() for part in strategies.split(",") if part.strip()]
@@ -551,6 +569,8 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         fuzz_mode=fuzz_mode,
         seeds=seeds,
         languages=[str(x) for x in languages],
+        retrieval_models=[str(x) for x in retrieval_models],
+        scan_language_selection=bool(scan_language_selection),
         strategies=[str(x) for x in strategies],
         include_remediation=bool(
             _first(data, "includeRemediation", "include_remediation", default=False)
@@ -1438,8 +1458,16 @@ def run_moyo(
         "num_seeds": spec.seeds,
         "progress": _progress,
     }
-    if spec.languages:
+    if spec.scan_language_selection:
+        explore_kwargs["fuzz_mode"] = "multilingual"
         explore_kwargs["extra_languages"] = spec.languages
+        explore_kwargs["language_selection_explicit"] = True
+    elif spec.languages:
+        explore_kwargs["extra_languages"] = spec.languages
+    if spec.retrieval_models:
+        from moyo.llm.registry import get_retrieval_llms
+
+        explore_kwargs["retrieval_llms"] = get_retrieval_llms(spec.retrieval_models)
     if spec.strategies:
         explore_kwargs["strategies"] = spec.strategies
     if spec.workers is not None:
@@ -1665,12 +1693,364 @@ def run_exposure_preview(
     return 0
 
 
+HEALTH_CHECKS_COLLECTION = "health_checks"
+_SECRET_RE = re.compile(
+    r"(?i)(?:sk-[A-Za-z0-9_-]{8,}|Bearer\s+[A-Za-z0-9._\-]+|AIza[A-Za-z0-9_\-]{20,}|ya29\.[A-Za-z0-9._\-]+)"
+)
+
+
+def is_health_check_request() -> bool:
+    return os.environ.get("HEALTH_CHECK", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def sanitize_health_id(raw: str | None) -> str:
+    text = str(raw or "").strip()
+    cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "" for ch in text)[:80]
+    return cleaned or f"hc_{utc_now().replace(':', '').replace('+', '').replace('-', '')}"
+
+
+def redact_health_text(text: str) -> str:
+    cleaned = _SECRET_RE.sub("[redacted]", text or "")
+    return cleaned[:500]
+
+
+def _check(id: str, name: str, *, ok: bool, level: str, detail: str) -> dict[str, Any]:
+    return {
+        "id": id,
+        "name": name,
+        "ok": bool(ok),
+        "level": level,
+        "detail": redact_health_text(detail),
+    }
+
+
+def env_key_checks(presence: dict[str, bool] | None = None) -> list[dict[str, Any]]:
+    presence = presence if presence is not None else _required_llm_env_presence()
+    checks: list[dict[str, Any]] = []
+    for key, present in presence.items():
+        if present:
+            checks.append(_check(f"env:{key}", key, ok=True, level="ok", detail="Present on the Cloud Run job."))
+        else:
+            checks.append(
+                _check(
+                    f"env:{key}",
+                    key,
+                    ok=False,
+                    level="warn",
+                    detail=f"Missing on moyo-report-worker. Set {key} as a Cloud Run job secret/env var.",
+                )
+            )
+    return checks
+
+
+def overall_health_status(checks: list[dict[str, Any]]) -> str:
+    levels = {str(item.get("level") or "") for item in checks}
+    if "fail" in levels:
+        return "fail"
+    if "warn" in levels:
+        return "warn"
+    return "ok"
+
+
+def _probe_llm_spec(spec: Any) -> dict[str, Any]:
+    from moyo.llm.client import LLMClient, format_llm_error, llm_spec_has_auth
+
+    label = getattr(spec, "label", None) or getattr(spec, "model", None) or "LLM"
+    check_id = f"llm:{label}"
+    if not llm_spec_has_auth(spec):
+        env_hint = ""
+        api_key = getattr(spec, "api_key", None)
+        if not api_key:
+            env_hint = " Add the matching API key to the Cloud Run job."
+        return _check(
+            check_id,
+            str(label),
+            ok=False,
+            level="warn",
+            detail=f"No credentials for this retrieval model.{env_hint}",
+        )
+    try:
+        client = LLMClient(spec)
+        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=0)
+        if (text or "").strip():
+            return _check(check_id, str(label), ok=True, level="ok", detail="Accepted a 1-token probe.")
+        return _check(
+            check_id,
+            str(label),
+            ok=False,
+            level="warn",
+            detail="Credentials present but the model returned empty text.",
+        )
+    except Exception as exc:
+        return _check(
+            check_id,
+            str(label),
+            ok=False,
+            level="warn",
+            detail=f"Probe failed: {format_llm_error(exc)}",
+        )
+
+
+def probe_vertex_adc() -> dict[str, Any]:
+    try:
+        from moyo.llm.vertex import vertex_access_token, vertex_project
+
+        token = vertex_access_token()
+        if token:
+            return _check(
+                "vertex-adc",
+                "Vertex AI ADC",
+                ok=True,
+                level="ok",
+                detail=f"Service account token issued for project {vertex_project()}.",
+            )
+        return _check(
+            "vertex-adc",
+            "Vertex AI ADC",
+            ok=False,
+            level="fail",
+            detail=(
+                "No Vertex access token. Grant the Cloud Run job service account "
+                "roles/aiplatform.user and confirm GOOGLE_CLOUD_PROJECT."
+            ),
+        )
+    except Exception as exc:
+        return _check("vertex-adc", "Vertex AI ADC", ok=False, level="fail", detail=str(exc))
+
+
+def probe_firestore() -> dict[str, Any]:
+    if _skip_firebase():
+        return _check(
+            "firestore",
+            "Firestore",
+            ok=False,
+            level="warn",
+            detail="Skipped (MOYO_CLOUD_SKIP_FIREBASE=1).",
+        )
+    try:
+        from firebase_admin import firestore as fs
+
+        _init_firebase_app()
+        db = fs.client()
+        db.collection(HEALTH_CHECKS_COLLECTION).limit(1).get()
+        return _check("firestore", "Firestore", ok=True, level="ok", detail="Worker can read Firestore.")
+    except Exception as exc:
+        return _check(
+            "firestore",
+            "Firestore",
+            ok=False,
+            level="fail",
+            detail=f"Worker cannot read Firestore: {exc}",
+        )
+
+
+def probe_gcs() -> dict[str, Any]:
+    if _skip_firebase():
+        return _check("gcs", "Cloud Storage", ok=False, level="warn", detail="Skipped (MOYO_CLOUD_SKIP_FIREBASE=1).")
+    try:
+        _db, bucket, _fs = _init_firebase()
+        name = _storage_bucket_name()
+        if bucket is None:
+            return _check(
+                "gcs",
+                "Cloud Storage",
+                ok=False,
+                level="fail",
+                detail="Storage bucket name is not set (MOYO_REPORTS_STORAGE_BUCKET).",
+            )
+        exists = bool(bucket.exists())
+        if not exists:
+            return _check(
+                "gcs",
+                "Cloud Storage",
+                ok=False,
+                level="fail",
+                detail=f"Bucket gs://{name} does not exist or the job SA cannot see it.",
+            )
+        blob = bucket.blob(f"health-checks/_probe_{os.getpid()}.txt")
+        blob.upload_from_string("ok", content_type="text/plain")
+        blob.delete()
+        return _check("gcs", "Cloud Storage", ok=True, level="ok", detail=f"Read/write ok on gs://{name}.")
+    except Exception as exc:
+        return _check(
+            "gcs",
+            "Cloud Storage",
+            ok=False,
+            level="fail",
+            detail=f"Reports bucket probe failed: {exc}",
+        )
+
+
+def probe_utility_llm() -> dict[str, Any]:
+    try:
+        from moyo.llm.client import format_llm_error
+        from moyo.llm.utility import get_utility_llm, running_in_cloud
+
+        client = get_utility_llm()
+        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=0)
+        if (text or "").strip():
+            where = "Vertex Flash" if running_in_cloud() else client.label
+            return _check(
+                "utility-llm",
+                "Utility LLM (extract / synthesize)",
+                ok=True,
+                level="ok",
+                detail=f"{where} accepted a 1-token probe.",
+            )
+        return _check(
+            "utility-llm",
+            "Utility LLM (extract / synthesize)",
+            ok=False,
+            level="fail",
+            detail="Utility model returned empty text.",
+        )
+    except Exception as exc:
+        from moyo.llm.client import format_llm_error
+
+        return _check(
+            "utility-llm",
+            "Utility LLM (extract / synthesize)",
+            ok=False,
+            level="fail",
+            detail=f"Utility probe failed: {format_llm_error(exc)}",
+        )
+
+
+def probe_retrieval_llms() -> list[dict[str, Any]]:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from moyo.llm.registry import get_retrieval_specs
+
+    specs = get_retrieval_specs()
+    if not specs:
+        return [
+            _check(
+                "retrieval",
+                "Retrieval LLMs",
+                ok=False,
+                level="fail",
+                detail="No retrieval LLMs configured (config/retrieval_llms.json).",
+            )
+        ]
+    checks: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=min(8, len(specs))) as pool:
+        futures = [pool.submit(_probe_llm_spec, spec) for spec in specs]
+        for future in as_completed(futures):
+            checks.append(future.result())
+    checks.sort(key=lambda item: str(item.get("name") or ""))
+    working = sum(1 for item in checks if item.get("ok"))
+    if working == 0:
+        checks.append(
+            _check(
+                "retrieval",
+                "Retrieval fan-out",
+                ok=False,
+                level="fail",
+                detail="No retrieval LLM accepted a probe. Scans cannot query models.",
+            )
+        )
+    return checks
+
+
+def run_container_health_check() -> dict[str, Any]:
+    """Low-cost probes of the Cloud Run worker: keys, Vertex, Firestore, GCS, LLMs."""
+    started = utc_now()
+    checks: list[dict[str, Any]] = []
+    checks.extend(env_key_checks())
+    checks.append(probe_vertex_adc())
+    checks.append(probe_firestore())
+    checks.append(probe_gcs())
+    checks.append(probe_utility_llm())
+    checks.extend(probe_retrieval_llms())
+    status = overall_health_status(checks)
+    failed = [item["name"] for item in checks if item.get("level") == "fail"]
+    warned = [item["name"] for item in checks if item.get("level") == "warn"]
+    if status == "ok":
+        summary = "Cloud worker can run scans."
+    elif status == "warn":
+        summary = "Scans can run, with gaps: " + ", ".join(warned[:8])
+    else:
+        summary = "Scans will fail: " + ", ".join(failed[:8] or ["see details"])
+    return {
+        "ok": status != "fail",
+        "status": status,
+        "summary": summary,
+        "checks": checks,
+        "startedAt": started,
+        "finishedAt": utc_now(),
+        "job": os.environ.get("CLOUD_RUN_JOB") or os.environ.get("K_SERVICE") or "moyo-report-worker",
+    }
+
+
+def write_health_check(check_id: str, payload: dict[str, Any]) -> None:
+    if _skip_firebase():
+        logger.info("health check %s: %s", check_id, payload.get("summary"))
+        return
+    from firebase_admin import firestore as fs
+
+    _init_firebase_app()
+    db = fs.client()
+    fields = {
+        **payload,
+        "status": payload.get("status") or "fail",
+        "updatedAt": utc_now(),
+    }
+    db.collection(HEALTH_CHECKS_COLLECTION).document(check_id).set(fields, merge=True)
+    db.collection(HEALTH_CHECKS_COLLECTION).document("latest").set(
+        {**fields, "checkId": check_id},
+        merge=True,
+    )
+
+
+def run_health_check_main() -> int:
+    check_id = sanitize_health_id(os.environ.get("HEALTH_CHECK_ID"))
+    logger.info("running container health check %s", check_id)
+    if not _skip_firebase():
+        try:
+            write_health_check(
+                check_id,
+                {
+                    "status": "running",
+                    "summary": "Probing API keys and Google Cloud services…",
+                    "checks": [],
+                    "startedAt": utc_now(),
+                },
+            )
+        except Exception:
+            logger.exception("could not mark health check running")
+    try:
+        payload = run_container_health_check()
+        write_health_check(check_id, payload)
+        logger.info("health check %s %s (%s)", check_id, payload.get("status"), payload.get("summary"))
+        return 0
+    except Exception as exc:
+        logger.exception("health check %s failed", check_id)
+        try:
+            write_health_check(
+                check_id,
+                {
+                    "ok": False,
+                    "status": "fail",
+                    "summary": f"Health check crashed: {type(exc).__name__}: {exc}",
+                    "checks": [
+                        _check("crash", "Health check", ok=False, level="fail", detail=str(exc)),
+                    ],
+                    "finishedAt": utc_now(),
+                },
+            )
+        except Exception:
+            logger.exception("could not write health check failure")
+        return 1
+
+
 def main() -> int:
     logging.basicConfig(
         level=os.environ.get("MOYO_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     ensure_env_loaded()
+    if is_health_check_request():
+        return run_health_check_main()
     order_id = os.environ.get("ORDER_ID") or ""
     if not order_id and os.environ.get("ORDER_JSON"):
         order_id = "local"

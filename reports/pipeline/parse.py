@@ -376,7 +376,7 @@ def collection_issues_from_exploration(text: str) -> list[dict]:
 
 
 def summarize_collection_issues(issues: list[dict] | None) -> str:
-    """One paragraph for the PDF: failed/empty API calls, report still complete."""
+    """Operator-only summary of failed/empty API calls. Do not put this on user reports."""
     if not issues:
         return ""
     by_source: dict[str, list[str]] = {}
