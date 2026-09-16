@@ -283,19 +283,7 @@
   color: var(--moyo-teal-deep);
   margin-right: 0.3rem;
 }
-.citation-line__item .citation-link { margin-right: 0.05rem; }
-
-.citation-link {
-  color: var(--moyo-teal-deep);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--moyo-teal-deep) 45%, transparent);
-  text-underline-offset: 0.12em;
-}
-.citation-link--text {
-  text-decoration: none;
-  color: var(--moyo-muted);
-}
-.citation-links .citation-line__sep { margin: 0 0.2rem; }
+.citation-line__item .source-refs { margin-right: 0.2rem; }
 
 .coverage-note {
   font-family: var(--font-sans);

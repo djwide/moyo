@@ -1,4 +1,4 @@
-{% from "components/macros.j2" import severity_badge, language_badge, source_refs %}
+{% from "components/macros.j2" import severity_badge, language_badge %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -91,7 +91,7 @@
             <span class="specific-lang">{{ f.language_annotation }}</span>
             {% endif %}
             {% if f.citations_display %}
-            <span class="specific-cited">Cited: {{ source_refs(f.citations_display) }}</span>
+            <span class="specific-cited">Cited: {{ f.citations_display | map(attribute='short') | join('; ') }}</span>
             {% endif %}
           </li>
           {% else %}

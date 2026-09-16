@@ -30,6 +30,9 @@ _REF_ENTRY_RE = re.compile(
 )
 # Inline markers on a fact line ("…missed 186 votes.[9]"); not markdown links.
 _INLINE_MARKER_RE = re.compile(r"\[(\d{1,3})\](?!\()")
+_REFERENCE_ONLY_RE = re.compile(
+    r"^\s*(?:\[(?P<b>\d{1,3})\]|\((?P<p>\d{1,3})\)|(?P<n>\d{1,3})[.)]?)\s*$"
+)
 
 
 def _balance_wrappers(text: str, *, close_open_pairs: bool = False) -> str:
@@ -160,6 +163,33 @@ def citations_from_markers(
     return out
 
 
+def resolve_reference_citations(
+    citations: list[str] | None,
+    reference_map: dict[str, str] | None,
+) -> list[str]:
+    """Replace standalone reference numbers with their real citation text.
+
+    Claim extraction sometimes returns ``"18"`` or ``"[18]"`` instead of the
+    corresponding reference-list entry. Unresolved numbers are discarded:
+    they are pointers, not sources, and must never become labels in the report's
+    Sources and Citations table.
+    """
+    out: list[str] = []
+    refs = reference_map or {}
+    for raw in citations or []:
+        cleaned = clean_citation(str(raw))
+        marker = _REFERENCE_ONLY_RE.fullmatch(cleaned)
+        if marker:
+            number = marker.group("b") or marker.group("p") or marker.group("n")
+            resolved = refs.get(str(int(number)))
+            if resolved:
+                out.append(resolved)
+            continue
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
 def split_citation(raw: str) -> tuple[str, str]:
     """Split a citation string into ``(label, url)``; either may be empty."""
     text = clean_citation(str(raw or ""))
@@ -193,12 +223,19 @@ def _label_text(label: str) -> str:
 
 def citation_entry(raw: str) -> dict[str, str]:
     """Normalize a citation string into ``label`` / ``url`` / display ``text``."""
+    cleaned = clean_citation(str(raw or ""))
+    if _REFERENCE_ONLY_RE.fullmatch(cleaned):
+        return {"label": "", "url": "", "text": cleaned}
     label, url = split_citation(raw)
+    # Some providers return citations as ``[18] https://…``. The number is
+    # only the provider's footnote marker; use the website host as the label.
+    if label and _REFERENCE_ONLY_RE.fullmatch(label):
+        label = ""
     if not label and url:
         # Bare URL: name it by host — the full URL is printed alongside.
         host = re.sub(r"^https?://(?:www\.)?", "", url).split("/")[0]
         label = host or url
-    return {"label": label, "url": url, "text": clean_citation(str(raw or ""))}
+    return {"label": label, "url": url, "text": cleaned}
 
 
 def resolve_claim_citations(
@@ -218,12 +255,17 @@ def resolve_claim_citations(
     blob = "\n".join(part for part in (excerpt, claim) if part)
     specific = merge_citations(
         citations_from_markers(blob, reference_map),
-        extract_citations(excerpt or ""),
+        resolve_reference_citations(
+            extract_citations(excerpt or ""),
+            reference_map,
+        ),
         limit=limit,
     )
+    llm_resolved = resolve_reference_citations(llm_citations, reference_map)
+    chunk_resolved = resolve_reference_citations(chunk_citations, reference_map)
     if specific:
-        return merge_citations(specific, llm_citations, limit=limit)
-    return merge_citations(llm_citations, chunk_citations, limit=limit)
+        return merge_citations(specific, llm_resolved, limit=limit)
+    return merge_citations(llm_resolved, chunk_resolved, limit=limit)
 
 
 def _urls_in(text: str) -> list[str]:

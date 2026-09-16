@@ -30,25 +30,6 @@ from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
 
 
-def _citation_markdown(entry: dict[str, Any] | str) -> str:
-    if isinstance(entry, str):
-        text = entry.strip()
-        if not text:
-            return ""
-        if " — " in text and ("http://" in text or "https://" in text):
-            label, url = text.split(" — ", 1)
-            label, url = label.strip(), url.strip()
-            return f"[{label or url}]({url})" if url else label
-        if text.startswith(("http://", "https://")):
-            return f"<{text}>"
-        return text
-    short = str(entry.get("short") or entry.get("label") or entry.get("ref") or "").strip()
-    url = str(entry.get("url") or "").strip()
-    if url and short:
-        return f"[{short}]({url})"
-    return short or url
-
-
 def _severity_label(sensitivity: int) -> str:
     if sensitivity >= 4:
         return "high"
@@ -659,10 +640,10 @@ def build_content_doc(
             "sources": {
                 "title": "Sources and Citations",
                 "lede": (
-                    "Real-world sources the model answers cited, deduplicated once "
-                    "for the whole run. Findings show short labels linked to the "
-                    "URL when one was extracted. Presence here records what a model "
-                    "cited; it is not an endorsement of the source."
+                    "Real-world sources the model answers cited, numbered once "
+                    "for the whole run. Findings reference them as S1, S2, and "
+                    "so on. Presence here records what a model cited; it is not "
+                    "an endorsement of the source."
                 ),
                 "empty": (
                     "No model answer in this run cited an external source, so "
@@ -764,26 +745,17 @@ def render_report_md(content: dict[str, Any]) -> str:
     for f in content.get("abridged_findings") or content.get("findings") or []:
         sev = _severity_label(int(f.get("sensitivity") or 0))
         source = f.get("source_cite") or f.get("source_model")
-        cites = [
-            _citation_markdown(c)
-            for c in (f.get("citations_display") or [])
-            if _citation_markdown(c)
-        ]
-        cite_note = f" · _Cited: {'; '.join(cites)}_" if cites else ""
+        refs = ", ".join(f.get("source_refs") or [])
         lines.append(
             f"- **{f.get('claim_id')}** [{f.get('status')}/{sev}] "
             f"{f.get('claim')} — _{source}_"
-            + cite_note
+            + (f" ({refs})" if refs else "")
         )
     if content.get("sources"):
         lines += ["", "## Sources and citations", ""]
         for src in content["sources"]:
-            short = src.get("short") or src.get("label") or src.get("ref")
-            url = src.get("url") or ""
-            if url:
-                lines.append(f"- **{src.get('ref')}** [{short}]({url})")
-            else:
-                lines.append(f"- **{src.get('ref')}** {short}")
+            url = f" — {src['url']}" if src.get("url") else ""
+            lines.append(f"- **{src.get('ref')}** {src.get('label')}{url}")
     if content.get("meta", {}).get("include_remediation") and content.get("followups"):
         lines += ["", "## Remediation", ""]
         for item in content.get("followups") or []:

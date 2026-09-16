@@ -20,12 +20,8 @@
       <tr>
         <td class="mono">{{ s.ref }}</td>
         <td>
-          {% if s.url %}
-          <a class="source-table__label citation-link" href="{{ s.url }}">{{ s.short or s.label }}</a>
-          <span class="source-table__url">{{ s.url }}</span>
-          {% else %}
-          <span class="source-table__label">{{ s.short or s.label }}</span>
-          {% endif %}
+          <span class="source-table__label">{{ s.label }}</span>
+          {% if s.url %}<span class="source-table__url">{{ s.url }}</span>{% endif %}
         </td>
         <td class="num">{{ s.cited_by }}</td>
       </tr>

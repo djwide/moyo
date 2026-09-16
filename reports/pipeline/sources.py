@@ -62,6 +62,11 @@ def build_source_registry(
         refs: list[str] = []
         for raw in list(row.get("citations") or [])[:per_finding]:
             entry = citation_entry(str(raw))
+            # A standalone footnote marker (for example ``18`` or ``[18]``)
+            # is not a source. citation_entry intentionally leaves both label
+            # and URL empty for these; do not revive the marker from ``text``.
+            if not entry.get("label") and not entry.get("url"):
+                continue
             label = plain_text(entry.get("label") or entry.get("text") or "")
             url = (entry.get("url") or "").strip()
             if not label and not url:
