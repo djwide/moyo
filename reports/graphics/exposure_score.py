@@ -36,9 +36,10 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
     # Axis labels live inside a hairline panel; page titles live in the template.
     title_h = 8
     pad = 14
-    panel_x = pad
+    # Outline box extends 10px farther left/right than the vertical pad.
+    panel_x = pad - 10
     panel_y = title_h
-    panel_w = size - 2 * pad
+    panel_w = size - 2 * pad + 20
     panel_h = size - title_h - pad
 
     cx = size / 2
@@ -166,7 +167,8 @@ def llm_findings_bars_svg(
     panel_pad_top = 18
     panel_pad_bot = 48
     panel_left = left - panel_pad_x - LETTER_W
-    panel_y = top - panel_pad_top
+    # Outline box sits 6px higher than the plot padding alone would place it.
+    panel_y = top - panel_pad_top - 6
     panel = (
         f'<rect x="{panel_left}" y="{panel_y}" '
         f'width="{plot_w + 2 * panel_pad_x + LETTER_W}" '

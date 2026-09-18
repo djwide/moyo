@@ -233,26 +233,46 @@ def _is_kimi_k25_or_k26(model: str) -> bool:
     )
 
 
-def _fixed_temperature_for_model(model: str) -> Optional[float]:
-    """Return a forced temperature for models that reject other values."""
+def _is_kimi_k3(model: str) -> bool:
     name = (model or "").lower()
-    # K2.5/K2.6 non-thinking mode (our default) requires temperature=0.6.
-    if _is_kimi_k25_or_k26(name):
-        return 0.6
-    # Other Moonshot Kimi K2.x / K3 only accept temperature=1.
-    if (
-        name.startswith("kimi-k2")
-        or name.startswith("kimi-k3")
-        or "/kimi-k2" in name
-        or "/kimi-k3" in name
-    ):
-        return 1.0
-    return None
+    return name.startswith("kimi-k3") or "/kimi-k3" in name
 
 
-# Some OpenAI-compatible providers reject tiny completion caps (e.g. Perplexity
-# requires max_tokens >= 16).
-MIN_COMPLETION_TOKENS = 16
+def _is_openai_max_completion_tokens_model(model: str) -> bool:
+    """Models that reject ``max_tokens`` and require ``max_completion_tokens``."""
+    name = (model or "").lower()
+    if name.startswith(("o1", "o3", "o4")):
+        return True
+    if name.startswith("gpt-5") or "/gpt-5" in name:
+        return True
+    return False
+
+
+def _is_openai_fixed_sampling_model(model: str) -> bool:
+    """Models that reject non-default temperature / sampling knobs."""
+    return _is_openai_max_completion_tokens_model(model)
+
+
+def _is_anthropic_no_temperature_model(model: str) -> bool:
+    """Claude 4.7+ / Opus 5 / Sonnet 5 reject temperature/top_p/top_k."""
+    name = (model or "").lower().replace("_", "-")
+    markers = (
+        "opus-5",
+        "opus-4-7",
+        "opus-4.7",
+        "opus-4-8",
+        "opus-4.8",
+        "sonnet-5",
+        "fable-5",
+        "mythos-5",
+        "mythos-preview",
+    )
+    return any(marker in name for marker in markers)
+
+
+def _is_deepseek_v4(model: str) -> bool:
+    name = (model or "").lower()
+    return "deepseek-v4" in name or "deepseek/deepseek-v4" in name
 
 
 def _is_gemini_model(model: str, base_url: Optional[str] = None) -> bool:
@@ -261,15 +281,70 @@ def _is_gemini_model(model: str, base_url: Optional[str] = None) -> bool:
     return "gemini" in name or "generativelanguage.googleapis.com" in url
 
 
+def _is_reasoning_budget_model(model: str, base_url: Optional[str] = None) -> bool:
+    """Models whose reasoning tokens share the completion budget with content."""
+    if _is_gemini_model(model, base_url):
+        return True
+    if _is_openai_max_completion_tokens_model(model):
+        return True
+    if _is_kimi_k3(model):
+        return True
+    if _is_deepseek_v4(model):
+        return True
+    if _is_anthropic_no_temperature_model(model):
+        return True
+    name = (model or "").lower()
+    return "sonar-reasoning" in name
+
+
+def _omit_temperature_for_model(model: str) -> bool:
+    """True when the request must not include a temperature field."""
+    name = (model or "").lower()
+    if _is_openai_fixed_sampling_model(name):
+        return True
+    if _is_anthropic_no_temperature_model(name):
+        return True
+    if _is_kimi_k3(name):
+        return True
+    return False
+
+
+def _fixed_temperature_for_model(model: str) -> Optional[float]:
+    """Return a forced temperature, or None when temperature should be omitted/left alone."""
+    name = (model or "").lower()
+    if _omit_temperature_for_model(name):
+        return None
+    # K2.5/K2.6 non-thinking mode (our default) requires temperature=0.6.
+    if _is_kimi_k25_or_k26(name):
+        return 0.6
+    # Other Moonshot Kimi K2.x only accept temperature=1.
+    if name.startswith("kimi-k2") or "/kimi-k2" in name:
+        return 1.0
+    return None
+
+
+# Some OpenAI-compatible providers reject tiny completion caps (e.g. Perplexity
+# requires max_tokens >= 16).
+MIN_COMPLETION_TOKENS = 16
+# Reasoning models share the completion budget with hidden thinking tokens.
+MIN_REASONING_COMPLETION_TOKENS = 1024
+
+
 def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
     """Provider-specific OpenAI-compatible request fields.
 
     Kimi K2.5/K2.6 default to thinking mode. Reasoning tokens count against
     ``max_tokens``, so short caps often return empty ``content``. Disable
     thinking so retrieval replies land in ``content``.
+
+    Kimi K3 always thinks; use low ``reasoning_effort`` instead of ``thinking``.
     """
     if _is_kimi_k25_or_k26(model):
         return {"thinking": {"type": "disabled"}}
+    if _is_kimi_k3(model):
+        return {"reasoning_effort": "low"}
+    if _is_deepseek_v4(model):
+        return {"reasoning": {"effort": "low"}}
     return {}
 
 
@@ -280,13 +355,66 @@ def _openai_create_extras(
     extras: Dict[str, Any] = {}
     extra_body = _openai_extra_body_for_model(model)
     if extra_body:
-        extras["extra_body"] = extra_body
+        for key in ("reasoning_effort",):
+            if key in extra_body:
+                extras[key] = extra_body.pop(key)
+        if extra_body:
+            extras["extra_body"] = extra_body
     # gemini-3.1-pro-preview (and other Gemini thinking models) spend max_tokens on
     # internal reasoning first; low reasoning effort keeps short replies usable.
     # ``none`` is rejected by Pro-class aliases that require thinking mode.
     if _is_gemini_model(model, base_url):
         extras["reasoning_effort"] = "low"
+    if _is_openai_max_completion_tokens_model(model):
+        extras.setdefault("reasoning_effort", "low")
     return extras
+
+
+def _openai_message_text(message: Any) -> str:
+    """Visible assistant text from an OpenAI-compatible chat message."""
+    if message is None:
+        return ""
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str) and part.strip():
+                parts.append(part.strip())
+            elif isinstance(part, dict):
+                text = str(part.get("text") or "").strip()
+                if text:
+                    parts.append(text)
+            else:
+                text = str(getattr(part, "text", "") or "").strip()
+                if text:
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
+    reasoning = getattr(message, "reasoning_content", None)
+    if isinstance(reasoning, str) and reasoning.strip():
+        return reasoning.strip()
+    extra = getattr(message, "model_extra", None) or {}
+    if isinstance(extra, dict):
+        reasoning = extra.get("reasoning_content") or extra.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            return reasoning.strip()
+    return (content or "").strip() if isinstance(content, str) else ""
+
+
+def _anthropic_message_text(response: Any) -> str:
+    """Concatenate text blocks; Opus 5 may lead with thinking blocks."""
+    blocks = getattr(response, "content", None) or []
+    parts: list[str] = []
+    for block in blocks:
+        block_type = getattr(block, "type", None)
+        if block_type and block_type != "text":
+            continue
+        text = getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n".join(parts).strip()
 
 
 def _citations_from_response(response: Any) -> List[str]:
@@ -332,10 +460,20 @@ def _with_provider_citations(content: str, response: Any) -> str:
 
 def _is_fixed_temperature_error(exc: BaseException) -> bool:
     text = str(exc).lower()
+    if "temperature" in text and (
+        "deprecated" in text or "not supported" in text or "unsupported" in text
+    ):
+        return True
     if "invalid temperature" not in text:
         return False
     return "only 1" in text or "only 0.6" in text or "only 0.60" in text
 
+
+def _is_max_tokens_unsupported_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "max_tokens" in text and (
+        "max_completion_tokens" in text or "unsupported parameter" in text
+    )
 
 def _default_label(provider: str, model: str) -> str:
     """Human-readable label preferring the model name over the transport provider."""
@@ -580,15 +718,18 @@ class LLMClient:
         failure per source instead of crashing the whole run.
         """
         temperature = self.spec.temperature if temperature is None else temperature
+        omit_temperature = _omit_temperature_for_model(self.spec.model)
         fixed = _fixed_temperature_for_model(self.spec.model)
-        if fixed is not None:
+        if omit_temperature:
+            temperature = None  # type: ignore[assignment]
+        elif fixed is not None:
             temperature = fixed
         max_tokens = self.spec.max_tokens if max_tokens is None else max_tokens
         max_tokens = max(MIN_COMPLETION_TOKENS, int(max_tokens))
-        # Gemini thinking models count reasoning toward max_tokens; tiny caps
-        # often return empty content with finish_reason=length.
-        if _is_gemini_model(self.spec.model, self.spec.base_url) and max_tokens < 256:
-            max_tokens = 256
+        # Reasoning models share the completion budget with hidden thinking tokens;
+        # tiny caps often return empty content with finish_reason=length.
+        if _is_reasoning_budget_model(self.spec.model, self.spec.base_url):
+            max_tokens = max(max_tokens, MIN_REASONING_COMPLETION_TOKENS)
         provider = self.spec.provider
 
         # ``--test`` / MOYO_TEST_MODE always stays offline, even if this client
@@ -607,18 +748,46 @@ class LLMClient:
         max_retries = self.spec.max_retries if retries is None else max(0, int(retries))
         attempts = max(1, int(max_retries) + 1)
         last_exc: Optional[BaseException] = None
+        use_max_completion_tokens = _is_openai_max_completion_tokens_model(self.spec.model)
         for attempt in range(attempts):
             try:
                 return self._complete_once(
-                    prompt, system=system, temperature=temperature, max_tokens=max_tokens
+                    prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    use_max_completion_tokens=use_max_completion_tokens,
                 )
             except Exception as exc:
                 last_exc = exc
-                # Some providers reject non-fixed temperatures without it being in the model id.
+                if (
+                    not use_max_completion_tokens
+                    and provider in ("openai", "custom")
+                    and _is_max_tokens_unsupported_error(exc)
+                ):
+                    logger.warning(
+                        "%s rejected max_tokens; retrying with max_completion_tokens",
+                        self.label,
+                    )
+                    use_max_completion_tokens = True
+                    continue
+                # Some providers reject temperature without it being known from the model id.
+                if temperature is not None and _is_fixed_temperature_error(exc):
+                    logger.warning(
+                        "%s rejected temperature=%s; retrying without temperature",
+                        self.label,
+                        temperature,
+                    )
+                    temperature = None  # type: ignore[assignment]
+                    omit_temperature = True
+                    continue
                 forced = _fixed_temperature_for_model(self.spec.model)
-                if forced is None and _is_fixed_temperature_error(exc):
-                    forced = 1.0
-                if _is_fixed_temperature_error(exc) and forced is not None and temperature != forced:
+                if (
+                    forced is not None
+                    and temperature is not None
+                    and _is_fixed_temperature_error(exc)
+                    and temperature != forced
+                ):
                     logger.warning(
                         "%s rejected temperature=%s; retrying with temperature=%s",
                         self.label,
@@ -646,8 +815,10 @@ class LLMClient:
         self,
         prompt: str,
         system: Optional[str],
-        temperature: float,
+        temperature: Optional[float],
         max_tokens: int,
+        *,
+        use_max_completion_tokens: bool = False,
     ) -> str:
         provider = self.spec.provider
 
@@ -655,7 +826,7 @@ class LLMClient:
             return self._client.generate(
                 prompt,
                 system=system,
-                temperature=temperature,
+                temperature=0.7 if temperature is None else temperature,
                 max_tokens=max_tokens,
                 num_ctx=self.spec.num_ctx,
             )
@@ -668,31 +839,39 @@ class LLMClient:
             create_kwargs: Dict[str, Any] = {
                 "model": self.spec.model,
                 "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
             }
+            if use_max_completion_tokens or _is_openai_max_completion_tokens_model(
+                self.spec.model
+            ):
+                create_kwargs["max_completion_tokens"] = max_tokens
+            else:
+                create_kwargs["max_tokens"] = max_tokens
+            if temperature is not None and not _omit_temperature_for_model(self.spec.model):
+                create_kwargs["temperature"] = temperature
             create_kwargs.update(
                 _openai_create_extras(self.spec.model, self.spec.base_url)
             )
             response = self._client.chat.completions.create(**create_kwargs)
-            content = (response.choices[0].message.content or "").strip()
+            message = response.choices[0].message if response.choices else None
+            content = _openai_message_text(message)
             return _with_provider_citations(content, response)
 
         if provider == "anthropic":
             kwargs: Dict[str, Any] = {}
             if system:
                 kwargs["system"] = system
-            response = self._client.messages.create(
-                model=self.spec.model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                messages=[{"role": "user", "content": prompt}],
+            create_kwargs = {
+                "model": self.spec.model,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
                 **kwargs,
-            )
-            return (response.content[0].text if response.content else "").strip()
+            }
+            if temperature is not None and not _omit_temperature_for_model(self.spec.model):
+                create_kwargs["temperature"] = temperature
+            response = self._client.messages.create(**create_kwargs)
+            return _anthropic_message_text(response)
 
         raise RuntimeError(f"unsupported LLM provider: {provider}")
-
     # -- offline stub -------------------------------------------------------
     def _echo(self, prompt: str, system: Optional[str]) -> str:
         """Deterministic offline response.

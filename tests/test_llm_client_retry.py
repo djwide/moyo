@@ -5,8 +5,14 @@ import os
 from moyo.llm.client import (
     LLMClient,
     LLMSpec,
+    _anthropic_message_text,
     _fixed_temperature_for_model,
+    _is_anthropic_no_temperature_model,
+    _is_openai_max_completion_tokens_model,
+    _omit_temperature_for_model,
+    _openai_create_extras,
     _openai_extra_body_for_model,
+    _openai_message_text,
     format_llm_error,
     is_retryable_llm_error,
     retry_delay_seconds,
@@ -58,8 +64,100 @@ def test_kimi_k26_disables_thinking_and_uses_non_thinking_temperature():
     assert _fixed_temperature_for_model("kimi-k2.6") == 0.6
     assert _fixed_temperature_for_model("moonshotai/kimi-k2.5") == 0.6
     assert _openai_extra_body_for_model("gpt-4o") == {}
-    assert _fixed_temperature_for_model("kimi-k3") == 1.0
+    assert _omit_temperature_for_model("kimi-k3") is True
+    assert _fixed_temperature_for_model("kimi-k3") is None
+    assert _openai_extra_body_for_model("kimi-k3") == {"reasoning_effort": "low"}
 
+
+def test_gpt5_uses_max_completion_tokens_and_omits_temperature():
+    assert _is_openai_max_completion_tokens_model("gpt-5.6-sol") is True
+    assert _omit_temperature_for_model("gpt-5.6-sol") is True
+    extras = _openai_create_extras("gpt-5.6-sol")
+    assert extras.get("reasoning_effort") == "low"
+
+
+def test_claude_opus_5_omits_temperature():
+    assert _is_anthropic_no_temperature_model("claude-opus-5") is True
+    assert _omit_temperature_for_model("claude-opus-5") is True
+
+
+def test_openai_message_text_falls_back_to_reasoning_content():
+    class Msg:
+        content = ""
+        reasoning_content = "OK"
+
+    assert _openai_message_text(Msg()) == "OK"
+
+
+def test_anthropic_message_text_skips_thinking_blocks():
+    class Block:
+        def __init__(self, typ, text=None):
+            self.type = typ
+            self.text = text
+
+    class Resp:
+        content = [Block("thinking", "secret"), Block("text", "OK")]
+
+    assert _anthropic_message_text(Resp()) == "OK"
+
+
+def test_complete_omits_temperature_for_opus_5(monkeypatch):
+    client = LLMClient(LLMSpec(provider="anthropic", model="claude-opus-5", api_key="sk-test"))
+    captured: dict = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+
+            class Block:
+                type = "text"
+                text = "OK"
+
+            class Resp:
+                content = [Block()]
+
+            return Resp()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(client, "_client", FakeClient())
+    assert client.complete("hi", max_tokens=16, retries=0) == "OK"
+    assert "temperature" not in captured
+    assert captured["max_tokens"] >= 1024
+
+
+def test_complete_uses_max_completion_tokens_for_gpt5(monkeypatch):
+    client = LLMClient(LLMSpec(provider="openai", model="gpt-5.6-sol", api_key="sk-test"))
+    captured: dict = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+
+            class Msg:
+                content = "OK"
+
+            class Choice:
+                message = Msg()
+
+            class Resp:
+                choices = [Choice()]
+                citations = None
+
+            return Resp()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(client, "_client", FakeClient())
+    assert client.complete("hi", max_tokens=16, retries=0) == "OK"
+    assert "max_tokens" not in captured
+    assert captured["max_completion_tokens"] >= 1024
+    assert "temperature" not in captured
 
 def test_complete_retries_then_succeeds(monkeypatch):
     client = LLMClient(LLMSpec(provider="echo", model="echo", max_retries=3))

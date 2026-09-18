@@ -1772,7 +1772,7 @@ def _probe_llm_spec(spec: Any, *, extra: bool = False) -> dict[str, Any]:
         )
     try:
         client = LLMClient(spec)
-        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=0)
+        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=2)
         if (text or "").strip():
             return _check(check_id, str(label), ok=True, level="ok", detail="Accepted a 1-token probe.")
         return _check(
@@ -1888,7 +1888,7 @@ def probe_utility_llm() -> dict[str, Any]:
         from moyo.llm.utility import get_utility_llm, running_in_cloud
 
         client = get_utility_llm()
-        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=0)
+        text = client.complete("Reply with the single word OK.", max_tokens=16, retries=2)
         if (text or "").strip():
             where = "Vertex Flash" if running_in_cloud() else client.label
             return _check(
