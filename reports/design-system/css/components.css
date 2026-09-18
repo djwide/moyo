@@ -1,199 +1,247 @@
-/* MOYO components — presentation only; content comes from report.yaml */
+/* MOYO components — print editorial, not floating cards. */
 
 .severity-badge {
   display: inline-block;
   font-family: var(--font-sans);
   font-size: 0.55rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0.1rem 0.3rem;
-  border-radius: var(--radius-sm);
-  margin-right: 0.2rem;
+  padding: 0.05rem 0.28rem;
+  border-radius: 0;
+  margin-right: 0.18rem;
   vertical-align: middle;
 }
 .severity-badge--high { background: var(--moyo-high); color: #fff; }
 .severity-badge--medium { background: var(--moyo-med); color: #fff; }
 .severity-badge--low { background: var(--moyo-low); color: #fff; }
 .severity-badge--info { background: var(--moyo-info); color: var(--moyo-ink); }
-.severity-badge--specific { background: var(--moyo-teal); color: var(--moyo-black); }
+.severity-badge--specific { background: var(--moyo-teal); color: #fff; }
 .severity-badge--outlier { background: var(--moyo-ink); color: var(--moyo-cream); }
 .severity-badge--contested { background: var(--moyo-med); color: #fff; }
-.severity-badge--model-specific { background: var(--moyo-ink); color: var(--moyo-teal); }
+.severity-badge--model-specific { background: var(--moyo-ink); color: var(--moyo-cream); }
 .severity-badge--corroborated { background: var(--moyo-low); color: #fff; }
 .severity-badge--unverified { background: var(--moyo-muted); color: #fff; }
 .severity-badge--via-lang {
-  background: var(--moyo-cream);
+  background: transparent;
   color: var(--moyo-teal-deep);
-  border: 1px solid var(--moyo-border);
+  border: 0.4pt solid var(--moyo-border);
   text-transform: none;
   letter-spacing: 0.02em;
 }
 
 .metric-card {
-  background: var(--moyo-cream);
-  border: 1px solid var(--moyo-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  text-align: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
 }
 .metric-card__value {
   font-family: var(--font-display);
-  font-size: 1.85rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--moyo-ink);
-  line-height: 1.1;
+  line-height: 1.05;
 }
 .metric-card__label {
   font-family: var(--font-sans);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--moyo-muted);
-  margin-top: var(--space-2);
+  margin-top: 0.15rem;
 }
 
-.finding-card {
-  border: 1px solid var(--moyo-border);
-  border-left: 3px solid var(--moyo-teal);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2);
-  margin-bottom: var(--space-2);
-  background: var(--moyo-white);
+/* Findings: lead is spacious; compact is a hairline row; band is a cream callout. */
+.finding {
   break-inside: avoid;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
-.finding-card--high { border-left-color: var(--moyo-high); }
+.finding--lead {
+  margin: 0 0 var(--space-5);
+  padding: 0 0 var(--space-4);
+  border-bottom: 0.6pt solid var(--moyo-ink);
+}
+.finding--lead .finding__claim {
+  font-size: 1.08rem;
+  line-height: 1.32;
+  margin: 0.45rem 0 0.5rem;
+}
+.finding--compact {
+  display: block;
+  padding: 0.4rem 0;
+  border-bottom: 0.35pt solid var(--moyo-border);
+}
+.finding--compact .finding__claim {
+  font-size: 0.84rem;
+  line-height: 1.28;
+  margin: 0.12rem 0 0.2rem;
+}
+.finding--band {
+  background: var(--moyo-cream);
+  margin: var(--space-3) -2mm;
+  padding: 0.65rem 0.8rem;
+  border-top: 0.4pt solid var(--moyo-ink);
+  border-bottom: 0.4pt solid var(--moyo-ink);
+}
+.finding--band .finding__claim {
+  font-size: 0.9rem;
+  line-height: 1.3;
+  margin: 0.2rem 0 0.3rem;
+}
+.finding--high .finding__id { color: var(--moyo-high); }
+
+.finding__id,
 .finding-card__id {
   font-family: var(--font-mono);
   font-size: 0.65rem;
   color: var(--moyo-muted);
+  hyphens: none;
 }
+.finding__claim,
 .finding-card__claim {
   font-family: var(--font-serif);
-  font-size: 0.84rem;
-  line-height: 1.3;
-  margin: 0.2rem 0 0.35rem;
   color: var(--moyo-ink);
+  margin: 0.2rem 0 0.3rem;
 }
+.finding__meta,
 .finding-card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 0.15rem 0.7rem;
   font-family: var(--font-sans);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   color: var(--moyo-muted);
 }
+.finding__lang,
 .finding-card__lang {
-  margin: 0.15rem 0 0;
+  margin: 0.12rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: var(--moyo-teal-deep);
 }
 
-.evidence-box {
-  background: var(--moyo-cream);
-  border: 1px solid var(--moyo-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2);
-  margin: var(--space-1) 0 0;
+/* Legacy class names still emitted by older content packages. */
+.finding-card {
+  border: 0;
+  border-bottom: 0.35pt solid var(--moyo-border);
+  border-radius: 0;
+  padding: 0.4rem 0;
+  margin: 0;
+  background: transparent;
   break-inside: avoid;
+}
+.finding-card--high { border-left: 0; }
+
+.evidence-box {
+  background: transparent;
+  border: 0;
+  border-top: 0.35pt solid var(--moyo-border);
+  border-radius: 0;
+  padding: 0.35rem 0 0;
+  margin: 0.35rem 0 0;
+  break-inside: avoid;
+}
+.finding--lead .evidence-box {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0 0;
 }
 .evidence-box__label {
   font-family: var(--font-sans);
-  font-size: 0.58rem;
-  letter-spacing: 0.06em;
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--moyo-teal-deep);
-  margin-bottom: 0.15rem;
+  color: var(--moyo-muted);
+  margin-bottom: 0.12rem;
 }
 .evidence-box__excerpt {
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   line-height: 1.28;
   color: var(--moyo-ink);
   white-space: pre-wrap;
 }
 .evidence-box__cite {
-  margin-top: 0.15rem;
-  font-size: 0.6rem;
+  margin-top: 0.12rem;
+  font-size: 0.58rem;
   color: var(--moyo-muted);
 }
 
 .quote-box {
-  border-left: 3px solid var(--moyo-teal);
-  padding: var(--space-3) var(--space-4);
-  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 0.6pt solid var(--moyo-ink);
+  border-bottom: 0.6pt solid var(--moyo-ink);
+  padding: 0.7rem 0;
+  margin: 0 0 var(--space-4);
   font-family: var(--font-serif);
-  font-size: 1.05rem;
+  font-size: 1.08rem;
   font-style: italic;
   color: var(--moyo-ink);
+  background: transparent;
 }
 
 .confidence {
   display: inline-flex;
-  gap: 3px;
+  gap: 2px;
   align-items: center;
   vertical-align: middle;
 }
 .confidence__dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--moyo-border);
 }
-.confidence__dot--on { background: var(--moyo-teal); }
+.confidence__dot--on { background: var(--moyo-ink); }
 
 .remediation-box {
   background: var(--moyo-ink);
   color: var(--moyo-cream);
-  border-radius: var(--radius-md);
+  border-radius: 0;
   padding: var(--space-4);
   margin-bottom: var(--space-3);
   break-inside: avoid;
 }
 .remediation-box__method {
   font-family: var(--font-sans);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--moyo-teal);
+  color: var(--moyo-teal-soft);
   margin-bottom: var(--space-2);
 }
 .remediation-box__action {
   font-family: var(--font-serif);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
 }
 .remediation-box__claims {
   margin-top: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: var(--moyo-teal-soft);
 }
 
 .risk-matrix {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
-  max-width: 320px;
+  display: block;
+  max-width: none;
 }
 .risk-matrix__cell {
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  text-align: center;
+  border-radius: 0;
+  padding: var(--space-2) 0;
+  text-align: left;
   font-family: var(--font-sans);
   font-size: 0.75rem;
 }
-.risk-matrix__cell--hh { background: var(--moyo-high); color: #fff; }
-.risk-matrix__cell--hl { background: var(--moyo-med); color: #fff; }
-.risk-matrix__cell--lh { background: var(--moyo-teal); color: var(--moyo-ink); }
-.risk-matrix__cell--ll { background: var(--moyo-cream-deep); color: var(--moyo-ink); }
 
 .graphic {
-  margin: var(--space-3) 0;
+  margin: var(--space-2) 0 var(--space-3);
   text-align: center;
   width: 100%;
-  max-width: 160mm;
-  max-height: 110mm;
+  max-width: 170mm;
+  max-height: 115mm;
   overflow: hidden;
   break-inside: avoid;
   margin-left: auto;
@@ -203,57 +251,59 @@
 .graphic img {
   display: block;
   width: 100%;
-  max-width: 160mm;
-  max-height: 110mm;
+  max-width: 170mm;
+  max-height: 115mm;
   height: auto;
   margin: 0 auto;
 }
 .graphic--compact {
-  max-width: 140mm;
-  max-height: 85mm;
+  max-width: 150mm;
+  max-height: 90mm;
 }
 .graphic--compact svg,
 .graphic--compact img {
-  max-width: 140mm;
-  max-height: 85mm;
+  max-width: 150mm;
+  max-height: 90mm;
 }
 .graphic.findings-llm {
-  max-height: calc(85mm + 30px);
+  max-height: calc(90mm + 20px);
 }
 .graphic.findings-llm svg,
 .graphic.findings-llm img {
-  max-height: calc(85mm + 30px);
+  max-height: calc(90mm + 20px);
 }
 .graphic--wide {
-  max-width: 170mm;
-  max-height: 100mm;
+  max-width: 178mm;
+  max-height: 105mm;
 }
 .graphic--wide svg,
 .graphic--wide img {
-  max-width: 170mm;
-  max-height: 100mm;
+  max-width: 178mm;
+  max-height: 105mm;
 }
 
 .chart-stack {
   display: block;
   width: 100%;
-  max-width: 170mm;
+  max-width: 178mm;
   margin: 0 auto;
 }
 .chart-frame {
   width: 100%;
-  max-width: 140mm;
-  margin: 0 auto var(--space-4);
+  margin: 0 0 var(--space-3);
   overflow: hidden;
 }
 
 .metrics-row {
   display: flex;
-  gap: var(--space-3);
+  gap: 6mm;
   flex-wrap: wrap;
-  margin: var(--space-4) 0;
+  margin: 0 0 var(--space-4);
+  padding: 0.4rem 0;
+  border-top: 0.6pt solid var(--moyo-ink);
+  border-bottom: 0.35pt solid var(--moyo-border);
 }
-.metrics-row .metric-card { flex: 1 1 120px; }
+.metrics-row .metric-card { flex: 1 1 auto; }
 
 .source-cite {
   font-family: var(--font-sans);
@@ -262,18 +312,17 @@
   white-space: nowrap;
 }
 
-/* Real-world citations: S-number pointers into the Sources section */
 .source-refs {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   color: var(--moyo-teal-deep);
   white-space: nowrap;
 }
 .citation-line {
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: var(--moyo-muted);
-  margin: 0.2rem 0 0;
+  margin: 0.15rem 0 0;
   line-height: 1.25;
 }
 .citation-line__label {
@@ -287,14 +336,14 @@
 
 .coverage-note {
   font-family: var(--font-sans);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  font-size: 0.76rem;
+  line-height: 1.35;
   color: var(--moyo-ink);
   background: var(--moyo-cream);
-  border: 1px solid var(--moyo-border);
-  border-left: 3px solid var(--moyo-med);
-  border-radius: var(--radius-sm);
-  padding: 0.45rem 0.65rem;
+  border: 0;
+  border-left: 2pt solid var(--moyo-med);
+  border-radius: 0;
+  padding: 0.4rem 0.6rem;
   margin: 0 0 var(--space-3);
 }
 .coverage-note--cover {
@@ -303,7 +352,6 @@
 }
 .citation-line__sep { margin: 0 0.15rem; color: var(--moyo-border); }
 
-/* Markdown rendered from model output */
 .md-heading {
   font-family: var(--font-sans);
   font-weight: 700;

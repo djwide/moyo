@@ -1,9 +1,8 @@
-{% from "components/macros.j2" import svg_asset, severity_badge, citation_line %}
+{% from "components/macros.j2" import svg_asset, citation_line %}
 <section class="page page--basis-exposure">
-  <h2>Claim Support Graph</h2>
+  <h2>How outputs combine into exposures</h2>
   <p class="basis-lede">
-    How individual model outputs connect into claims, and how those claims
-    combine into higher-level exposures.
+    Model answers join into claims; claims join into higher-level exposure chains.
   </p>
   {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide') }}
 
@@ -11,26 +10,26 @@
   <p class="chain-implication">{{ content.basis.cross_chain_implication }}</p>
   {% endif %}
 
-  <h2>Exposure Detail: What Was Recovered and How</h2>
+  <h2>What was recovered, and how</h2>
   {% for c in content.basis.chain_details %}
   <article class="chain-block">
     <h3 class="chain-block__title">{{ c.label }}</h3>
     <p class="chain-block__meta">
-      {{ c.chain_id }} · {{ c.model_count }} corroborating model(s) · score {{ c.score }}
+      {{ c.chain_id }} · {{ c.model_count | format_int }} corroborating model(s) · score {{ c.score | format_number }}
     </p>
 
-    <div class="chain-subhead">What was inferred / recovered</div>
+    <div class="chain-subhead">Recovered</div>
     <p class="chain-recovered">{{ c.recovered }}</p>
     {{ citation_line(c.citations) }}
 
-    <div class="chain-subhead">Exactly how MOYO reached this</div>
+    <div class="chain-subhead">Derivation</div>
     <ol class="chain-steps">
       {% for step in c.derivation.steps %}
       <li>{{ step }}</li>
       {% endfor %}
     </ol>
 
-    <div class="chain-subhead">Multiple corroborating model outputs</div>
+    <div class="chain-subhead">Corroborating outputs</div>
     {% for o in c.corroborating_outputs %}
     <div class="corroboration-item">
       <div class="corroboration-item__source">{{ o.source }} · <span class="mono">{{ o.claim_id }}</span></div>
@@ -42,7 +41,7 @@
     </div>
     {% endfor %}
 
-    <div class="chain-subhead">Specific implication / exploitation scenario</div>
+    <div class="chain-subhead">Implication</div>
     <p class="chain-implication">{{ c.implication }}</p>
   </article>
   {% endfor %}

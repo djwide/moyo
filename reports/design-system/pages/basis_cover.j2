@@ -14,7 +14,7 @@
   </header>
 
   <div class="cover-body">
-    <p class="cover-kicker">MOYO Basis Report</p>
+    <p class="cover-kicker">Basis report</p>
 
     <div class="cover-lead">
       <p class="cover-prompt-label">Prompt</p>
@@ -27,38 +27,36 @@
           “{{ (content.meta.prompts[0] if content.meta.prompts else content.meta.topic) }}”
         {% endif %}
       </p>
-      <p class="cover-date">{{ content.meta.report_date }}</p>
+      <p class="cover-date">{{ content.meta.report_date }}{% if content.meta.generated_at %} · {{ content.meta.generated_at | format_timestamp }}{% endif %}</p>
     </div>
 
-    <h1 class="cover-title">{{ content.meta.headline or "What AI Systems Reveal" }}</h1>
+    <h1 class="cover-title">{{ content.meta.headline or "What the models disclosed" }}</h1>
     <p class="basis-lede">
-      Complete exposure basis: full findings with evidence, prioritized
-      inventory, derivation of how MOYO reached each conclusion, corroborating
-      model outputs, cited real-world sources, and exploitation
-      implications{% if content.meta.include_remediation %},
-      plus ISVF-aligned remediation{% endif %}.
+      Full inventory, transcript excerpts, corroborating outputs, and how each
+      conclusion was derived{% if content.meta.include_remediation %}, plus
+      ISVF-mapped follow-up{% endif %}.
     </p>
 
     <div class="cover-meta">
       <section class="cover-meta__block">
-        <h2 class="cover-meta__title">Models Tested</h2>
+        <h2 class="cover-meta__title">{{ content.meta.counts.llms_tested | format_int }} models on this run</h2>
         <ul class="cover-meta__list">
           {% for m in content.meta.models_tested %}
           <li>{{ m }}</li>
           {% else %}
-          <li>{{ content.meta.counts.llms_tested }} models</li>
+          <li>{{ content.meta.counts.llms_tested | format_int }} models</li>
           {% endfor %}
         </ul>
       </section>
-      <section class="cover-meta__block">
+      <section class="cover-meta__block cover-meta__block--aside">
         <h2 class="cover-meta__title">Techniques</h2>
-        <ul class="cover-meta__list">
+        <p class="cover-meta__techniques">
           {% for s in content.meta.strategies %}
-          <li>{{ s|capitalize }}</li>
+            {{ s | sentence_case }}{% if not loop.last %} · {% endif %}
           {% endfor %}
-        </ul>
+        </p>
         {% if content.meta.fuzz_mode %}
-        <p class="cover-meta__note">Fuzz Mode: {{ content.meta.fuzz_mode|capitalize }}</p>
+        <p class="cover-meta__note">Fuzz mode {{ content.meta.fuzz_mode | sentence_case }}</p>
         {% endif %}
       </section>
     </div>
@@ -66,14 +64,14 @@
 
   <footer class="cover-footer">
     <div class="cover-footer__stats">
-      <span><strong>{{ content.meta.counts.findings }}</strong> Findings</span>
-      <span><strong>{{ content.meta.counts.llms_tested }}</strong> Models Tested</span>
+      <span><strong>{{ content.meta.counts.findings | format_int }}</strong> findings</span>
+      <span><strong>{{ content.meta.counts.llms_tested | format_int }}</strong> models</span>
       {% if content.meta.counts.high_sensitivity %}
-      <span><strong>{{ content.meta.counts.high_sensitivity }}</strong> High-Sensitivity</span>
+      <span><strong>{{ content.meta.counts.high_sensitivity | format_int }}</strong> high-sensitivity</span>
       {% endif %}
-      <span><strong>{{ content.meta.counts.chains }}</strong> Exposure Chains</span>
+      <span><strong>{{ content.meta.counts.chains | format_int }}</strong> exposure chains</span>
       {% if content.meta.counts.languages %}
-      <span><strong>{{ content.meta.counts.languages }}</strong> Languages</span>
+      <span><strong>{{ content.meta.counts.languages | format_int }}</strong> languages</span>
       {% endif %}
     </div>
   </footer>

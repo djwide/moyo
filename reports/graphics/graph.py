@@ -21,7 +21,6 @@ from .style import (
     escape_xml,
     short_model_name,
     svg_root,
-    title_block,
     truncate,
 )
 
@@ -79,7 +78,7 @@ def evidence_graph_svg(
     height = min(max_height, 400)
 
     # Title outside columns; column titles sit inside the beige bands at the bottom.
-    band_top = 56
+    band_top = 16
     band_bottom = height - 14
     band_h = band_bottom - band_top
     footer_h = 22  # MODELS / CLAIMS / CHAINS row inside each band
@@ -129,10 +128,10 @@ def evidence_graph_svg(
     ):
         bands.append(
             f'<rect x="{x - col_w / 2:.1f}" y="{band_top}" width="{col_w}" '
-            f'height="{band_h}" rx="12" fill="{CREAM}" stroke="{RULE}"/>'
+            f'height="{band_h}" fill="{CREAM}" stroke="{RULE}"/>'
             f'<text x="{x:.1f}" y="{band_bottom - 8:.1f}" text-anchor="middle" '
-            f'font-family="{FONT}" font-size="10" font-weight="600" letter-spacing="0.06em" '
-            f'fill="{MUTED}">{label.upper()}</text>'
+            f'font-family="{FONT}" font-size="10" font-weight="600" letter-spacing="0.04em" '
+            f'fill="{MUTED}">{label}</text>'
         )
 
     edges = []
@@ -169,7 +168,7 @@ def evidence_graph_svg(
         nodes.append(
             f'<g>'
             f'<title>{escape_xml(cid)}</title>'
-            f'<rect x="{x - 34:.1f}" y="{y - 11:.1f}" width="68" height="22" rx="5" '
+            f'<rect x="{x - 34:.1f}" y="{y - 11:.1f}" width="68" height="22" '
             f'fill="{WHITE}" stroke="{TEAL_DEEP}" stroke-width="1.25"/>'
             f'<text x="{x:.1f}" y="{y + 1:.1f}" text-anchor="middle" '
             f'font-family="{FONT_MONO}" font-size="9" font-weight="600" fill="{INK}">'
@@ -194,8 +193,7 @@ def evidence_graph_svg(
             f"</g>"
         )
 
-    body = f"""  {title_block(width / 2, 20, "Claim Support Graph")}
-  {"".join(bands)}
+    body = f"""  {"".join(bands)}
   {"".join(edges)}
   {"".join(nodes)}"""
     return svg_root(width, height, body)

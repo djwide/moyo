@@ -1,0 +1,3 @@
+IBM Plex Sans, Serif, and Mono (SIL Open Font License 1.1).
+Latin WOFF files from @fontsource, originally IBM Plex.
+https://github.com/IBM/plex

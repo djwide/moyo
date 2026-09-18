@@ -1,0 +1,78 @@
+"""Jinja filters that format values for print — never dump raw LLM strings."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+
+def format_int(value: Any) -> str:
+    try:
+        return f"{int(round(float(value))):,}"
+    except (TypeError, ValueError):
+        return "0"
+
+
+def format_number(value: Any, digits: int = 1) -> str:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if n == int(n):
+        return f"{int(n):,}"
+    return f"{n:,.{int(digits)}f}"
+
+
+def format_score(value: Any, max_score: int = 5) -> str:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{n}/{int(max_score)}"
+
+
+def display_status(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return raw.replace("_", " ").replace("-", " ").title()
+
+
+def clip(value: Any, length: int = 150, end: str = "…") -> str:
+    text = " ".join(str(value or "").split())
+    limit = max(1, int(length))
+    if len(text) <= limit:
+        return text
+    cut = text[: max(0, limit - len(end))].rsplit(" ", 1)
+    head = (cut[0] if cut else text[:limit]).rstrip(".,;: ")
+    return (head or text[:limit]).rstrip() + end
+
+
+def sentence_case(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.isupper() and " " in text:
+        return text.capitalize()
+    return text
+
+
+def format_timestamp(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        d = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    return d.strftime("%-d %b %Y · %H:%M UTC")
+
+
+def register_filters(env: Any) -> None:
+    env.filters["format_int"] = format_int
+    env.filters["format_number"] = format_number
+    env.filters["format_score"] = format_score
+    env.filters["display_status"] = display_status
+    env.filters["clip"] = clip
+    env.filters["sentence_case"] = sentence_case
+    env.filters["format_timestamp"] = format_timestamp

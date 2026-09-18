@@ -39,6 +39,7 @@ from pipeline.graphics import ASSET_NAMES, generate_graphics, load_graphics_asse
 from pipeline.content import write_content_package
 from pipeline.email_alert import write_alert_email
 from pipeline.textclean import find_markdown_residue, markdown_to_html, plain_text
+from pipeline.jinja_filters import register_filters
 
 
 STAGES = ["parse", "extract", "cluster", "score", "synthesize", "graphics", "render"]
@@ -219,6 +220,7 @@ def render_pdfs(
     # `plain` flattens it to prose.
     env.filters["md"] = lambda value: Markup(markdown_to_html(value))
     env.filters["plain"] = plain_text
+    register_filters(env)
 
     logo_uri = "assets/company-logo.svg"
     if (run_dir / "assets" / "company-logo.png").exists():
@@ -308,6 +310,9 @@ def render_pdfs(
         tmp_dir = Path(tmp)
         # Presentation (design-system CSS) + content assets for WeasyPrint
         shutil.copytree(ds_root / "css", tmp_dir / "css")
+        fonts_src = ds_root / "fonts"
+        if fonts_src.is_dir():
+            shutil.copytree(fonts_src, tmp_dir / "fonts")
         if (run_dir / "assets").exists():
             shutil.copytree(run_dir / "assets", tmp_dir / "assets")
         base_url = str(tmp_dir.resolve()) + "/"

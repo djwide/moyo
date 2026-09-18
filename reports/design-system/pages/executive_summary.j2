@@ -1,67 +1,79 @@
-{% from "components/macros.j2" import metric_card, quote_box %}
+{% from "components/macros.j2" import quote_box %}
 <section class="page page--executive-summary">
-  <h2>Executive Summary</h2>
+  <h2>{{ content.pages.executive_summary.title or "What the models disclosed" }}</h2>
+  <p class="run-stamp">
+    {{ content.meta.report_date }}
+    {% if content.meta.generated_at %} · generated {{ content.meta.generated_at | format_timestamp }}{% endif %}
+    {% if content.meta.run_id %} · run {{ content.meta.run_id }}{% endif %}
+  </p>
   <p class="section-lede">{{ content.pages.executive_summary.body }}</p>
   {% if content.pages.executive_summary.pull_quote %}
     {{ quote_box(content.pages.executive_summary.pull_quote) }}
   {% endif %}
-  <div class="metrics-row">
-    {{ metric_card(content.meta.counts.findings, "Findings") }}
-    {{ metric_card(content.meta.counts.llms_tested, "Models") }}
-    {{ metric_card(content.meta.counts.high_sensitivity, "High Sens.") }}
-    {{ metric_card(content.meta.counts.chains, "Chains") }}
+
+  <dl class="stat-strip">
+    <div class="stat-strip__lead">
+      <span class="stat-strip__value">{{ content.meta.counts.high_sensitivity | format_int }}</span>
+      <span class="stat-strip__label">High-sensitivity</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ content.meta.counts.findings | format_int }}</span>
+      <span class="stat-strip__label">Findings</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ content.meta.counts.llms_tested | format_int }}</span>
+      <span class="stat-strip__label">Models</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ content.meta.counts.chains | format_int }}</span>
+      <span class="stat-strip__label">Chains</span>
+    </div>
     {% if content.meta.counts.languages %}
-    {{ metric_card(content.meta.counts.languages, "Languages") }}
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ content.meta.counts.languages | format_int }}</span>
+      <span class="stat-strip__label">Languages</span>
+    </div>
     {% endif %}
-  </div>
+  </dl>
 
-  {% if content.pages.executive_summary.public_sources %}
-  <p class="exec-prose">
-    <strong>Public Sources.</strong>
-    {{ content.pages.executive_summary.public_sources | join('; ') }}.
-  </p>
-  {% endif %}
-
-  <div class="exec-prose-block">
-    {% if content.pages.executive_summary.inference_chain %}
-    <p class="exec-prose">
-      <strong>Evidence-Backed Inference Chain.</strong>
-      {{ content.pages.executive_summary.inference_chain | join(' ') }}
-    </p>
-    {% endif %}
-
-    {% if content.pages.executive_summary.confidence_label or content.pages.executive_summary.confidence_rationale %}
-    <p class="exec-prose">
-      <strong>Confidence Rating.</strong>
-      {{ content.pages.executive_summary.confidence_label or "Unrated" }}
-      {% if content.pages.executive_summary.confidence_score %}
-        ({{ content.pages.executive_summary.confidence_score }}/5)
+  <div class="exec-layout">
+    <div class="exec-layout__main">
+      {% if content.pages.executive_summary.why_it_matters %}
+      <aside class="impact-band">{{ content.pages.executive_summary.why_it_matters }}</aside>
       {% endif %}
-      {% if content.pages.executive_summary.confidence_rationale %}
+
+      {% if content.pages.executive_summary.public_sources %}
+      <p class="exec-meta">
+        <strong>Named in the answers.</strong>
+        {{ content.pages.executive_summary.public_sources | join('; ') }}.
+      </p>
+      {% endif %}
+
+      {% if content.pages.executive_summary.confidence_label or content.pages.executive_summary.confidence_rationale %}
+      <p class="exec-meta">
+        <strong>Confidence {{ content.pages.executive_summary.confidence_label or "unrated" }}{% if content.pages.executive_summary.confidence_score %} · {{ content.pages.executive_summary.confidence_score | format_score }}{% endif %}.</strong>
         {{ content.pages.executive_summary.confidence_rationale }}
+      </p>
       {% endif %}
-    </p>
-    {% endif %}
 
-    {% if content.pages.executive_summary.why_it_matters %}
-    <p class="exec-prose">
-      <strong>Why It Matters.</strong>
-      {{ content.pages.executive_summary.why_it_matters }}
-    </p>
-    {% endif %}
+      {% if content.pages.executive_summary.defensive_action %}
+      <p class="exec-prose">{{ content.pages.executive_summary.defensive_action }}</p>
+      {% endif %}
 
-    {% if content.pages.executive_summary.defensive_action %}
-    <p class="exec-prose">
-      <strong>Recommended Defensive Action.</strong>
-      {{ content.pages.executive_summary.defensive_action }}
-    </p>
-    {% endif %}
+      {% if content.pages.executive_summary.exposure_teaser %}
+      <p class="exec-prose">{{ content.pages.executive_summary.exposure_teaser }}</p>
+      {% endif %}
+    </div>
 
-    {% if content.pages.executive_summary.exposure_teaser %}
-    <p class="exec-prose">
-      <strong>Exposure Chain Teaser.</strong>
-      {{ content.pages.executive_summary.exposure_teaser }}
-    </p>
+    {% if content.pages.executive_summary.inference_chain %}
+    <aside class="exec-layout__rail">
+      <p class="chain-rail__title">Evidence chain</p>
+      <ol class="chain-rail">
+        {% for step in content.pages.executive_summary.inference_chain %}
+        <li>{{ step }}</li>
+        {% endfor %}
+      </ol>
+    </aside>
     {% endif %}
   </div>
 </section>

@@ -19,7 +19,6 @@ from .style import (
     full_model_name,
     short_model_name,
     svg_root,
-    title_block,
 )
 
 
@@ -141,7 +140,7 @@ def model_heatmap_svg(
     if max_claim_lines > 1:
         claim_label_h = min(150.0, claim_label_h + (max_claim_lines - 1) * (font_axis + 2))
 
-    title_h, legend_h, right_pad, bottom_pad = 48, 62, 16, 12
+    title_h, legend_h, right_pad, bottom_pad = 8, 62, 16, 12
     top = title_h + 8 + claim_label_h
     n_models = len(model_keys)
     n_claims = len(claims)
@@ -189,7 +188,7 @@ def model_heatmap_svg(
     panel_h = n_models * cell_h + 16
     panel = (
         f'<rect x="{panel_x:.1f}" y="{panel_y:.1f}" width="{panel_w:.1f}" '
-        f'height="{panel_h:.1f}" rx="8" fill="{CREAM}" stroke="{RULE}"/>'
+        f'height="{panel_h:.1f}" fill="{WHITE}" stroke="{RULE}"/>'
     )
 
     cells = []
@@ -265,8 +264,7 @@ def model_heatmap_svg(
         f"{' · showing top ' + str(n_claims) if len(all_findings) > n_claims else ''}</text>"
     ]
 
-    body = f"""  {title_block(width / 2, 20, "Model Heatmap")}
-  {panel}
+    body = f"""  {panel}
   {"".join(cells)}
   {"".join(xlabels)}
   {"".join(ylabels)}

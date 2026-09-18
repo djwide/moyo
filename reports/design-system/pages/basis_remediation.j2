@@ -1,10 +1,9 @@
 {% from "components/macros.j2" import remediation_box %}
 <section class="page page--basis-remediation">
-  <h2>Actionable Remediation and Investigation Steps</h2>
+  <h2>Controls that match these findings</h2>
   <p class="basis-lede">
-    Remediation is mapped to the Idea Security Verification Framework (ISVF)
-    control catalog. Each control below includes the framework control
-    statement and concrete investigation steps drawn from its evidence
+    Mapped to the Idea Security Verification Framework catalog. Each control
+    includes the framework statement and investigation steps from its evidence
     requirements.
   </p>
 
@@ -48,7 +47,7 @@
   {% endif %}
 
   {% if content.followups %}
-  <h3>Run-Specific Follow-Ups</h3>
+  <h3>Run-specific follow-ups</h3>
   {% for item in content.followups %}
     {{ remediation_box(item) }}
   {% endfor %}

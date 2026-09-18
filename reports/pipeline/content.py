@@ -51,12 +51,10 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
         {
             "title": "Request the Basis Report",
             "body": (
-                "This snapshot is abridged. The Basis Report delivers the "
-                "complete prioritized exposure inventory, full findings with "
-                "severity rationale and confidence, verbatim evidence excerpts, "
-                "corroborating model outputs, derivation of how MOYO reached "
-                "each conclusion, cited real-world sources, and exploitation "
-                "implications."
+                "This snapshot keeps the top findings. The Basis Report has "
+                "the ranked inventory, full evidence excerpts with line "
+                "offsets, corroborating outputs, derivation steps, cited "
+                "sources, and exploitation implications."
             ),
         },
         {
@@ -145,20 +143,20 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
 
     return {
         "snapshot": {
-            "title": "Next Steps",
+            "title": "This snapshot is a scout, not the record",
             "lede": (
-                "This Exposure Snapshot is an abridged scout. The steps below "
-                "point to the Basis Report depth omitted here, and to denser "
-                "use of MOYO."
+                "The abridged product stops at the top findings. Use the "
+                "Basis Report for the rest of the inventory, then re-prompt "
+                "on the high-sensitivity claims."
             ),
             "items": snapshot_items,
         },
         "basis": {
-            "title": "Next Steps",
+            "title": "Turn the inventory into a test plan",
             "lede": (
-                "You now have the complete exposure basis. Escalate to "
-                "adversarial testing and denser prompting so remaining "
-                "reachability risk is measured, not assumed."
+                "The exposure basis is complete for this run. Red-team the "
+                "reachable conclusions and tighten the prompts until "
+                "high-value claims are corroborated or ruled out."
             ),
             "items": basis_items,
         },
@@ -416,12 +414,9 @@ def _build_executive_page(
     )
     teaser = (fields.get("exposure_teaser") or "").strip()
     if not teaser and exposure_steps:
-        teaser = (
-            "Exposure chain teaser: "
-            + " → ".join(str(s) for s in exposure_steps[:3])
-        )
+        teaser = " → ".join(str(s) for s in exposure_steps[:3])
     elif not teaser and inference:
-        teaser = "Exposure chain teaser: " + " → ".join(inference[:3])
+        teaser = " → ".join(inference[:3])
 
     defensive = ""
     if include_remediation:
@@ -432,11 +427,6 @@ def _build_executive_page(
                 defensive = str(followups[0].get("action") or "").strip()
 
     why = (fields.get("why_it_matters") or "").strip()
-    if not why and pull:
-        why = (
-            "This disclosure is concrete enough for adversaries or reporters to "
-            "act on without further invention, raising reputational and compliance risk."
-        )
 
     conf_label = (fields.get("confidence_label") or "").strip() or _confidence_label(
         conf_score
@@ -572,6 +562,19 @@ def build_content_doc(
         for item in followups
     ]
 
+    n_findings = int(counts.get("findings", len(findings)) or 0)
+    n_high = int(counts.get("high_sensitivity", 0) or 0)
+    n_models = int(counts.get("llms_tested", 0) or 0)
+    n_abridged = len(abridged)
+    if n_high:
+        exec_page["title"] = (
+            f"{n_high} high-sensitivity disclosures across {n_models} models"
+        )
+    else:
+        exec_page["title"] = (
+            f"{n_findings} disclosures across {n_models} models"
+        )
+
     return {
         "meta": {
             "run_id": report_data.get("run_id"),
@@ -601,49 +604,55 @@ def build_content_doc(
         "pages": {
             "executive_summary": exec_page,
             "risk_overview": {
+                "title": "Which models disclosed the most",
                 "body": (
-                    "Which models disclosed the most material, and how sensitive "
-                    "those findings are, plus multi-axis exposure scores across "
-                    "the run."
+                    f"{n_findings} findings from {n_models} models; "
+                    f"{n_high} scored high-sensitivity. Bar height is the sum "
+                    "of finding sensitivities."
                 ),
                 "chart_captions": {
                     "findings_by_llm": (
-                        "Findings by LLM: each tested model is scored by how "
-                        "many findings it produced and how sensitive those "
-                        "findings are. Bar height is the sum of finding "
-                        "sensitivities; color shows the high / medium / low / "
-                        "informational mix."
+                        "Each bar is one tested model. Height is the sum of "
+                        "finding sensitivities; fill shows the high / medium / "
+                        "low / informational mix."
                     ),
                     "exposure_radar": (
-                        "Finding classification profile: average specificity, "
-                        "sensitivity, corroboration, novelty, and confidence "
-                        "across extracted claims."
+                        "Mean specificity, sensitivity, corroboration, novelty, "
+                        "and confidence across extracted claims (1–5)."
                     ),
                 },
             },
             "findings": {
-                "title": "Abridged Findings",
+                "title": (
+                    "1 finding that carries this exposure"
+                    if n_abridged == 1
+                    else f"{n_abridged} findings that carry this exposure"
+                    if n_abridged
+                    else "Findings that carry this exposure"
+                ),
                 "body": "",
             },
             "evidence": {
-                "title": "Abridged Evidence",
+                "title": "Verbatim excerpts, with line offsets",
                 "body": "",
             },
             "model_comparison": {
-                "title": "Model Comparison",
+                "title": "Sensitivity by model and claim",
                 "body": "",
             },
             "appendix": {
-                "claims_title": "Abridged Claims",
+                "claims_title": "Claim index",
                 "claims_body": "",
             },
+            "inventory": {
+                "title": "Every exposure group, ranked",
+            },
             "sources": {
-                "title": "Sources and Citations",
+                "title": "What the models cited",
                 "lede": (
-                    "Real-world sources the model answers cited, numbered once "
-                    "for the whole run. Findings reference them as S1, S2, and "
-                    "so on. Presence here records what a model cited; it is not "
-                    "an endorsement of the source."
+                    "Sources the model answers named, numbered once for the "
+                    "run. Findings point here as S1, S2, and so on. A citation "
+                    "records what a model named; it is not an endorsement."
                 ),
                 "empty": (
                     "No model answer in this run cited an external source, so "
@@ -651,14 +660,13 @@ def build_content_doc(
                 ),
             },
             "glossary": {
-                "title": "Glossary",
+                "title": "How to read the scores",
                 "lede": (
-                    "Terms, identifiers, and score dimensions used throughout "
-                    "this report."
+                    "Identifiers and score dimensions used in this report."
                 ),
             },
             "next_steps": {
-                "title": "Next Steps",
+                "title": "This snapshot is a scout, not the record",
                 "body": "",
             },
         },
@@ -693,7 +701,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
         f"_Run `{meta.get('run_id')}` · {meta.get('report_date')}_",
         "",
-        "## Executive summary",
+        "## What the models disclosed",
         "",
         pages["executive_summary"]["body"],
         "",
@@ -729,7 +737,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         lines += ["### Exposure chain teaser", "", exec_page["exposure_teaser"], ""]
 
     lines += [
-        "## Risk overview",
+        "## Which models disclosed the most",
         "",
         pages["risk_overview"]["body"],
         "",
@@ -737,7 +745,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         f"- Contested: {meta['counts'].get('contested', 0)}",
         f"- Outliers: {meta['counts'].get('outliers', 0)}",
         "",
-        "## Abridged Findings",
+        "## Findings that carry this exposure",
         "",
         pages["findings"]["body"],
         "",
@@ -767,7 +775,12 @@ def render_report_md(content: dict[str, Any]) -> str:
 
     snap_ns = (content.get("next_steps") or {}).get("snapshot") or {}
     if snap_ns.get("items"):
-        lines += ["## Next Steps", "", snap_ns.get("lede") or "", ""]
+        lines += [
+            f"## {snap_ns.get('title') or 'Where this assessment should go next'}",
+            "",
+            snap_ns.get("lede") or "",
+            "",
+        ]
         for item in snap_ns["items"]:
             lines.append(f"- **{item.get('title')}** — {item.get('body')}")
         lines.append("")

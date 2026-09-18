@@ -26,17 +26,19 @@ reports/build/<run-id>/
 Shared presentation lives in `reports/design-system/` (not copied per run).
 
 **Density:** Findings, evidence, next steps, sources/citations, and glossary
-use compact panels and tighter spacing by default (snapshot and basis). Future
-renders pick this up automatically from `css/components.css`, `css/pages.css`,
-and `css/basis.css`.
+mix dense tables with a few spacious callouts. Major sections start on a
+new A4 page (`break-before: page`); sources and glossary may share a sheet.
+Do not lay out the report as a web-style infinite scroll of identical cards.
 
 ## Fonts
 
 | Role | Primary | Fallback |
 |------|---------|----------|
-| Headings / UI | Inter / Geist | IBM Plex Sans, Helvetica Neue, Arial |
-| Body prose | Source Serif 4 | Georgia, Times New Roman, serif |
-| Mono / IDs | IBM Plex Mono | ui-monospace, Menlo, Consolas |
+| Headings / body | IBM Plex Serif (bundled) | Georgia, Times New Roman, serif |
+| UI / labels | IBM Plex Sans (bundled) | Helvetica Neue, Arial |
+| Mono / IDs | IBM Plex Mono (bundled) | ui-monospace, Menlo, Consolas |
+
+WeasyPrint embeds the WOFF files in `design-system/fonts/`. Do not fall back to Inter or Geist.
 
 ## Brand color
 
@@ -54,27 +56,28 @@ and `css/basis.css`.
 
 | Page | Purpose |
 |------|---------|
-| Cover | Brand, topic, date, classification |
-| Executive Summary | Narrative + key metrics |
-| Risk Overview | Findings by LLM + exposure radar |
-| Finding | Finding card(s) with scores + status |
-| Evidence | Evidence boxes + graph |
-| Model Comparison | Heatmap + model exposure ranks |
-| Methodology | How the assessment was run |
-| Appendix | Claim index / chains |
+| Cover | Brand, prompt, date, models |
+| What the models disclosed | Narrative + stat strip |
+| Which models disclosed the most | Findings-by-LLM bars + exposure radar |
+| Findings that carry this exposure | Lead finding + compact / band variants |
+| Verbatim excerpts | Evidence boxes + graph |
+| Sensitivity by model and claim | Heatmap + model ranks |
+| Claim index | Compact findings table |
+| What the models cited | Source table with repeating headers |
+| How to read the scores | Glossary |
 
 ## Components
 
 | Component | Class / macro | Notes |
 |-----------|---------------|-------|
 | Severity badge | `severity-badge` | high / medium / low / info |
-| Finding card | `finding-card` | claim + scores + status |
-| Evidence box | `evidence-box` | raw excerpt + line refs |
-| Quote box | `quote-box` | pull quote |
-| Metric card | `metric-card` | big number + label |
-| Risk matrix | `risk-matrix` | optional 2×2; findings-by-LLM chart often used |
+| Finding | `finding_block` | lead / compact / band via Jinja loop |
+| Evidence box | `evidence-box` | transcript excerpt + line refs |
+| Quote box | `quote-box` | pull quote as a hairline band |
+| Stat strip | `stat-strip` | lead number + compact counts, not a card grid |
+| Risk matrix | `risk-matrix` | optional; findings-by-LLM chart is preferred |
 | Model comparison chart | SVG asset | heatmap / exposure dots |
-| Confidence indicator | `confidence` | 1–5 dots or bar |
+| Confidence indicator | `confidence` | 1–5 dots |
 | Remediation box | `remediation-box` | follow-up method + action |
 
 ## LLM population contract

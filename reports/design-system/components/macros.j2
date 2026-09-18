@@ -1,8 +1,8 @@
 {# MOYO design-system component macros — presentation only #}
 
 {% macro severity_badge(level) -%}
-  {%- set key = (level or 'info')|string|lower|replace('_', '-') -%}
-  <span class="severity-badge severity-badge--{{ key }}">{{ level }}</span>
+  {%- set key = (level or 'info')|string|lower|replace('_', '-')|replace(' ', '-') -%}
+  <span class="severity-badge severity-badge--{{ key }}">{{ level | display_status }}</span>
 {%- endmacro %}
 
 {% macro confidence(score, max=5) -%}
@@ -16,7 +16,7 @@
 
 {% macro metric_card(value, label) -%}
   <div class="metric-card">
-    <div class="metric-card__value">{{ value }}</div>
+    <div class="metric-card__value">{{ value | format_int }}</div>
     <div class="metric-card__label">{{ label }}</div>
   </div>
 {%- endmacro %}
@@ -26,14 +26,12 @@
   <span class="source-cite">{{ label }}</span>
 {%- endmacro %}
 
-{# Compact pointers (S1, S4) into the report's Sources and Citations section. #}
 {% macro source_refs(refs) -%}
   {%- if refs -%}
   <span class="source-refs">{{ refs | join(' ') }}</span>
   {%- endif -%}
 {%- endmacro %}
 
-{# Real-world citations carried by the model answer, with resolved labels. #}
 {% macro citation_line(citations) -%}
   {%- if citations -%}
   <div class="citation-line">
@@ -54,36 +52,42 @@
   {%- endif -%}
 {%- endmacro %}
 
-{% macro finding_card(f) -%}
+{% macro finding_block(f, variant='compact') -%}
   {%- set sens = (f.sensitivity or 0)|int -%}
   {%- set sev = 'high' if sens >= 4 else ('medium' if sens == 3 else ('low' if sens == 2 else 'info')) -%}
-  <article class="finding-card{% if sev == 'high' %} finding-card--high{% endif %}">
-    <div>
-      <span class="finding-card__id">{{ f.claim_id }}</span>
-      {{ severity_badge(f.status) }}
+  <article class="finding finding--{{ variant }}{% if sev == 'high' %} finding--high{% endif %}">
+    <header class="finding__head">
+      <span class="finding__id">{{ f.claim_id }}</span>
+      {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
       {{ severity_badge(sev) }}
       {{ language_badge(f.prompt_language) }}
-    </div>
-    <p class="finding-card__claim">{{ f.claim }}</p>
-    <div class="finding-card__meta">
-      <span>Source {{ source_cite(f) }}</span>
-      <span>Sens {{ f.sensitivity }} · Spec {{ f.specificity }}</span>
+    </header>
+    <p class="finding__claim">{{ f.claim }}</p>
+    <div class="finding__meta">
+      <span>{{ source_cite(f) }}</span>
+      <span>Sens {{ f.sensitivity | format_score }} · Spec {{ f.specificity | format_score }}</span>
       <span>Confidence {{ confidence(f.confidence) }}</span>
+      {% if f.raw_start_line %}
+      <span class="mono">lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}</span>
+      {% endif %}
     </div>
     {% if f.language_annotation %}
-    <p class="finding-card__lang">{{ f.language_annotation }}</p>
+    <p class="finding__lang">{{ f.language_annotation }}</p>
     {% endif %}
     {{ citation_line(f.citations_display) }}
-    {% if f.raw_excerpt %}
+    {% if variant == 'lead' and f.raw_excerpt %}
       {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
     {% endif %}
   </article>
 {%- endmacro %}
 
+{% macro finding_card(f) -%}
+  {{ finding_block(f, 'compact') }}
+{%- endmacro %}
+
 {% macro evidence_box(excerpt, start_line=None, end_line=None, source=None) -%}
   <aside class="evidence-box">
-    <div class="evidence-box__label">Evidence</div>
-    {# Verbatim model output: markdown is rendered as formatting, never printed. #}
+    <div class="evidence-box__label">Transcript</div>
     <div class="evidence-box__excerpt">{{ excerpt | md }}</div>
     {% if start_line or source %}
     <div class="evidence-box__cite">

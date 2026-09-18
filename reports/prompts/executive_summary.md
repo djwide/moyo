@@ -4,34 +4,36 @@ Using `report_data` JSON, return **only** a JSON object (no markdown fences, no 
 
 ```json
 {
-  "headline": "What AI systems reveal",
-  "summary": "2–4 sentence plain-English executive overview. No markdown.",
-  "top_finding_blurb": "2–3 sentences on the lead finding. No markdown.",
-  "why_it_matters": "1–2 plain-English sentences on practical impact.",
+  "headline": "Short finding, not a category header",
+  "summary": "2–4 sentences of what the models actually disclosed. Name claim IDs, sources, or counts from the JSON. No markdown.",
+  "top_finding_blurb": "2–3 sentences on the lead finding, anchored to its claim text and source. No markdown.",
+  "why_it_matters": "1–2 sentences on practical impact for this run only. Omit if you would have to guess.",
   "confidence_label": "High | Medium | Low",
-  "confidence_rationale": "One short sentence on why that confidence.",
+  "confidence_rationale": "One short sentence citing corroboration, contest, or a score already in the JSON.",
   "public_sources": [
-    "Named public source or filing type (e.g. FEC filings)",
+    "Named public source or filing type from the findings",
     "Second public source",
     "Third public source"
   ],
   "inference_chain": [
-    "Step 1 grounded in evidence",
+    "Step 1 grounded in a claim ID or source",
     "Step 2",
     "Step 3"
   ],
-  "defensive_action": "One concrete recommended defensive action.",
-  "exposure_teaser": "One short teaser sentence for the longer exposure chain (do not dump the full chain).",
+  "defensive_action": "One concrete action, or empty string if remediation is not in the data.",
+  "exposure_teaser": "One short sentence of the exposure path using names already in the JSON.",
   "exposure_chain": ["optional longer step 1", "step 2", "step 3"],
-  "what_else": ["bullet 1", "bullet 2", "bullet 3"]
+  "what_else": ["specific leftover finding", "specific leftover finding"]
 }
 ```
 
 Rules:
 - Do not invent findings. Prefer precision and disagreements already scored.
-- `public_sources` must be real outlets/filings named in the findings (FEC, OpenSecrets, House disclosures, named newsrooms, court dockets, etc.). Exactly 3 when possible.
+- `headline` is a statement of fact. Never "Overview", "Introduction", "Executive summary", or "What AI systems reveal" unless that is the only honest title and it is under 48 characters.
+- `public_sources` must be real outlets/filings named in the findings. Exactly 3 when possible.
 - `inference_chain` is **one** evidence-backed chain (3–5 short steps).
 - Plain prose only in string values — never `**bold**`, headings, or markdown lists.
+- Do not use: delve, testament, landscape, underscore, pivotal, robust, leverage, revolutionize, comprehensive, it is important to note, in today's world.
 
 ## Data
 

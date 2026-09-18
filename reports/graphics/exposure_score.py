@@ -8,7 +8,6 @@ from typing import Any, Mapping, Sequence
 from .style import (
     BAR_COLORS,
     BAR_LABELS,
-    CREAM,
     CREAM_DEEP,
     FONT,
     INK,
@@ -21,13 +20,12 @@ from .style import (
     WHITE,
     escape_xml,
     svg_root,
-    title_block,
     truncate,
 )
 
 
 def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
-    """Radar chart with title above a cream panel that contains all axis labels."""
+    """Radar of mean claim scores; axis labels sit inside a hairline panel."""
     axes = [
         ("specificity", "Specificity"),
         ("sensitivity", "Sensitivity"),
@@ -35,9 +33,8 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
         ("novelty", "Novelty"),
         ("confidence", "Confidence"),
     ]
-    # Title sits outside the panel; radar + labels live inside it.
-    # Panel shifted up one letter-height vs the title band.
-    title_h = 52 - LETTER_H
+    # Axis labels live inside a hairline panel; page titles live in the template.
+    title_h = 8
     pad = 14
     panel_x = pad
     panel_y = title_h
@@ -57,7 +54,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
 
     panel = (
         f'<rect x="{panel_x}" y="{panel_y}" width="{panel_w}" '
-        f'height="{panel_h}" rx="10" fill="{CREAM}" stroke="{RULE}"/>'
+        f'height="{panel_h}" fill="{WHITE}" stroke="{RULE}"/>'
     )
 
     rings = []
@@ -115,8 +112,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
             f"{escape_xml(label)}</text>"
         )
 
-    body = f"""  {title_block(cx, 20, "Finding Classification Profile")}
-  {panel}
+    body = f"""  {panel}
   {"".join(rings)}
   {"".join(spokes)}
   {polygon}
@@ -156,7 +152,7 @@ def llm_findings_bars_svg(
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 
     # Title + subtitle sit above the panel (subtitle is 16px below the title).
-    left, right, top, bottom = 48, 20, 57, 83
+    left, right, top, bottom = 48, 20, 18, 72
     plot_w = width - left - right
     plot_h = height - top - bottom
     base = top + plot_h
@@ -175,7 +171,7 @@ def llm_findings_bars_svg(
         f'<rect x="{panel_left}" y="{panel_y}" '
         f'width="{plot_w + 2 * panel_pad_x + LETTER_W}" '
         f'height="{plot_h + panel_pad_top + panel_pad_bot}" '
-        f'rx="10" fill="{CREAM}" stroke="{RULE}"/>'
+        f'fill="{WHITE}" stroke="{RULE}"/>'
     )
 
     grid = []
@@ -219,24 +215,11 @@ def llm_findings_bars_svg(
                 if h <= 0:
                     continue
                 y = y_cursor - h
-                is_top = j == len(live) - 1
                 color = BAR_COLORS[band]
-                if is_top:
-                    r = min(6.0, bar_w / 2, h / 2)
-                    path = (
-                        f"M {x:.1f},{y_cursor:.1f} "
-                        f"L {x:.1f},{y + r:.1f} "
-                        f"Q {x:.1f},{y:.1f} {x + r:.1f},{y:.1f} "
-                        f"L {x + bar_w - r:.1f},{y:.1f} "
-                        f"Q {x + bar_w:.1f},{y:.1f} {x + bar_w:.1f},{y + r:.1f} "
-                        f"L {x + bar_w:.1f},{y_cursor:.1f} Z"
-                    )
-                    bars.append(f'<path d="{path}" fill="{color}"/>')
-                else:
-                    bars.append(
-                        f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" '
-                        f'height="{h:.1f}" fill="{color}"/>'
-                    )
+                bars.append(
+                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" '
+                    f'height="{h:.1f}" fill="{color}"/>'
+                )
                 y_cursor = y
             label = str(int(round(total)))
             bars.append(
@@ -276,8 +259,7 @@ def llm_findings_bars_svg(
         )
         lx += item_w
 
-    body = f"""  {title_block(width / 2, 20, "Findings by LLM", subtitle="Score = findings × sensitivity")}
-  {panel}
+    body = f"""  {panel}
   {"".join(grid)}
   {"".join(bars)}
   {"".join(legend)}"""

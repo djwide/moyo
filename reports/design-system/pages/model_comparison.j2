@@ -1,10 +1,10 @@
 {% from "components/macros.j2" import svg_asset %}
 <section class="page page--model-comparison">
-  <h2>Model Comparison</h2>
+  <h2>{{ content.pages.model_comparison.title or "Sensitivity by model and claim" }}</h2>
   {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
   <ul class="model-exposure-list">
     {% for m in content.model_exposure %}
-    <li>
+    <li{% if loop.first %} class="is-lead"{% endif %}>
       <span>{{ m.model }}</span>
       <span class="dots">{{ m.dots }}</span>
     </li>
