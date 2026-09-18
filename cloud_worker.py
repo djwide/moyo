@@ -1751,10 +1751,12 @@ def overall_health_status(checks: list[dict[str, Any]]) -> str:
     return "ok"
 
 
-def _probe_llm_spec(spec: Any) -> dict[str, Any]:
+def _probe_llm_spec(spec: Any, *, extra: bool = False) -> dict[str, Any]:
     from moyo.llm.client import LLMClient, format_llm_error, llm_spec_has_auth
 
-    label = getattr(spec, "label", None) or getattr(spec, "model", None) or "LLM"
+    label = str(getattr(spec, "label", None) or getattr(spec, "model", None) or "LLM")
+    if extra:
+        label = f"{label} (additional)"
     check_id = f"llm:{label}"
     if not llm_spec_has_auth(spec):
         env_hint = ""
@@ -1918,9 +1920,10 @@ def probe_utility_llm() -> dict[str, Any]:
 def probe_retrieval_llms() -> list[dict[str, Any]]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from moyo.llm.registry import get_retrieval_specs
+    from moyo.llm.registry import get_retrieval_specs, retrieval_model_id
 
-    specs = get_retrieval_specs()
+    default_ids = {retrieval_model_id(spec) for spec in get_retrieval_specs(include_optional=False)}
+    specs = get_retrieval_specs(include_optional=True)
     if not specs:
         return [
             _check(
@@ -1932,8 +1935,15 @@ def probe_retrieval_llms() -> list[dict[str, Any]]:
             )
         ]
     checks: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(8, len(specs))) as pool:
-        futures = [pool.submit(_probe_llm_spec, spec) for spec in specs]
+    with ThreadPoolExecutor(max_workers=min(12, len(specs))) as pool:
+        futures = [
+            pool.submit(
+                _probe_llm_spec,
+                spec,
+                extra=retrieval_model_id(spec) not in default_ids,
+            )
+            for spec in specs
+        ]
         for future in as_completed(futures):
             checks.append(future.result())
     checks.sort(key=lambda item: str(item.get("name") or ""))

@@ -663,6 +663,37 @@ def test_is_health_check_request(monkeypatch):
     assert cw.is_health_check_request() is True
 
 
+def test_probe_retrieval_llms_includes_optional_models(monkeypatch):
+    from moyo.llm.client import LLMSpec
+
+    called: dict[str, bool] = {}
+
+    def fake_specs(*, include_optional: bool = False):
+        called["include_optional"] = include_optional
+        specs = [LLMSpec(provider="echo", model="gpt-4o", label="ChatGPT (OpenAI gpt-4o)")]
+        if include_optional:
+            specs.append(LLMSpec(provider="echo", model="gpt-5.6-sol", label="ChatGPT (OpenAI gpt-5.6-sol)"))
+        return specs
+
+    monkeypatch.setattr("moyo.llm.registry.get_retrieval_specs", fake_specs)
+    monkeypatch.setattr(
+        cw,
+        "_probe_llm_spec",
+        lambda spec, extra=False: cw._check(
+            f"llm:{spec.model}",
+            f"{spec.label} (additional)" if extra else spec.label,
+            ok=True,
+            level="ok",
+            detail="ok",
+        ),
+    )
+    checks = cw.probe_retrieval_llms()
+    assert called.get("include_optional") is True
+    names = {item["name"] for item in checks}
+    assert "ChatGPT (OpenAI gpt-4o)" in names
+    assert "ChatGPT (OpenAI gpt-5.6-sol) (additional)" in names
+
+
 def test_retrieval_check_storage_paths_single_and_multi(tmp_path: Path):
     slug = tmp_path / "01_enron"
     slug.mkdir()
