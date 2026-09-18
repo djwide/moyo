@@ -110,11 +110,12 @@ CONTRACT_ARTIFACTS = (
     "evidence.json",
 )
 
-# Exposure Data stops after synthesize: claims + structured findings for the
-# hosted files and the on-site summary. PDFs are Snapshot / Snapshot Auto only.
+# Exposure Data still delivers claims + structured findings, and now also
+# the snapshot one-pager so the hosted link and email include a PDF.
 RAW_CONTRACT_ARTIFACTS = (
     "claims.jsonl",
     "report_data.json",
+    "one-page.pdf",
     "raw_responses.json",
     "evidence.json",
     "report.json",
@@ -336,14 +337,12 @@ def required_rebuild_files(plan: RebuildPlan) -> tuple[str, ...]:
 
 
 def is_raw_product(spec: OrderSpec) -> bool:
-    """True for Exposure Data (scan + site summary, no packaged PDFs)."""
+    """True for Exposure Data (scan + one-pager, no human QC)."""
     return spec.product_id == "moyo_snapshot_raw"
 
 
 def stop_after_for(spec: OrderSpec) -> str | None:
-    """Full Exposure Data runs stop after synthesize; Snapshot/Basis render PDFs."""
-    if is_raw_product(spec) and spec.generation_mode == "full":
-        return "synthesize"
+    """Full Exposure Data, Snapshot, and Basis runs render through PDF."""
     return None
 
 

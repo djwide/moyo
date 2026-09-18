@@ -99,7 +99,13 @@ def configured_retrieval_model_count(path: Path | None = None) -> int:
     try:
         data = json.loads(config.read_text(encoding="utf-8"))
         entries = data.get("retrieval_llms", []) if isinstance(data, dict) else data
-        count = len([row for row in entries if isinstance(row, dict)])
+        count = len(
+            [
+                row
+                for row in entries
+                if isinstance(row, dict) and not row.get("optional")
+            ]
+        )
         return max(count, 1)
     except Exception:
         return 10

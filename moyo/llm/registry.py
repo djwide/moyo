@@ -91,12 +91,14 @@ def set_default_llm(spec: Union[LLMSpec, dict, None]) -> None:
         _default_override = LLMSpec.from_dict(spec)
 
 
-def _load_retrieval_specs() -> List[LLMSpec]:
+def _load_retrieval_entries() -> List[dict]:
     raw = os.environ.get("MOYO_RETRIEVAL_LLMS")
     if raw:
         try:
-            entries = json.loads(raw)
-            return [LLMSpec.from_dict(d) for d in entries]
+            parsed = json.loads(raw)
+            entries = parsed.get("retrieval_llms", []) if isinstance(parsed, dict) else parsed
+            if isinstance(entries, list) and entries:
+                return [d for d in entries if isinstance(d, dict)]
         except Exception as exc:
             logger.warning("Ignoring invalid MOYO_RETRIEVAL_LLMS: %s", exc)
 
@@ -105,20 +107,34 @@ def _load_retrieval_specs() -> List[LLMSpec]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             entries = data.get("retrieval_llms", []) if isinstance(data, dict) else data
-            specs = [LLMSpec.from_dict(d) for d in entries]
-            if specs:
-                return specs
+            if isinstance(entries, list) and entries:
+                return [d for d in entries if isinstance(d, dict)]
         except Exception as exc:
             logger.warning("Ignoring invalid retrieval-LLM config %s: %s", path, exc)
 
-    return [default_spec()]
+    return []
 
 
-def get_retrieval_specs() -> List[LLMSpec]:
+def _load_retrieval_specs(*, include_optional: bool = False) -> List[LLMSpec]:
+    entries = _load_retrieval_entries()
+    specs: List[LLMSpec] = []
+    for data in entries:
+        if data.get("optional") and not include_optional:
+            continue
+        try:
+            specs.append(LLMSpec.from_dict(data))
+        except Exception as exc:
+            logger.warning("Ignoring invalid retrieval LLM spec %s: %s", data.get("model"), exc)
+    return specs or [default_spec()]
+
+
+def get_retrieval_specs(*, include_optional: bool = False) -> List[LLMSpec]:
     """Return the configured retrieval-LLM specs (see module docstring).
 
     Local Ollama is intentionally excluded: it is used for prompt rewording
     and report clustering, not as a ``moyo-gather explore`` retrieval target.
+    Optional storefront extras are omitted unless ``include_optional`` is true
+    (used when an order names specific extra model ids).
     """
     try:
         from moyo.llm.testing import is_test_mode, test_llm_spec
@@ -126,7 +142,7 @@ def get_retrieval_specs() -> List[LLMSpec]:
             return [test_llm_spec()]
     except Exception:
         pass
-    specs = _load_retrieval_specs()
+    specs = _load_retrieval_specs(include_optional=include_optional)
     kept: List[LLMSpec] = []
     for spec in specs:
         provider = (spec.provider or "").lower()
@@ -159,20 +175,19 @@ def get_retrieval_llms(
     """Return an :class:`LLMClient` for each configured retrieval LLM.
 
     When ``model_ids`` is set, only specs whose :func:`retrieval_model_id`
-    appears in that list are included (order preserved). Unknown ids are
-    ignored. If nothing matches, falls back to the full configured set.
+    appears in that list are included (order preserved), including optional
+    extras. Unknown ids are ignored. If nothing matches, falls back to the
+    default (non-optional) configured set.
     """
-    specs = get_retrieval_specs()
-    if not model_ids:
-        return [LLMClient(spec) for spec in specs]
-    wanted = {str(x).strip() for x in model_ids if str(x).strip()}
+    wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}
+    specs = get_retrieval_specs(include_optional=bool(wanted))
     if not wanted:
         return [LLMClient(spec) for spec in specs]
     filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
     if not filtered:
         logger.warning(
-            "No retrieval LLMs matched model_ids=%s; using full configured set",
+            "No retrieval LLMs matched model_ids=%s; using default configured set",
             sorted(wanted),
         )
-        filtered = specs
+        filtered = get_retrieval_specs(include_optional=False)
     return [LLMClient(spec) for spec in filtered]

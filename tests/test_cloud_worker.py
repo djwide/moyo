@@ -277,11 +277,11 @@ def test_parse_order_snapshot_raw_keeps_product_id():
     assert spec.product == "snapshot"
     assert spec.product_id == "moyo_snapshot_raw"
     assert cw.is_raw_product(spec)
-    assert cw.stop_after_for(spec) == "synthesize"
+    assert cw.stop_after_for(spec) is None
     assert cw.required_artifacts(spec) == cw.RAW_CONTRACT_ARTIFACTS
 
 
-def test_full_build_argv_stops_after_synthesize_for_raw(tmp_path: Path):
+def test_full_build_argv_renders_one_pager_for_raw(tmp_path: Path):
     spec = cw.OrderSpec(
         order_id="ord_raw",
         prompts=["Enron"],
@@ -295,7 +295,7 @@ def test_full_build_argv_stops_after_synthesize_for_raw(tmp_path: Path):
         run_id="ord_raw__01_enron",
         cfg_path=tmp_path / "cfg.yaml",
     )
-    assert argv[argv.index("--stop-after") + 1] == "synthesize"
+    assert "--stop-after" not in argv
     assert argv[argv.index("--report") + 1] == "snapshot"
     assert "--no-upload" in argv
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "LLMs that a naive-prompt exploration (moyo-gather explore) fans out to. Do not list local Ollama here — Ollama is used for prompt rewording / report clustering, not as a retrieval target. api_key values of the form \"$ENV_VAR\" are read from the environment / .env so secrets stay out of this file. Remove any block you have not configured a key for; unreachable ones are recorded as errors in the report but do not stop the run. Model names are swappable - change them to whatever your account has access to.",
+  "_comment": "LLMs that a naive-prompt exploration (moyo-gather explore) fans out to. Do not list local Ollama here — Ollama is used for prompt rewording / report clustering, not as a retrieval target. api_key values of the form \"$ENV_VAR\" are read from the environment / .env so secrets stay out of this file. Remove any block you have not configured a key for; unreachable ones are recorded as errors in the report but do not stop the run. Model names are swappable - change them to whatever your account has access to. Entries with \"optional\": true are storefront extras (unchecked by default) and are skipped from exposure-preview model counts.",
 
   "retrieval_llms": [
     {
@@ -69,6 +69,92 @@
       "base_url": "https://openrouter.ai/api/v1",
       "api_key": "$OPENROUTER_API_KEY",
       "label": "Llama 4 Maverick"
+    },
+    {
+      "optional": true,
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "api_key": "$OPENAI_API_KEY",
+      "label": "ChatGPT (OpenAI gpt-5.6-sol)"
+    },
+    {
+      "optional": true,
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "api_key": "$ANTHROPIC_API_KEY",
+      "label": "Claude (Anthropic Opus 5)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "grok-4.6",
+      "base_url": "https://api.x.ai/v1",
+      "api_key": "$XAI_API_KEY",
+      "label": "Grok (xAI grok-4.6)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "gemini-3.8-flash",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key": "$GEMINI_API_KEY",
+      "label": "Gemini (Google gemini-3.8-flash)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "qwen3.8-max",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "api_key": "$DASHSCOPE_API_KEY",
+      "label": "Qwen (Alibaba qwen3.8-max)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "kimi-k3",
+      "base_url": "https://api.moonshot.ai/v1",
+      "api_key": "$MOONSHOT_API_KEY",
+      "label": "Kimi (Moonshot kimi-k3)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "sonar-reasoning-pro",
+      "base_url": "https://api.perplexity.ai",
+      "api_key": "$PERPLEXITY_API_KEY",
+      "label": "Perplexity (sonar-reasoning-pro)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "deepseek/deepseek-v4-pro",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "DeepSeek V4 Pro"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "Venice Uncensored (Dolphin Mistral 24B)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "sao10k/l3.3-euryale-70b",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "Llama 3.3 Euryale 70B (uncensored)"
+    },
+    {
+      "optional": true,
+      "provider": "custom",
+      "model": "gryphe/mythomax-l2-13b",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "$OPENROUTER_API_KEY",
+      "label": "MythoMax 13B (uncensored)"
     }
   ]
 }
