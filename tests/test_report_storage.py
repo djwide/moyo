@@ -43,13 +43,16 @@ class _FakeBucket:
 
 
 def test_local_order_id_is_stable_per_run():
+    from datetime import datetime, timezone
+
     oid = local_order_id("tell_me_about_senteguard_founder_david_weidman")
     assert oid == "ord_local_tell_me_about_senteguard_founder_david_weidman"
     folder = order_storage_folder(
         oid,
         ["Tell me about SenteGuard founder David Weidman"],
+        when=datetime(2026, 9, 18, 12, 0, 0, tzinfo=timezone.utc),
     )
-    assert folder == "senteguard_dweidman"
+    assert folder == "20260918T120000Z_senteguard_dweidman"
     assert not folder.startswith("ord_")
 
 
@@ -110,7 +113,11 @@ def test_reports_bucket_name_normalizes_gs_uri(monkeypatch: pytest.MonkeyPatch):
     assert reports_bucket_name() == "senteguard-website-moyo-reports"
 
 
-def test_publish_local_report_uses_cloud_object_names(tmp_path: Path):
+def test_publish_local_report_uses_cloud_object_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from moyo import order_storage
+
+    monkeypatch.setattr(order_storage, "utc_sort_stamp", lambda **_kwargs: "20260918T120000Z")
+
     run_dir = tmp_path / "run"
     output = run_dir / "output"
     assets = run_dir / "assets"
@@ -132,10 +139,10 @@ def test_publish_local_report_uses_cloud_object_names(tmp_path: Path):
         exploration=expl,
         bucket=bucket,
     )
-    assert result.storage_folder == "senteguard_dweidman"
-    assert result.prefix == "reports/senteguard_dweidman"
+    assert result.storage_folder == "20260918T120000Z_senteguard_dweidman"
+    assert result.prefix == "reports/20260918T120000Z_senteguard_dweidman"
     assert result.gcs_prefix == (
-        "gs://senteguard-website-moyo-reports/reports/senteguard_dweidman/"
+        "gs://senteguard-website-moyo-reports/reports/20260918T120000Z_senteguard_dweidman/"
     )
     assert f"{result.prefix}/report.pdf" in bucket.blobs
     assert f"{result.prefix}/report.md" in bucket.blobs

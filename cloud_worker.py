@@ -35,13 +35,13 @@ Storefront order fields used here::
     output.jsonPath      reports/{storageFolder}/report.json
     output.markdownPath  reports/{storageFolder}/report.md
     output.htmlPath      reports/{storageFolder}/report.html
-    storageFolder        primary prompt topic + short order suffix (GCS prefix)
+    storageFolder        UTC stamp + topic + short order suffix (GCS prefix)
 
 ``awaiting_qc`` is the canonical human-QC state. ``qc_pending`` is accepted
 only as a legacy alias when reading status.
 
 One report per prompt. GCS folders are ``reports/{storageFolder}/`` where
-``storageFolder`` is the prompt's primary topic plus a short unique suffix
+``storageFolder`` is ``YYYYMMDDTHHMMSSZ_<topic>_<order-suffix>``
 (not the Firestore ``ord_xxx`` id). A single-prompt order writes artifacts
 at that prefix (the path QC reads via ``output.pdfPath``). Multi-prompt
 orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root

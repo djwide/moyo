@@ -1,17 +1,19 @@
 """GCS folder names for report orders.
 
-Bucket objects live under ``reports/<topic>_<order-suffix>/`` so the prefix
-is the prompt's primary subject (Theranos, SenteGuard, Coca-Cola) instead of
-a generic ``ord_xxx`` id or the first few prompt words. Firestore still keys
-documents by ``orderId``.
+Bucket objects live under ``reports/<stamp>_<topic>_<order-suffix>/`` so the
+prefix sorts chronologically in Cloud Storage, then by the prompt's primary
+subject (Theranos, SenteGuard, Coca-Cola). Firestore still keys documents by
+``orderId``.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 _WORD_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 _YEAR_RE = re.compile(r"^(?:19|20)\d{2}$")
+_SORT_STAMP_RE = re.compile(r"^(\d{8}T\d{6}Z)(?:_|$|\s)", re.I)
 
 # Prompt scaffolding and generic descriptors — not the subject of the report.
 _STOP = frozenset(
@@ -212,13 +214,50 @@ def order_id_suffix(order_id: str, *, length: int = 8) -> str:
     return compact[-max(1, int(length)) :]
 
 
+def utc_sort_stamp(*, when: datetime | None = None) -> str:
+    """Compact UTC stamp that sorts lexicographically (``YYYYMMDDTHHMMSSZ``)."""
+    dt = when or datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y%m%dT%H%M%SZ")
+
+
+def sort_stamp_from_text(value: str | None) -> str | None:
+    """Return a leading or embedded sort stamp from a folder name, title, or order id."""
+    text = (value or "").strip()
+    if not text:
+        return None
+    leading = _SORT_STAMP_RE.match(text)
+    if leading:
+        return leading.group(1).upper()
+    match = re.search(r"(\d{8}T\d{6}Z)", text, re.I)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
+def with_leading_sort_stamp(text: str, stamp: str | None = None) -> str:
+    """Prefix ``text`` with a sort stamp unless one is already present."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return cleaned
+    existing = sort_stamp_from_text(cleaned)
+    if existing and cleaned.upper().startswith(existing):
+        return cleaned
+    prefix = (stamp or utc_sort_stamp()).strip()
+    return f"{prefix} {cleaned}"
+
+
 def order_storage_folder(
     order_id: str,
     prompts: list[str] | None = None,
     *,
     words: int = 3,
+    when: datetime | None = None,
 ) -> str:
-    """GCS folder name: primary prompt topic plus a short unique order suffix."""
+    """GCS folder: ``<stamp>_<topic>_<order-suffix>`` for chronological sorting."""
     del words
     prompt = ""
     for raw in prompts or []:
@@ -227,4 +266,5 @@ def order_storage_folder(
             break
     label = slugify_topic(prompt)
     suffix = order_id_suffix(order_id)
-    return f"{label}_{suffix}"
+    stamp = sort_stamp_from_text(order_id) or utc_sort_stamp(when=when)
+    return f"{stamp}_{label}_{suffix}"

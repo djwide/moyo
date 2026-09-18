@@ -1,7 +1,7 @@
 """GCS layout and upload for local and Cloud Run report jobs.
 
 Cloud jobs write ``gs://<bucket>/reports/<storageFolder>/`` where
-``storageFolder`` is the prompt's primary topic plus a short order suffix
+``storageFolder`` is ``YYYYMMDDTHHMMSSZ_<topic>_<order-suffix>``
 (:func:`moyo.order_storage.order_storage_folder`). Local ``build_report``
 runs use the same object names and the same bucket by default.
 """

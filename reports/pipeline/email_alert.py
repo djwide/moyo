@@ -186,7 +186,7 @@ def build_alert_email(
       <table role="presentation" width="560" cellspacing="0" cellpadding="0"
              style="background:#ffffff;border:1px solid #d9d4c8;max-width:560px;">
         <tr>
-          <td style="background:#000;color:#f2f1e8;padding:14px 18px;
+          <td style="background:#2e353d;color:#f2f1e8;padding:14px 18px;
                      font-family:Helvetica,Arial,sans-serif;font-size:14px;
                      font-weight:700;letter-spacing:0.16em;">
             MOYO

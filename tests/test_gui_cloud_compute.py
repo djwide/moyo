@@ -54,7 +54,7 @@ def test_order_storage_folder_for_gui_id():
         "ord_gui_20260821T085712Z_a3f9c2e1",
         ["What happened at Enron?"],
     )
-    assert folder == "enron_a3f9c2e1"
+    assert folder == "20260821T085712Z_enron_a3f9c2e1"
 
 
 def test_firestore_value_encodes_lists_and_bools():

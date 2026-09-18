@@ -971,7 +971,7 @@ def _make_compute_location_box(*, include_product: bool = True) -> tuple:
         "Cloud Run is a single job: explore → extract → cluster → PDFs. "
         "Pick the report product below; do not use the Build Report tab "
         "afterward. Artifacts land in gs://senteguard-website-moyo-reports/"
-        "reports/<storageFolder>/ (topic + order suffix). "
+        "reports/<storageFolder>/ (UTC stamp + topic + order suffix). "
         "Requires `gcloud` auth to this project.\n\n"
         "Local explore only writes exploration.md on this machine. Then "
         "open the Build Report tab and point it at that file."

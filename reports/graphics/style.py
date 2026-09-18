@@ -13,7 +13,7 @@ INK = "#1D2228"
 MUTED = "#5C6570"
 RULE = "#D9D4C8"
 WHITE = "#FFFFFF"
-BLACK = "#000000"
+BLACK = "#2E353D"
 
 FONT = "IBM Plex Sans, 'Helvetica Neue', Helvetica, Arial, sans-serif"
 FONT_MONO = "IBM Plex Mono, ui-monospace, Menlo, Consolas, monospace"

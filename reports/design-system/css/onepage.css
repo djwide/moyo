@@ -3,7 +3,7 @@
 
 @page {
   size: A4 landscape;
-  margin: 8mm 9mm 9mm 9mm;
+  margin: 6mm 7mm 7mm 7mm;
   @bottom-left {
     content: "MOYO  ·  Exposure snapshot";
     font-family: "IBM Plex Sans", sans-serif;
@@ -25,65 +25,64 @@ body {
   background: var(--moyo-white);
   font-family: var(--font-serif);
   font-size: 9.5pt;
-  line-height: 1.32;
+  line-height: 1.28;
 }
 
 .onepage {
   width: 100%;
-  min-height: 175mm;
   background: var(--moyo-white);
   border: none;
 }
 
 .brand-bar {
-  background: var(--moyo-ink);
+  background: var(--moyo-header);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.55rem 0.85rem;
-  margin: -8mm -9mm 0;
-  width: calc(100% + 18mm);
+  padding: 0.4rem 0.7rem;
+  margin: -6mm -7mm 0;
+  width: calc(100% + 14mm);
 }
 .brand-bar__slot {
   display: flex;
   align-items: center;
-  min-height: 24px;
+  min-height: 22px;
 }
 .brand-bar__slot--left { margin-right: auto; }
 .brand-bar__slot--right { margin-left: auto; }
 .brand-bar img.logo {
-  height: 24px;
+  height: 22px;
   width: auto;
   display: block;
   object-fit: contain;
 }
 .brand-bar .logo--partner {
-  height: 28px;
+  height: 26px;
   max-width: 120px;
 }
 
 .snap-masthead {
   display: flex;
-  gap: 8mm;
+  gap: 6mm;
   align-items: flex-start;
-  margin: 0.7rem 0 0.55rem;
-  padding-bottom: 0.45rem;
+  margin: 0.4rem 0 0.3rem;
+  padding-bottom: 0.3rem;
   border-bottom: 0.6pt solid var(--moyo-ink);
 }
 .snap-masthead__stat {
-  flex: 0 0 32mm;
+  flex: 0 0 28mm;
 }
 .snap-masthead__value {
   font-family: var(--font-display);
-  font-size: 2.35rem;
+  font-size: 2rem;
   font-weight: 700;
   line-height: 0.9;
   color: var(--moyo-ink);
 }
 .snap-masthead__label {
-  margin-top: 0.2rem;
+  margin-top: 0.12rem;
   font-family: var(--font-sans);
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--moyo-muted);
@@ -91,29 +90,29 @@ body {
 .snap-masthead__copy { flex: 1 1 auto; min-width: 0; }
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--moyo-teal);
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.12rem;
 }
 .headline {
   font-family: var(--font-display);
-  font-size: 1.28rem;
+  font-size: 1.18rem;
   letter-spacing: -0.02em;
-  margin: 0 0 0.25rem;
-  line-height: 1.15;
+  margin: 0 0 0.15rem;
+  line-height: 1.12;
 }
 .prompt-line {
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--moyo-ink);
-  margin: 0 0 0.15rem;
+  margin: 0 0 0.1rem;
 }
 .date-line {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.04em;
   color: var(--moyo-muted);
   margin: 0;
@@ -123,12 +122,12 @@ body {
   display: flex;
   gap: 0;
   border: 0;
-  margin: 0 0 0.55rem;
+  margin: 0 0 0.3rem;
 }
 .metrics .metric {
   flex: 1 1 0;
-  padding: 0.15rem 4mm 0.15rem 0;
-  margin-right: 4mm;
+  padding: 0.1rem 3.5mm 0.1rem 0;
+  margin-right: 3.5mm;
   text-align: left;
   border: 0;
   border-right: 0.35pt solid var(--moyo-border);
@@ -140,14 +139,14 @@ body {
 }
 .metrics .value {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
   line-height: 1;
   color: var(--moyo-ink);
 }
 .metrics .label {
-  margin-top: 0.12rem;
-  font-size: 0.55rem;
+  margin-top: 0.08rem;
+  font-size: 0.52rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--moyo-muted);
@@ -156,7 +155,7 @@ body {
 
 .snap-body {
   display: flex;
-  gap: 7mm;
+  gap: 5mm;
   align-items: flex-start;
 }
 .snap-body__lead {
@@ -167,34 +166,36 @@ body {
   flex: 0.9 1 0;
   min-width: 0;
   border-left: 2pt solid var(--moyo-ink);
-  padding-left: 5mm;
+  padding-left: 4mm;
 }
 
 .panel {
   padding: 0;
 }
-.panel h2 {
+.panel h2,
+.snap-body__lead > h2,
+.snap-body__rail > h2 {
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--moyo-muted);
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
   border: 0;
   padding: 0;
 }
 .panel-note {
-  margin: 0 0 0.3rem;
-  font-size: 0.68rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
   color: var(--moyo-muted);
   font-family: var(--font-sans);
 }
 
 .lead-finding {
   font-family: var(--font-serif);
-  font-size: 0.98rem;
-  line-height: 1.35;
-  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  line-height: 1.28;
+  margin: 0 0 0.25rem;
 }
 .badges { margin: 0; }
 
@@ -205,7 +206,7 @@ body {
 }
 .specific-list li {
   margin: 0;
-  padding: 0.35rem 0;
+  padding: 0.22rem 0;
   border-bottom: 0.35pt solid var(--moyo-border);
   break-inside: avoid;
   page-break-inside: avoid;
@@ -214,7 +215,7 @@ body {
 .specific-list li:last-child { border-bottom: 0.6pt solid var(--moyo-ink); }
 .specific-list .mono {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   color: var(--moyo-muted);
   margin-right: 0.25rem;
 }
@@ -223,15 +224,15 @@ body {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
   font-family: var(--font-serif);
-  font-size: 0.8rem;
-  line-height: 1.3;
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 .specific-source {
   display: block;
-  margin-top: 0.1rem;
-  font-size: 0.66rem;
+  margin-top: 0.08rem;
+  font-size: 0.62rem;
   color: var(--moyo-muted);
   font-weight: 600;
   font-family: var(--font-sans);
@@ -239,16 +240,16 @@ body {
 .specific-lang,
 .lead-lang {
   display: block;
-  margin-top: 0.12rem;
-  font-size: 0.66rem;
+  margin-top: 0.08rem;
+  font-size: 0.62rem;
   color: var(--moyo-teal-deep);
   font-family: var(--font-sans);
 }
 .specific-cited {
   display: block;
-  margin-top: 0.08rem;
+  margin-top: 0.06rem;
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   color: var(--moyo-teal-deep);
 }
 .specific-list .empty {
@@ -258,17 +259,17 @@ body {
 }
 
 .panel-sources {
-  margin: 0.35rem 0 0;
+  margin: 0.25rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.64rem;
+  font-size: 0.62rem;
   color: var(--moyo-muted);
 }
 
 .run-meta {
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   color: var(--moyo-muted);
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.3rem;
 }
 
 .exposure-list {
@@ -280,8 +281,8 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.15rem 0;
-  font-size: 0.76rem;
+  padding: 0.1rem 0;
+  font-size: 0.74rem;
   font-family: var(--font-sans);
   border-bottom: 0.35pt solid var(--moyo-border);
 }
@@ -289,14 +290,14 @@ body {
 .dots {
   letter-spacing: 0.06em;
   color: var(--moyo-teal);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   white-space: nowrap;
 }
 
 .cta {
-  margin: 0.45rem 0 0;
+  margin: 0.3rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;

@@ -33,7 +33,7 @@ def test_order_storage_folder_is_topic_not_ord_id():
         "ord_gui_20260821T085712Z_a3f9c2e1",
         ["Tell me about SenteGuard founder David Weidman"],
     )
-    assert folder == "senteguard_a3f9c2e1"
+    assert folder == "20260821T085712Z_senteguard_a3f9c2e1"
     assert not folder.startswith("ord_")
 
 
@@ -42,7 +42,7 @@ def test_parse_order_storage_folder_from_prompt():
         "ord_gui_20260821T085712Z_a3f9c2e1",
         {"product": "snapshot", "prompts": ["Tell me about Enron"]},
     )
-    assert spec.storage_folder == "enron_a3f9c2e1"
+    assert spec.storage_folder == "20260821T085712Z_enron_a3f9c2e1"
 
 
 def test_parse_order_honors_storage_folder_field():

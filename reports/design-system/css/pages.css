@@ -90,7 +90,7 @@ code, .mono {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--moyo-ink);
+  background: var(--moyo-header);
   padding: 9mm 16mm;
   width: 100%;
   box-sizing: border-box;

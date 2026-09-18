@@ -140,7 +140,7 @@ def model_heatmap_svg(
     if max_claim_lines > 1:
         claim_label_h = min(150.0, claim_label_h + (max_claim_lines - 1) * (font_axis + 2))
 
-    title_h, legend_h, right_pad, bottom_pad = 8, 62, 16, 12
+    title_h, legend_h, right_pad, bottom_pad = 8, 72, 16, 12
     top = title_h + 8 + claim_label_h
     n_models = len(model_keys)
     n_claims = len(claims)
@@ -240,7 +240,7 @@ def model_heatmap_svg(
         )
 
     # One sensitivity score per claim, aligned under that column.
-    sens_y = top + n_models * cell_h + 16
+    sens_y = top + n_models * cell_h + 26
     sens_row = [
         f'<text x="{left - 10:.1f}" y="{sens_y:.1f}" text-anchor="end" '
         f'font-family="{FONT}" font-size="9" fill="{MUTED}">Claim sensitivity</text>'

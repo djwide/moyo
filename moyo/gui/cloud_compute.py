@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from moyo.order_storage import order_storage_folder
+from moyo.order_storage import order_storage_folder, with_leading_sort_stamp, sort_stamp_from_text
 
 ProgressFn = Callable[[str], None]
 
@@ -371,6 +371,14 @@ def submit_cloud_compute(
     payload["orderId"] = order_id
     folder = order_storage_folder(order_id, prompts)
     payload["storageFolder"] = folder
+    stamp = sort_stamp_from_text(folder) or sort_stamp_from_text(order_id)
+    if payload.get("title"):
+        payload["title"] = with_leading_sort_stamp(str(payload["title"]), stamp)
+    elif payload.get("organization"):
+        payload["title"] = with_leading_sort_stamp(
+            f"{payload['organization']} {product_label(product)}",
+            stamp,
+        )
 
     def _p(msg: str) -> None:
         if progress:
