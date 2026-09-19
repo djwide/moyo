@@ -893,7 +893,7 @@ def test_delivery_action_retries_then_holds():
         models_requested=10,
         models_tested=3,
         coverage=0.3,
-        reasons=["only 3 model(s) tested (need more than 4)"],
+        reasons=["tested 3/10 models (30%); need more than 75%"],
     )
     assert cw.delivery_action(spec, validation=validation, retry_count=0) == "retry"
     assert cw.delivery_action(spec, validation=validation, retry_count=1) == "hold"
@@ -901,7 +901,7 @@ def test_delivery_action_retries_then_holds():
 
 def test_delivery_action_skips_validation_for_human_qc():
     spec = cw.OrderSpec(order_id="ord", prompts=["Enron"], qc_required=True)
-    validation = cw.ValidationResult(ok=False, reasons=["only 3 model(s) tested"])
+    validation = cw.ValidationResult(ok=False, reasons=["tested 3/10 models (30%); need more than 75%"])
     assert cw.delivery_action(spec, validation=validation, retry_count=0) == "qc"
 
 
@@ -911,7 +911,7 @@ def test_retry_and_hold_update_fields():
         models_requested=10,
         models_tested=3,
         coverage=0.3,
-        reasons=["only 3 model(s) tested (need more than 4)"],
+        reasons=["tested 3/10 models (30%); need more than 75%"],
     )
     retry = cw.retry_update_fields(
         validation=validation,

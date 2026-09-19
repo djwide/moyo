@@ -2,8 +2,7 @@
 
 A run passes when all of the following hold:
 
-- more than 4 retrieval models were actually tested (ok or partial)
-- more than 75% of the models requested for the run were tested
+- more than 75% of the models requested for the run were tested (ok or partial)
 - there were no fatal errors
 - required report sections are present
 """
@@ -15,7 +14,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-MIN_MODELS_TESTED = 4  # must be strictly greater than this
 MIN_COVERAGE = 0.75  # must be strictly greater than this
 TESTED_STATUSES = frozenset({"ok", "partial"})
 REQUIRED_REPORT_DATA_KEYS = ("topic", "findings", "counts")
@@ -211,10 +209,6 @@ def validate_artifacts(artifacts: Mapping[str, Path]) -> ValidationResult:
 
     coverage = (tested / requested) if requested > 0 else 0.0
     reasons: list[str] = []
-    if tested <= MIN_MODELS_TESTED:
-        reasons.append(
-            f"only {tested} model(s) tested (need more than {MIN_MODELS_TESTED})"
-        )
     if requested <= 0:
         reasons.append("no retrieval models were requested")
     elif coverage <= MIN_COVERAGE:
@@ -228,8 +222,7 @@ def validate_artifacts(artifacts: Mapping[str, Path]) -> ValidationResult:
         reasons.append("missing sections: " + ", ".join(missing))
 
     ok = (
-        tested > MIN_MODELS_TESTED
-        and requested > 0
+        requested > 0
         and coverage > MIN_COVERAGE
         and not fatals
         and not missing

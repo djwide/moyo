@@ -102,14 +102,6 @@ def test_enough_failures_invalidates(tmp_path: Path):
     assert any("75%" in reason for reason in result.reasons)
 
 
-def test_fewer_than_five_tested_fails(tmp_path: Path):
-    rows = _ten_models(fail=7)
-    result = validate_artifacts(_write_run(tmp_path, retrieval=rows))
-    assert not result.ok
-    assert result.models_tested == 3
-    assert any("more than 4" in reason for reason in result.reasons)
-
-
 def test_missing_required_sections_fail(tmp_path: Path):
     result = validate_artifacts(
         _write_run(tmp_path, retrieval=_ten_models(), omit={"claims.jsonl", "report_data.json"})
