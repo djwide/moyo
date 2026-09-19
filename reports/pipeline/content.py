@@ -465,17 +465,15 @@ def build_content_doc(
     """Structured content document consumed by design-system templates."""
     counts = report_data.get("counts") or {}
     top = report_data.get("top_finding") or {}
-    findings = _enrich_findings(
-        list(report_data.get("findings") or []),
+    findings_enriched = _enrich_findings(
+        list(report_data.get("findings_all") or report_data.get("findings") or []),
         list(report_data.get("clusters") or []),
         aliases=aliases,
         llm_config=llm_config,
     )
-    # One row per collapsed exposure group in inventory / findings / claims.
-    findings = dedupe_findings_by_group(findings)
-    # Real-world citations extracted from exploration.md, numbered once per run
-    # (S1, S2, …) so every product cites the same registry.
-    sources, findings = build_source_registry(findings)
+    sources, findings_enriched = build_source_registry(findings_enriched)
+    # Snapshot lists collapsed groups; basis narrative can use every claim.
+    findings = dedupe_findings_by_group(findings_enriched)
     top = _sync_top_finding_english(top, findings)
     pull = plain_text(top.get("text") or "")[:280]
     prompts = [plain_text(p) for p in _prompts_list(report_data)]
@@ -488,10 +486,12 @@ def build_content_doc(
         include_remediation=include_remediation,
     )
 
-    # High-specificity findings for the one-pager rail. Cap keeps the snapshot
-    # on a single landscape page once type is enlarged in onepage.css.
+    # High-specificity findings for the one-pager rail, plus extra rows that
+    # fill the landscape page under the lead disclosure.
     specific_min = 4
-    specific_cap = 5
+    specific_cap = 10
+    snapshot_cap = 12
+    onepage_more_cap = 10
     top_id = top.get("claim_id") or ""
 
     def _specific_rank(f: dict[str, Any]) -> tuple[int, int, int]:
@@ -525,7 +525,13 @@ def build_content_doc(
             reverse=True,
         )[:specific_cap]
 
-    abridged = english_findings[:5]
+    abridged = english_findings[:snapshot_cap]
+    shown_ids = {top_id} | {f.get("claim_id") for f in specific_findings}
+    onepage_more = [
+        f
+        for f in english_findings
+        if f.get("claim_id") not in shown_ids
+    ][:onepage_more_cap]
 
     explore_meta = report_data.get("explore_meta") or {}
     models_tested = list(explore_meta.get("models_tested") or [])
@@ -565,7 +571,10 @@ def build_content_doc(
             catalog = Path(resolved_isvf) / "controls" / "control-catalog.md"
             remediation = select_remediation(load_isvf_controls(catalog))
     basis_section = build_basis_section(
-        report_data, findings, remediation=remediation
+        report_data,
+        findings,
+        remediation=remediation,
+        all_findings=findings_enriched,
     )
     followups = [
         {
@@ -626,13 +635,15 @@ def build_content_doc(
                 ),
                 "chart_captions": {
                     "findings_by_llm": (
-                        "Each bar is one tested model. Height is the sum of "
+                        "Each bar is one tested model, scored on every extracted "
+                        "claim in this investigation. Height is the sum of "
                         "finding sensitivities; fill shows the high / medium / "
                         "low / informational mix."
                     ),
                     "exposure_radar": (
                         "Mean specificity, sensitivity, corroboration, novelty, "
-                        "and confidence across extracted claims (1–5)."
+                        "and confidence across every extracted claim in this "
+                        "investigation (1–5), not only the claims printed below."
                     ),
                 },
             },
@@ -690,6 +701,7 @@ def build_content_doc(
         "basis": basis_section,
         "next_steps": build_next_steps(include_remediation=include_remediation),
         "specific_findings": specific_findings,
+        "onepage_more": onepage_more,
         "sources": sources,
         "glossary": glossary_groups(),
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],

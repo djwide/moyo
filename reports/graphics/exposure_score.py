@@ -33,16 +33,19 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
         ("novelty", "Novelty"),
         ("confidence", "Confidence"),
     ]
-    # Axis labels live inside a hairline panel; page titles live in the template.
+    # Canvas is 10px wider on each side than the square plot so the outline
+    # and rings can grow without clipping labels.
+    extra_x = 20
+    width = size + extra_x
     title_h = 8
     pad = 14
-    # Outline box extends 10px farther left/right than the vertical pad.
-    panel_x = pad - 10
+    inset = 4
+    panel_x = inset
     panel_y = title_h
-    panel_w = size - 2 * pad + 20
+    panel_w = width - 2 * inset
     panel_h = size - title_h - pad
 
-    cx = size / 2
+    cx = width / 2
     cy = panel_y + panel_h / 2
     label_r = 34  # distance from ring edge to axis label center
     r_max = min(panel_w, panel_h) / 2 - label_r - 10
@@ -62,9 +65,9 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
     for level in (1, 2, 3, 4, 5):
         ring_pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (_pt(i, level) for i in range(n)))
         stroke = RULE if level < 5 else CREAM_DEEP
-        width = 1 if level < 5 else 1.25
+        sw = 1 if level < 5 else 1.25
         rings.append(
-            f'<polygon points="{ring_pts}" fill="none" stroke="{stroke}" stroke-width="{width}"/>'
+            f'<polygon points="{ring_pts}" fill="none" stroke="{stroke}" stroke-width="{sw}"/>'
         )
         # Tick labels on the top axis (specificity)
         tx, ty = _pt(0, level)
@@ -119,7 +122,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
   {polygon}
   {"".join(dots)}
   {"".join(labels)}"""
-    return svg_root(size, size, body)
+    return svg_root(width, size, body)
 
 
 def _band_score(row: Mapping[str, Any], band: str) -> float:

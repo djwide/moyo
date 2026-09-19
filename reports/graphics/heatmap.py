@@ -82,7 +82,7 @@ def model_heatmap_svg(
     findings: Iterable[dict],
     *,
     aliases: dict[str, str] | None = None,
-    max_findings: int = 20,
+    max_findings: int = 48,
     max_width: float = PRINT_MAX_WIDTH,
     max_height: float = PRINT_MAX_HEIGHT,
 ) -> str:
@@ -105,9 +105,9 @@ def model_heatmap_svg(
             seen_m.add(key)
             model_keys.append(key)
             model_labels[key] = full_model_name(str(raw or ""))
-            if len(model_keys) >= 10:
+            if len(model_keys) >= 16:
                 break
-        if len(model_keys) >= 10:
+        if len(model_keys) >= 16:
             break
     if not model_keys:
         model_keys = ["—"]

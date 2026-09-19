@@ -126,12 +126,14 @@ def build_basis_section(
     findings: list[dict[str, Any]],
     *,
     remediation: list[dict[str, Any]] | None = None,
+    all_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the ``basis`` content block consumed by the Basis Report template."""
-    # One inventory / findings row per collapsed exposure group.
+    # Ranked inventory stays one row per collapsed exposure group.
     findings = dedupe_findings_by_group(list(findings or []))
     by_id = {f.get("claim_id"): f for f in findings if f.get("claim_id")}
     chains = list(report_data.get("chains") or [])
+    narrative = list(all_findings or findings)
 
     # 1) Complete prioritized exposure inventory (collapsed groups only).
     inventory = [
@@ -146,9 +148,9 @@ def build_basis_section(
         for f in findings
     ]
 
-    # 2) Full findings with severity + rationale + confidence + evidence.
+    # 2) Full findings: every extracted claim when provided, else collapsed groups.
     findings_full = []
-    for f in findings:
+    for f in narrative:
         row = dict(f)
         row["claim"] = plain_text(f.get("claim"))
         row["severity"] = _severity_label(int(f.get("sensitivity") or 0))

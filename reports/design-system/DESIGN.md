@@ -70,7 +70,7 @@ WeasyPrint embeds the WOFF files in `design-system/fonts/`. Do not fall back to 
 
 | Component | Class / macro | Notes |
 |-----------|---------------|-------|
-| Severity badge | `severity-badge` | high / medium / low / info |
+| Severity mark | `severity-badge` | Color tick + sentence-case label; not a filled chip |
 | Finding | `finding_block` | lead / compact / band via Jinja loop |
 | Evidence box | `evidence-box` | transcript excerpt + line refs |
 | Quote box | `quote-box` | pull quote as a hairline band |

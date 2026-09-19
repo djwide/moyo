@@ -32,10 +32,16 @@ def format_score(value: Any, max_score: int = 5) -> str:
 
 
 def display_status(value: Any) -> str:
-    raw = str(value or "").strip()
+    """Sentence-style label: 'Model-specific', not 'MODEL-SPECIFIC' or a chip."""
+    raw = str(value or "").strip().replace("_", "-")
     if not raw:
         return ""
-    return raw.replace("_", " ").replace("-", " ").title()
+    parts = [p for p in raw.replace(" ", "-").split("-") if p]
+    if not parts:
+        return ""
+    head = parts[0].capitalize()
+    tail = [p.lower() for p in parts[1:]]
+    return "-".join([head, *tail])
 
 
 def clip(value: Any, length: int = 150, end: str = "…") -> str:

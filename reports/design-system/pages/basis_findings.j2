@@ -4,6 +4,7 @@
   <p class="basis-lede">
     One finding per collapsed group. Claim text is English; foreign-language
     prompting is annotated. Line offsets point back into the exploration transcript.
+    Every extracted claim from the investigation is listed here.
   </p>
   {% for f in content.basis.findings_full %}
   <article class="basis-finding{% if f.severity == 'high' %} basis-finding--high{% endif %}{% if loop.first %} basis-finding--lead{% elif loop.index % 4 == 0 %} basis-finding--band{% endif %}">
@@ -15,7 +16,7 @@
     </div>
     <p class="basis-finding__claim">{{ f.claim }}</p>
     {% if f.rationale %}
-    <p class="basis-finding__rationale">{{ f.rationale | clip(280) }}</p>
+    <p class="basis-finding__rationale">{{ f.rationale | clip(420) }}</p>
     {% endif %}
     <div class="basis-finding__meta">
       <span>{{ f.source_cite or f.source_model }}</span>
@@ -28,7 +29,7 @@
     <p class="basis-finding__lang">{{ f.language_annotation }}</p>
     {% endif %}
     {{ citation_line(f.citations_display) }}
-    {% if (loop.first or loop.index % 4 == 0) and f.raw_excerpt %}
+    {% if f.raw_excerpt %}
       {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
     {% endif %}
   </article>

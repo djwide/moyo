@@ -193,16 +193,17 @@ body {
 
 .lead-finding {
   font-family: var(--font-serif);
-  font-size: 1.05rem;
-  line-height: 1.28;
-  margin: 0 0 0.18rem;
+  font-size: 1.42rem;
+  line-height: 1.22;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.28rem;
+  max-width: 42rem;
 }
-.badges { margin: 0; }
+.badges { margin: 0 0 0.15rem; }
 
-/* Slightly larger status chips on the dense one-pager */
 .onepage .severity-badge {
-  font-size: 0.62rem;
-  padding: 0.08rem 0.34rem;
+  font-size: 0.7rem;
+  padding: 0;
 }
 
 .specific-list {
@@ -228,12 +229,12 @@ body {
 .specific-claim {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   overflow: hidden;
-  margin-top: 0.06rem;
+  margin-top: 0.04rem;
   font-family: var(--font-serif);
-  font-size: 0.9rem;
-  line-height: 1.22;
+  font-size: 0.84rem;
+  line-height: 1.2;
 }
 .specific-source {
   display: block;
@@ -262,6 +263,45 @@ body {
   color: var(--moyo-muted);
   font-style: italic;
   border: 0;
+}
+
+.snap-more {
+  margin-top: 0.35rem;
+  padding-top: 0.2rem;
+  border-top: 0.6pt solid var(--moyo-ink);
+  column-count: 2;
+  column-gap: 6mm;
+}
+.snap-more > h2 {
+  column-span: all;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--moyo-muted);
+  margin: 0 0 0.12rem;
+  border: 0;
+  padding: 0;
+}
+.snap-more-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.snap-more-list li {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  padding: 0.1rem 0;
+  border-bottom: 0.35pt solid var(--moyo-border);
+  font-family: var(--font-serif);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+.snap-more-list .mono {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--moyo-muted);
+  margin-right: 0.2rem;
 }
 
 .panel-sources {

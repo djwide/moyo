@@ -92,6 +92,10 @@ def generate_graphics(
     out_dir.mkdir(parents=True, exist_ok=True)
     emit = emit or list(DEFAULT_EMIT)
     aliases = aliases or {}
+    chart_findings = list(
+        report_data.get("findings_all") or report_data.get("findings") or []
+    )
+    chart_chains = list(report_data.get("chains") or [])
     graphics: dict[str, str] = {}
 
     if "exposure_radar" in emit:
@@ -99,22 +103,21 @@ def generate_graphics(
 
     if "model_heatmap" in emit:
         graphics["model_heatmap"] = model_heatmap_svg(
-            report_data.get("findings") or [], aliases=aliases
+            chart_findings, aliases=aliases
         )
 
     if "findings_by_llm" in emit:
-        findings = report_data.get("findings") or []
         rows = (
-            aggregate_findings_by_llm(findings, aliases)
-            if findings
+            aggregate_findings_by_llm(chart_findings, aliases)
+            if chart_findings
             else (report_data.get("findings_by_llm") or [])
         )
         graphics["findings_by_llm"] = llm_findings_bars_svg(rows)
 
     if "evidence_graph" in emit:
         graphics["evidence_graph"] = evidence_graph_svg(
-            report_data.get("findings") or [],
-            report_data.get("chains") or [],
+            chart_findings,
+            chart_chains,
             aliases=aliases,
         )
 

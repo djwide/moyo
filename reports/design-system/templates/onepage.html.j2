@@ -99,7 +99,7 @@
             <span class="mono">{{ f.claim_id }}</span>
             {{ severity_badge('SPECIFIC') }}
             {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
-            <span class="specific-claim">{{ f.claim | clip(200) }}</span>
+            <span class="specific-claim">{{ f.claim | clip(160) }}</span>
             {% if f.source_cite %}
             <span class="specific-source">{{ f.source_cite }}</span>
             {% endif %}
@@ -110,6 +110,21 @@
         </ul>
       </section>
     </div>
+
+    {% if content.onepage_more %}
+    <section class="snap-more">
+      <h2>Further disclosures</h2>
+      <ul class="snap-more-list">
+        {% for f in content.onepage_more %}
+        <li>
+          <span class="mono">{{ f.claim_id }}</span>
+          {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
+          {{ f.claim | clip(140) }}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
   </article>
 </body>
 </html>

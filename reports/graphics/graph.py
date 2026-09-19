@@ -66,14 +66,14 @@ def evidence_graph_svg(
     findings: Iterable[dict],
     chains: Iterable[dict],
     *,
-    max_nodes: int = 10,
+    max_nodes: int = 24,
     aliases: dict[str, str] | None = None,
     max_width: float = PRINT_MAX_WIDTH,
     max_height: float = PRINT_MAX_HEIGHT,
 ) -> str:
     """Sankey-style graph sized to keep node labels inside the cream columns."""
     all_findings = list(findings)
-    chains = list(chains)[:4]
+    chains = list(chains)
     width = min(max_width, 640)
     height = min(max_height, 400)
 
@@ -86,7 +86,7 @@ def evidence_graph_svg(
     node_top = band_top + 28
     node_bot = band_bottom - footer_h - 30
 
-    fit_nodes = min(max_nodes, max(6, int((node_bot - node_top) / 28)))
+    fit_nodes = min(max_nodes, max(8, int((node_bot - node_top) / 22)))
     findings = _pick_findings(all_findings, chains, fit_nodes)
 
     x_model, x_claim, x_chain = 96, 320, 560

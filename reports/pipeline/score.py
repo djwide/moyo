@@ -133,21 +133,23 @@ def score_report(
     dot_max = int(graphics_cfg.get("dot_max", 5))
     aliases = graphics_cfg.get("model_aliases") or {}
 
-    # PDF inventories / findings list one row per collapsed exposure group.
-    claims = dedupe_findings_by_group(list(claims or []))
+    # Presentation lists one row per collapsed group. Charts average and
+    # stack every extracted claim from the investigation.
+    investigation = list(claims or [])
+    claims = dedupe_findings_by_group(investigation)
     ranked = sorted(claims, key=lambda c: _weighted_score(c, weights), reverse=True)
 
     # Model exposure: sum of sensitivity*specificity for claims from that model.
     # Collapsed claims carry ``source_models`` (all corroborating LLMs).
     model_scores: dict[str, float] = defaultdict(float)
     model_counts: dict[str, int] = defaultdict(int)
-    for c in claims:
+    for c in investigation:
         weight = float(c.get("sensitivity", 0)) * float(c.get("specificity", 0))
         for m in _source_models(c, aliases):
             model_scores[m] += weight
             model_counts[m] += 1
 
-    findings_by_llm = aggregate_findings_by_llm(claims, aliases)
+    findings_by_llm = aggregate_findings_by_llm(investigation, aliases)
 
     if model_scores:
         peak = max(model_scores.values()) or 1.0
@@ -230,14 +232,12 @@ def score_report(
             }
         )
     chain_objs.sort(key=lambda x: -x["score"])
-    chain_keep = int(config.get("chain_count", 3))
-    chain_objs = chain_objs[: max(chain_keep, 5)]
 
-    # Dimension averages for radar
+    # Dimension averages for radar — every extracted claim, not the abridged set.
     def avg(key: str) -> float:
-        if not claims:
+        if not investigation:
             return 0.0
-        return round(sum(c.get(key, 0) for c in claims) / len(claims), 2)
+        return round(sum(c.get(key, 0) for c in investigation) / len(investigation), 2)
 
     topic_clean = (topic or "").strip()
     prompts = [topic_clean] if topic_clean else []
@@ -267,6 +267,7 @@ def score_report(
         "exposure_chain": chain,
         "what_else": what_else,
         "findings": ranked,
+        "findings_all": investigation,
         "clusters": clusters,
         "chains": chain_objs,
         "radar_averages": {
