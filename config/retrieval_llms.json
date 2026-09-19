@@ -147,14 +147,6 @@
       "base_url": "https://openrouter.ai/api/v1",
       "api_key": "$OPENROUTER_API_KEY",
       "label": "Llama 3.3 Euryale 70B (uncensored)"
-    },
-    {
-      "optional": true,
-      "provider": "custom",
-      "model": "gryphe/mythomax-l2-13b",
-      "base_url": "https://openrouter.ai/api/v1",
-      "api_key": "$OPENROUTER_API_KEY",
-      "label": "MythoMax 13B (uncensored)"
     }
   ]
 }

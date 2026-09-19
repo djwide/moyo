@@ -281,6 +281,30 @@ def _is_gemini_model(model: str, base_url: Optional[str] = None) -> bool:
     return "gemini" in name or "generativelanguage.googleapis.com" in url
 
 
+def _is_dashscope_url(base_url: Optional[str]) -> bool:
+    return "dashscope" in (base_url or "").lower()
+
+
+def _is_openrouter_url(base_url: Optional[str]) -> bool:
+    return "openrouter.ai" in (base_url or "").lower()
+
+
+def _is_xai_url(base_url: Optional[str]) -> bool:
+    return "api.x.ai" in (base_url or "").lower()
+
+
+def _is_moonshot_url(base_url: Optional[str]) -> bool:
+    url = (base_url or "").lower()
+    return "moonshot" in url or "kimi.ai" in url
+
+
+def _uses_responses_web_search(provider: str, base_url: Optional[str] = None) -> bool:
+    """OpenAI + xAI expose hosted web_search on the Responses API."""
+    if provider == "openai":
+        return True
+    return provider == "custom" and _is_xai_url(base_url)
+
+
 def _is_reasoning_budget_model(model: str, base_url: Optional[str] = None) -> bool:
     """Models whose reasoning tokens share the completion budget with content."""
     if _is_gemini_model(model, base_url):
@@ -351,9 +375,20 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
 def _openai_create_extras(
     model: str, base_url: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Extra kwargs for ``chat.completions.create`` beyond messages/tokens."""
+    """Extra kwargs for ``chat.completions.create`` beyond messages/tokens.
+
+    Turns on provider web-search options when the Chat Completions endpoint
+    exposes a simple flag (Qwen ``enable_search``, Gemini ``web_search_options``,
+    OpenRouter ``web`` plugin). OpenAI/xAI/Anthropic use dedicated tool paths
+    elsewhere in this module.
+    """
     extras: Dict[str, Any] = {}
-    extra_body = _openai_extra_body_for_model(model)
+    extra_body = dict(_openai_extra_body_for_model(model))
+    if _is_dashscope_url(base_url):
+        extra_body["enable_search"] = True
+    if _is_openrouter_url(base_url):
+        # Works for any OpenRouter model, including ones without tool calling.
+        extra_body["plugins"] = [{"id": "web"}]
     if extra_body:
         for key in ("reasoning_effort",):
             if key in extra_body:
@@ -365,9 +400,51 @@ def _openai_create_extras(
     # ``none`` is rejected by Pro-class aliases that require thinking mode.
     if _is_gemini_model(model, base_url):
         extras["reasoning_effort"] = "low"
+        extras["web_search_options"] = {}
     if _is_openai_max_completion_tokens_model(model):
         extras.setdefault("reasoning_effort", "low")
     return extras
+
+
+def _anthropic_web_search_tools() -> List[Dict[str, Any]]:
+    """Hosted Anthropic web_search server tool (executed by Anthropic)."""
+    return [
+        {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 5,
+        }
+    ]
+
+
+def _responses_output_text(response: Any) -> str:
+    """Visible text from an OpenAI/xAI Responses API result."""
+    text = getattr(response, "output_text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    parts: list[str] = []
+    for item in getattr(response, "output", None) or []:
+        item_type = getattr(item, "type", None)
+        if isinstance(item, dict):
+            item_type = item.get("type")
+            content = item.get("content") or []
+        else:
+            content = getattr(item, "content", None) or []
+        if item_type != "message":
+            continue
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") in (None, "output_text", "text"):
+                    chunk = str(part.get("text") or "").strip()
+                    if chunk:
+                        parts.append(chunk)
+            else:
+                part_type = getattr(part, "type", None)
+                if part_type in (None, "output_text", "text"):
+                    chunk = str(getattr(part, "text", "") or "").strip()
+                    if chunk:
+                        parts.append(chunk)
+    return "\n".join(parts).strip()
 
 
 def _openai_message_text(message: Any) -> str:
@@ -831,7 +908,23 @@ class LLMClient:
                 num_ctx=self.spec.num_ctx,
             )
 
+        if _uses_responses_web_search(provider, self.spec.base_url):
+            return self._complete_via_responses(
+                prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
         if provider in ("openai", "custom"):
+            if _is_moonshot_url(self.spec.base_url):
+                return self._complete_moonshot_with_web_search(
+                    prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    use_max_completion_tokens=use_max_completion_tokens,
+                )
             messages = []
             if system:
                 messages.append({"role": "system", "content": system})
@@ -864,6 +957,7 @@ class LLMClient:
                 "model": self.spec.model,
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": prompt}],
+                "tools": _anthropic_web_search_tools(),
                 **kwargs,
             }
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
@@ -872,6 +966,113 @@ class LLMClient:
             return _anthropic_message_text(response)
 
         raise RuntimeError(f"unsupported LLM provider: {provider}")
+
+    def _complete_via_responses(
+        self,
+        prompt: str,
+        *,
+        system: Optional[str],
+        temperature: Optional[float],
+        max_tokens: int,
+    ) -> str:
+        """OpenAI / xAI Responses API with hosted ``web_search`` enabled."""
+        create_kwargs: Dict[str, Any] = {
+            "model": self.spec.model,
+            "input": prompt,
+            "tools": [{"type": "web_search"}],
+            "max_output_tokens": max_tokens,
+        }
+        if system:
+            create_kwargs["instructions"] = system
+        if temperature is not None and not _omit_temperature_for_model(self.spec.model):
+            create_kwargs["temperature"] = temperature
+        if _is_openai_max_completion_tokens_model(self.spec.model):
+            create_kwargs["reasoning"] = {"effort": "low"}
+        responses = getattr(self._client, "responses", None)
+        if responses is None or not hasattr(responses, "create"):
+            raise RuntimeError(
+                f"{self.label} requires the Responses API for web search, but the "
+                "SDK client has no responses.create"
+            )
+        response = responses.create(**create_kwargs)
+        return _responses_output_text(response)
+
+    def _complete_moonshot_with_web_search(
+        self,
+        prompt: str,
+        *,
+        system: Optional[str],
+        temperature: Optional[float],
+        max_tokens: int,
+        use_max_completion_tokens: bool,
+    ) -> str:
+        """Moonshot Kimi: declare ``$web_search`` and echo tool results server-side."""
+        messages: List[Dict[str, Any]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        tools = [
+            {
+                "type": "builtin_function",
+                "function": {"name": "$web_search"},
+            }
+        ]
+        last_content = ""
+        for _ in range(4):
+            create_kwargs: Dict[str, Any] = {
+                "model": self.spec.model,
+                "messages": messages,
+                "tools": tools,
+            }
+            if use_max_completion_tokens or _is_openai_max_completion_tokens_model(
+                self.spec.model
+            ):
+                create_kwargs["max_completion_tokens"] = max_tokens
+            else:
+                create_kwargs["max_tokens"] = max_tokens
+            if temperature is not None and not _omit_temperature_for_model(self.spec.model):
+                create_kwargs["temperature"] = temperature
+            create_kwargs.update(
+                _openai_create_extras(self.spec.model, self.spec.base_url)
+            )
+            response = self._client.chat.completions.create(**create_kwargs)
+            message = response.choices[0].message if response.choices else None
+            if message is None:
+                break
+            last_content = _openai_message_text(message)
+            tool_calls = getattr(message, "tool_calls", None) or []
+            if not tool_calls:
+                return _with_provider_citations(last_content, response)
+            assistant_msg: Dict[str, Any] = {
+                "role": "assistant",
+                "content": getattr(message, "content", None) or "",
+            }
+            serialized_calls = []
+            for call in tool_calls:
+                fn = getattr(call, "function", None)
+                serialized_calls.append(
+                    {
+                        "id": getattr(call, "id", ""),
+                        "type": getattr(call, "type", None) or "builtin_function",
+                        "function": {
+                            "name": getattr(fn, "name", "") if fn else "",
+                            "arguments": getattr(fn, "arguments", "") if fn else "",
+                        },
+                    }
+                )
+            assistant_msg["tool_calls"] = serialized_calls
+            messages.append(assistant_msg)
+            for call in serialized_calls:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "name": call["function"]["name"],
+                        "content": call["function"]["arguments"],
+                    }
+                )
+        return last_content
+
     # -- offline stub -------------------------------------------------------
     def _echo(self, prompt: str, system: Optional[str]) -> str:
         """Deterministic offline response.

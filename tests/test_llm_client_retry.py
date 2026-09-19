@@ -125,39 +125,52 @@ def test_complete_omits_temperature_for_opus_5(monkeypatch):
     assert client.complete("hi", max_tokens=16, retries=0) == "OK"
     assert "temperature" not in captured
     assert captured["max_tokens"] >= 1024
+    assert captured["tools"][0]["type"] == "web_search_20250305"
 
 
-def test_complete_uses_max_completion_tokens_for_gpt5(monkeypatch):
+def test_complete_uses_responses_web_search_for_openai(monkeypatch):
     client = LLMClient(LLMSpec(provider="openai", model="gpt-5.6-sol", api_key="sk-test"))
     captured: dict = {}
 
-    class FakeCompletions:
+    class FakeResponses:
         def create(self, **kwargs):
             captured.update(kwargs)
 
-            class Msg:
-                content = "OK"
-
-            class Choice:
-                message = Msg()
-
             class Resp:
-                choices = [Choice()]
-                citations = None
+                output_text = "OK"
+                output = []
 
             return Resp()
 
-    class FakeChat:
-        completions = FakeCompletions()
-
     class FakeClient:
-        chat = FakeChat()
+        responses = FakeResponses()
 
     monkeypatch.setattr(client, "_client", FakeClient())
     assert client.complete("hi", max_tokens=16, retries=0) == "OK"
-    assert "max_tokens" not in captured
-    assert captured["max_completion_tokens"] >= 1024
+    assert captured["tools"] == [{"type": "web_search"}]
+    assert captured["max_output_tokens"] >= 1024
     assert "temperature" not in captured
+    assert captured.get("reasoning") == {"effort": "low"}
+
+
+def test_web_search_extras_for_qwen_gemini_openrouter():
+    qwen = _openai_create_extras(
+        "qwen-plus", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    )
+    assert qwen["extra_body"]["enable_search"] is True
+
+    gemini = _openai_create_extras(
+        "gemini-3.1-pro-preview",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    assert gemini["web_search_options"] == {}
+    assert gemini["reasoning_effort"] == "low"
+
+    openrouter = _openai_create_extras(
+        "meta-llama/llama-3.3-70b-instruct", "https://openrouter.ai/api/v1"
+    )
+    assert openrouter["extra_body"]["plugins"] == [{"id": "web"}]
+
 
 def test_complete_retries_then_succeeds(monkeypatch):
     client = LLMClient(LLMSpec(provider="echo", model="echo", max_retries=3))

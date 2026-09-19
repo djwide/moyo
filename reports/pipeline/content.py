@@ -488,9 +488,19 @@ def build_content_doc(
         include_remediation=include_remediation,
     )
 
-    # High-specificity findings for the one-pager "Specific" panel (bottom left).
-    # Cap at 2 so the snapshot stays a single page. Prefer English claim bodies.
+    # High-specificity findings for the one-pager rail. Cap keeps the snapshot
+    # on a single landscape page once type is enlarged in onepage.css.
     specific_min = 4
+    specific_cap = 5
+    top_id = top.get("claim_id") or ""
+
+    def _specific_rank(f: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            int(f.get("specificity") or 0),
+            int(f.get("sensitivity") or 0),
+            int(f.get("confidence") or 0),
+        )
+
     english_findings = [
         f
         for f in findings
@@ -498,18 +508,22 @@ def build_content_doc(
     ] or [
         f for f in findings if looks_like_english(str(f.get("claim") or ""))
     ] or findings
-    specific_findings = [
-        f
-        for f in english_findings
-        if int(f.get("specificity") or 0) >= specific_min
-        and f.get("claim_id") != (top.get("claim_id") or "")
-    ][:2]
-    if not specific_findings:
-        specific_findings = [
+    specific_findings = sorted(
+        [
             f
             for f in english_findings
-            if f.get("claim_id") != (top.get("claim_id") or "")
-        ][:2]
+            if int(f.get("specificity") or 0) >= specific_min
+            and f.get("claim_id") != top_id
+        ],
+        key=_specific_rank,
+        reverse=True,
+    )[:specific_cap]
+    if not specific_findings:
+        specific_findings = sorted(
+            [f for f in english_findings if f.get("claim_id") != top_id],
+            key=_specific_rank,
+            reverse=True,
+        )[:specific_cap]
 
     abridged = english_findings[:5]
 

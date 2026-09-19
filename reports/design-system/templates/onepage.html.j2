@@ -92,22 +92,16 @@
       </section>
 
       <section class="snap-body__rail">
-        <h2>Highest-specificity</h2>
+        <h2>Highest-specificity claims</h2>
         <ul class="specific-list">
-          {% for f in content.specific_findings[:2] %}
+          {% for f in content.specific_findings %}
           <li>
             <span class="mono">{{ f.claim_id }}</span>
             {{ severity_badge('SPECIFIC') }}
             {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
-            <span class="specific-claim">{{ f.claim | clip(220) }}</span>
+            <span class="specific-claim">{{ f.claim | clip(200) }}</span>
             {% if f.source_cite %}
             <span class="specific-source">{{ f.source_cite }}</span>
-            {% endif %}
-            {% if f.language_annotation %}
-            <span class="specific-lang">{{ f.language_annotation }}</span>
-            {% endif %}
-            {% if f.citations_display %}
-            <span class="specific-cited">Cited: {{ f.citations_display | map(attribute='short') | join('; ') }}</span>
             {% endif %}
           </li>
           {% else %}

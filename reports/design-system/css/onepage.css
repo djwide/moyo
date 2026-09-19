@@ -3,11 +3,11 @@
 
 @page {
   size: A4 landscape;
-  margin: 6mm 7mm 7mm 7mm;
+  margin: 5mm 6mm 6mm 6mm;
   @bottom-left {
     content: "MOYO  ·  Exposure snapshot";
     font-family: "IBM Plex Sans", sans-serif;
-    font-size: 7pt;
+    font-size: 7.5pt;
     color: #5c6570;
   }
   @bottom-right {
@@ -24,8 +24,8 @@ body {
   color: var(--moyo-ink);
   background: var(--moyo-white);
   font-family: var(--font-serif);
-  font-size: 9.5pt;
-  line-height: 1.28;
+  font-size: 11pt;
+  line-height: 1.25;
 }
 
 .onepage {
@@ -39,81 +39,81 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.4rem 0.7rem;
-  margin: -6mm -7mm 0;
-  width: calc(100% + 14mm);
+  padding: 0.28rem 0.55rem;
+  margin: -5mm -6mm 0;
+  width: calc(100% + 12mm);
 }
 .brand-bar__slot {
   display: flex;
   align-items: center;
-  min-height: 22px;
+  min-height: 18px;
 }
 .brand-bar__slot--left { margin-right: auto; }
 .brand-bar__slot--right { margin-left: auto; }
 .brand-bar img.logo {
-  height: 22px;
+  height: 18px;
   width: auto;
   display: block;
   object-fit: contain;
 }
 .brand-bar .logo--partner {
-  height: 26px;
-  max-width: 120px;
+  height: 22px;
+  max-width: 110px;
 }
 
 .snap-masthead {
   display: flex;
-  gap: 6mm;
+  gap: 4.5mm;
   align-items: flex-start;
-  margin: 0.4rem 0 0.3rem;
-  padding-bottom: 0.3rem;
+  margin: 0.28rem 0 0.18rem;
+  padding-bottom: 0.2rem;
   border-bottom: 0.6pt solid var(--moyo-ink);
 }
 .snap-masthead__stat {
-  flex: 0 0 28mm;
+  flex: 0 0 26mm;
 }
 .snap-masthead__value {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: 2.15rem;
   font-weight: 700;
   line-height: 0.9;
   color: var(--moyo-ink);
 }
 .snap-masthead__label {
-  margin-top: 0.12rem;
+  margin-top: 0.08rem;
   font-family: var(--font-sans);
-  font-size: 0.55rem;
-  letter-spacing: 0.1em;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--moyo-muted);
 }
 .snap-masthead__copy { flex: 1 1 auto; min-width: 0; }
 .eyebrow {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--moyo-teal);
-  margin: 0 0 0.12rem;
+  margin: 0 0 0.08rem;
 }
 .headline {
   font-family: var(--font-display);
-  font-size: 1.18rem;
+  font-size: 1.35rem;
   letter-spacing: -0.02em;
-  margin: 0 0 0.15rem;
-  line-height: 1.12;
+  margin: 0 0 0.1rem;
+  line-height: 1.1;
 }
 .prompt-line {
   font-family: var(--font-serif);
   font-style: italic;
-  font-size: 0.8rem;
+  font-size: 0.92rem;
   color: var(--moyo-ink);
-  margin: 0 0 0.1rem;
+  margin: 0 0 0.06rem;
 }
 .date-line {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.04em;
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
   color: var(--moyo-muted);
   margin: 0;
 }
@@ -122,12 +122,12 @@ body {
   display: flex;
   gap: 0;
   border: 0;
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
 }
 .metrics .metric {
   flex: 1 1 0;
-  padding: 0.1rem 3.5mm 0.1rem 0;
-  margin-right: 3.5mm;
+  padding: 0.06rem 3mm 0.06rem 0;
+  margin-right: 3mm;
   text-align: left;
   border: 0;
   border-right: 0.35pt solid var(--moyo-border);
@@ -139,15 +139,15 @@ body {
 }
 .metrics .value {
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   font-weight: 700;
   line-height: 1;
   color: var(--moyo-ink);
 }
 .metrics .label {
-  margin-top: 0.08rem;
-  font-size: 0.52rem;
-  letter-spacing: 0.1em;
+  margin-top: 0.06rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--moyo-muted);
   font-family: var(--font-sans);
@@ -155,18 +155,18 @@ body {
 
 .snap-body {
   display: flex;
-  gap: 5mm;
+  gap: 4mm;
   align-items: flex-start;
 }
 .snap-body__lead {
-  flex: 1.35 1 0;
+  flex: 1.15 1 0;
   min-width: 0;
 }
 .snap-body__rail {
-  flex: 0.9 1 0;
+  flex: 1.1 1 0;
   min-width: 0;
   border-left: 2pt solid var(--moyo-ink);
-  padding-left: 4mm;
+  padding-left: 3.5mm;
 }
 
 .panel {
@@ -176,28 +176,34 @@ body {
 .snap-body__lead > h2,
 .snap-body__rail > h2 {
   font-family: var(--font-sans);
-  font-size: 0.58rem;
-  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--moyo-muted);
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.14rem;
   border: 0;
   padding: 0;
 }
 .panel-note {
-  margin: 0 0 0.2rem;
-  font-size: 0.66rem;
+  margin: 0 0 0.14rem;
+  font-size: 0.74rem;
   color: var(--moyo-muted);
   font-family: var(--font-sans);
 }
 
 .lead-finding {
   font-family: var(--font-serif);
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   line-height: 1.28;
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.18rem;
 }
 .badges { margin: 0; }
+
+/* Slightly larger status chips on the dense one-pager */
+.onepage .severity-badge {
+  font-size: 0.62rem;
+  padding: 0.08rem 0.34rem;
+}
 
 .specific-list {
   list-style: none;
@@ -206,7 +212,7 @@ body {
 }
 .specific-list li {
   margin: 0;
-  padding: 0.22rem 0;
+  padding: 0.14rem 0;
   border-bottom: 0.35pt solid var(--moyo-border);
   break-inside: avoid;
   page-break-inside: avoid;
@@ -215,24 +221,24 @@ body {
 .specific-list li:last-child { border-bottom: 0.6pt solid var(--moyo-ink); }
 .specific-list .mono {
   font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   color: var(--moyo-muted);
   margin-right: 0.25rem;
 }
 .specific-claim {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  margin-top: 0.1rem;
+  margin-top: 0.06rem;
   font-family: var(--font-serif);
-  font-size: 0.78rem;
-  line-height: 1.25;
+  font-size: 0.9rem;
+  line-height: 1.22;
 }
 .specific-source {
   display: block;
-  margin-top: 0.08rem;
-  font-size: 0.62rem;
+  margin-top: 0.04rem;
+  font-size: 0.68rem;
   color: var(--moyo-muted);
   font-weight: 600;
   font-family: var(--font-sans);
@@ -240,16 +246,16 @@ body {
 .specific-lang,
 .lead-lang {
   display: block;
-  margin-top: 0.08rem;
-  font-size: 0.62rem;
+  margin-top: 0.06rem;
+  font-size: 0.68rem;
   color: var(--moyo-teal-deep);
   font-family: var(--font-sans);
 }
 .specific-cited {
   display: block;
-  margin-top: 0.06rem;
+  margin-top: 0.04rem;
   font-family: var(--font-sans);
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   color: var(--moyo-teal-deep);
 }
 .specific-list .empty {
@@ -259,17 +265,17 @@ body {
 }
 
 .panel-sources {
-  margin: 0.25rem 0 0;
+  margin: 0.18rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   color: var(--moyo-muted);
 }
 
 .run-meta {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.66rem;
   color: var(--moyo-muted);
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.2rem;
 }
 
 .exposure-list {
@@ -281,8 +287,8 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.1rem 0;
-  font-size: 0.74rem;
+  padding: 0.08rem 0;
+  font-size: 0.82rem;
   font-family: var(--font-sans);
   border-bottom: 0.35pt solid var(--moyo-border);
 }
@@ -290,16 +296,16 @@ body {
 .dots {
   letter-spacing: 0.06em;
   color: var(--moyo-teal);
-  font-size: 0.78rem;
+  font-size: 0.86rem;
   white-space: nowrap;
 }
 
 .cta {
-  margin: 0.3rem 0 0;
+  margin: 0.2rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--moyo-teal-deep);
   text-decoration: none;
