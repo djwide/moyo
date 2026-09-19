@@ -43,7 +43,7 @@ body {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--moyo-teal);
+  color: var(--moyo-cream);
 }
 
 h1, h2, h3 {
@@ -66,8 +66,8 @@ h1, h2, h3 {
 .badge-outlier { background: var(--moyo-ink); color: var(--moyo-cream); }
 .badge-specific { background: var(--moyo-teal); color: var(--moyo-black); }
 .badge-contested { background: var(--moyo-med); color: #fff; }
-.badge-model-specific { background: var(--moyo-ink); color: var(--moyo-teal); }
+.badge-model-specific { background: var(--moyo-ink); color: var(--moyo-cream); }
 .badge-unverified { background: var(--moyo-muted); color: #fff; }
 .badge-corroborated { background: var(--moyo-low); color: #fff; }
 
-.dots { letter-spacing: 0.08em; color: var(--moyo-teal); font-size: 0.95rem; }
+.dots { letter-spacing: 0.08em; color: var(--moyo-ink); font-size: 0.95rem; }

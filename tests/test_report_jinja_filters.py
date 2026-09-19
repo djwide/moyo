@@ -114,6 +114,7 @@ def test_snapshot_keeps_more_than_five_findings():
         report_date="20 Sep 2026",
     )
     assert len(doc["abridged_findings"]) == 12
-    assert len(doc["specific_findings"]) == 4  # top excluded; spec≥4 are C0002–C0005
+    assert len(doc["specific_findings"]) == 4
+    assert len(doc["onepage_more"]) <= 6
     assert doc["onepage_more"]
     assert len(doc["basis"]["findings_full"]) == 15

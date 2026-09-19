@@ -74,7 +74,7 @@
     <div class="snap-body">
       <section class="snap-body__lead">
         <h2>Lead disclosure</h2>
-        <p class="lead-finding">{{ content.top_finding.text }}</p>
+        <p class="lead-finding">{{ content.top_finding.text | clip(320) }}</p>
         <p class="badges">
           {% for b in content.top_finding.badges or [] %}
             {{ severity_badge(b) }}
@@ -94,15 +94,12 @@
       <section class="snap-body__rail">
         <h2>Highest-specificity claims</h2>
         <ul class="specific-list">
-          {% for f in content.specific_findings %}
+          {% for f in content.specific_findings[:4] %}
           <li>
             <span class="mono">{{ f.claim_id }}</span>
             {{ severity_badge('SPECIFIC') }}
             {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
-            <span class="specific-claim">{{ f.claim | clip(160) }}</span>
-            {% if f.source_cite %}
-            <span class="specific-source">{{ f.source_cite }}</span>
-            {% endif %}
+            <span class="specific-claim">{{ f.claim | clip(120) }}</span>
           </li>
           {% else %}
           <li class="empty">No high-specificity findings in this run.</li>
@@ -115,11 +112,11 @@
     <section class="snap-more">
       <h2>Further disclosures</h2>
       <ul class="snap-more-list">
-        {% for f in content.onepage_more %}
+        {% for f in content.onepage_more[:6] %}
         <li>
           <span class="mono">{{ f.claim_id }}</span>
           {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
-          {{ f.claim | clip(140) }}
+          {{ f.claim | clip(110) }}
         </li>
         {% endfor %}
       </ul>

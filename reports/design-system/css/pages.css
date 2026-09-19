@@ -129,7 +129,7 @@ code, .mono {
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--moyo-teal);
+  color: var(--moyo-muted);
   margin: 0 0 var(--space-5);
 }
 
@@ -423,7 +423,7 @@ code, .mono {
   border-top: 0.6pt solid var(--moyo-ink);
   padding-top: 0.35rem;
 }
-.dots { letter-spacing: 0.08em; color: var(--moyo-teal); font-size: 0.9rem; }
+.dots { letter-spacing: 0.08em; color: var(--moyo-ink); font-size: 0.9rem; }
 
 .methodology-list {
   font-family: var(--font-sans);
@@ -506,7 +506,7 @@ code, .mono {
   display: block;
   font-family: var(--font-mono);
   font-size: 0.55rem;
-  color: var(--moyo-teal-deep);
+  color: var(--moyo-muted);
 }
 
 .glossary-group { margin-bottom: var(--space-3); break-inside: avoid; }
@@ -516,7 +516,7 @@ code, .mono {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--moyo-teal-deep);
+  color: var(--moyo-ink);
   margin: 0 0 0.15rem;
   border: 0;
   padding: 0;
@@ -577,7 +577,7 @@ code, .mono {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
-  color: var(--moyo-teal-deep);
+  color: var(--moyo-muted);
 }
 .next-step__title {
   font-family: var(--font-sans);

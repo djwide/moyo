@@ -14,7 +14,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--moyo-teal);
+  color: var(--moyo-muted);
   margin: 0.75rem 1.25rem 0.25rem;
 }
 
@@ -89,6 +89,6 @@
 .cta {
   margin-top: 0.75rem;
   font-weight: 700;
-  color: var(--moyo-teal);
+  color: var(--moyo-ink);
   text-decoration: none;
 }

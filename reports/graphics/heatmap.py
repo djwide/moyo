@@ -82,11 +82,17 @@ def model_heatmap_svg(
     findings: Iterable[dict],
     *,
     aliases: dict[str, str] | None = None,
+    models_probed: Iterable[str] | None = None,
     max_findings: int = 48,
     max_width: float = PRINT_MAX_WIDTH,
     max_height: float = PRINT_MAX_HEIGHT,
 ) -> str:
-    """Heatmap with claims across the top and models down the left."""
+    """Heatmap with claims across the top and models down the left.
+
+    When ``models_probed`` is provided, rows are exactly that set: every probed
+    model appears (even with zero hits), and models that were not probed never
+    appear — including labels that only show up on findings.
+    """
     aliases = aliases or {}
     all_findings = list(findings)
 
@@ -94,21 +100,30 @@ def model_heatmap_svg(
     model_keys: list[str] = []
     model_labels: dict[str, str] = {}
     seen_m: set[str] = set()
-    for f in all_findings:
-        raw_models = f.get("source_models")
-        if not isinstance(raw_models, list) or not raw_models:
-            raw_models = [f.get("source_model") or ""]
-        for raw in raw_models:
-            key = short_model_name(str(raw or ""), aliases)
-            if not key or key in seen_m:
+
+    probed = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
+    if probed:
+        for raw in probed:
+            key = short_model_name(raw, aliases)
+            if not key or key == "unknown" or key in seen_m:
                 continue
             seen_m.add(key)
             model_keys.append(key)
-            model_labels[key] = full_model_name(str(raw or ""))
-            if len(model_keys) >= 16:
-                break
-        if len(model_keys) >= 16:
-            break
+            model_labels[key] = full_model_name(raw)
+    else:
+        # Fallback when explore_meta is missing: models that appear on findings.
+        for f in all_findings:
+            raw_models = f.get("source_models")
+            if not isinstance(raw_models, list) or not raw_models:
+                raw_models = [f.get("source_model") or ""]
+            for raw in raw_models:
+                key = short_model_name(str(raw or ""), aliases)
+                if not key or key == "unknown" or key in seen_m:
+                    continue
+                seen_m.add(key)
+                model_keys.append(key)
+                model_labels[key] = full_model_name(str(raw or ""))
+
     if not model_keys:
         model_keys = ["—"]
         model_labels = {"—": "—"}

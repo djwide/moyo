@@ -101,9 +101,22 @@ def generate_graphics(
     if "exposure_radar" in emit:
         graphics["exposure_radar"] = exposure_radar_svg(report_data.get("radar_averages") or {})
 
+    explore = report_data.get("explore_meta") or {}
+    probed = [
+        str(m).strip()
+        for m in (
+            explore.get("models_tested")
+            or report_data.get("models_tested")
+            or []
+        )
+        if str(m).strip()
+    ]
+
     if "model_heatmap" in emit:
         graphics["model_heatmap"] = model_heatmap_svg(
-            chart_findings, aliases=aliases
+            chart_findings,
+            aliases=aliases,
+            models_probed=probed or None,
         )
 
     if "findings_by_llm" in emit:
@@ -119,6 +132,7 @@ def generate_graphics(
             chart_findings,
             chart_chains,
             aliases=aliases,
+            models_probed=probed or None,
         )
 
     graphics = {k: normalize_svg_for_embed(v) for k, v in graphics.items()}

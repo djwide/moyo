@@ -486,12 +486,12 @@ def build_content_doc(
         include_remediation=include_remediation,
     )
 
-    # High-specificity findings for the one-pager rail, plus extra rows that
-    # fill the landscape page under the lead disclosure.
+    # One-pager budget: fill a single A4 landscape sheet, nothing more.
+    # Lead + ~4 rail claims + ~6 compact further rows is the ceiling.
     specific_min = 4
-    specific_cap = 10
+    specific_cap = 4
     snapshot_cap = 12
-    onepage_more_cap = 10
+    onepage_more_cap = 6
     top_id = top.get("claim_id") or ""
 
     def _specific_rank(f: dict[str, Any]) -> tuple[int, int, int]:
