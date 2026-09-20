@@ -1,0 +1,10 @@
+<section class="page page--contents">
+  <h2>Contents</h2>
+  <ol class="toc">
+    {% for item in toc %}
+    <li>
+      <a href="#{{ item.id }}">{{ item.title }}</a>
+    </li>
+    {% endfor %}
+  </ol>
+</section>

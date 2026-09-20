@@ -63,6 +63,29 @@ h2 {
 }
 h3 { font-size: 0.95rem; margin: var(--space-3) 0 var(--space-2); }
 
+.page--contents .toc {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  max-width: 42rem;
+}
+.page--contents .toc li {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  margin: 0 0 0.45rem;
+  break-inside: avoid;
+}
+.page--contents .toc a {
+  color: var(--moyo-ink);
+  text-decoration: none;
+}
+.page--contents .toc a::after {
+  content: leader(".") target-counter(attr(href), page);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
 p { margin: 0 0 var(--space-3); }
 code, .mono {
   font-family: var(--font-mono);

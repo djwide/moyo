@@ -9,10 +9,31 @@
 </head>
 <body>
   {% include "pages/cover.j2" %}
+  {% set ns = namespace(toc=[
+    {"id": "executive-summary", "title": content.pages.executive_summary.title or "What the models disclosed"},
+    {"id": "risk-overview", "title": content.pages.risk_overview.title or "Which models disclosed the most"},
+    {"id": "evidence", "title": content.pages.evidence.title or "Verbatim excerpts with line numbers"},
+    {"id": "findings", "title": content.pages.findings.title or "Findings that carry this exposure"},
+    {"id": "model-comparison", "title": content.pages.model_comparison.title or "Where the models validate and surface the same information, and where they don't"},
+    {"id": "appendix", "title": content.pages.appendix.claims_title or "Cluster index"},
+  ]) %}
+  {% if content.next_steps and content.next_steps.snapshot %}
+    {% set ns.toc = ns.toc + [{
+      "id": "next-steps",
+      "title": content.next_steps.snapshot.title or "Where this assessment should go next",
+    }] %}
+  {% endif %}
+  {% set ns.toc = ns.toc + [
+    {"id": "sources", "title": content.pages.sources.title or "What the models cited"},
+    {"id": "glossary", "title": content.pages.glossary.title or "How to read the scores"},
+  ] %}
+  {% with toc = ns.toc %}
+  {% include "pages/contents.j2" %}
+  {% endwith %}
   {% include "pages/executive_summary.j2" %}
   {% include "pages/risk_overview.j2" %}
-  {% include "pages/findings.j2" %}
   {% include "pages/evidence.j2" %}
+  {% include "pages/findings.j2" %}
   {% include "pages/model_comparison.j2" %}
   {% include "pages/appendix.j2" %}
   {% if content.next_steps and content.next_steps.snapshot %}

@@ -118,3 +118,101 @@ def test_snapshot_keeps_more_than_five_findings():
     assert len(doc["onepage_more"]) <= 6
     assert doc["onepage_more"]
     assert len(doc["basis"]["findings_full"]) == 15
+    listed = {f["claim_id"] for f in doc["abridged_findings"]}
+    for f in doc["evidence_findings"]:
+        assert f["claim_id"] in listed
+    assert len(doc["evidence_findings"]) <= 10
+
+
+def test_snapshot_and_basis_templates_include_table_of_contents():
+    from pathlib import Path
+
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+    from pipeline.jinja_filters import register_filters
+
+    ds = Path(__file__).resolve().parents[1] / "reports" / "design-system"
+    env = Environment(
+        loader=FileSystemLoader([str(ds / "templates"), str(ds)]),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    register_filters(env)
+    env.filters["md"] = lambda value: value or ""
+    env.filters["plain"] = lambda value: value or ""
+    content = {
+        "meta": {
+            "topic": "Vault",
+            "prompts": ["vault"],
+            "report_date": "21 Sep 2026",
+            "counts": {
+                "findings": 1,
+                "llms_tested": 1,
+                "llms_attempted": 1,
+                "llms_response_received": 1,
+                "llms_substantive": 1,
+                "llms_claims_contributed": 1,
+                "high_sensitivity": 0,
+                "chains": 0,
+                "languages": 0,
+            },
+            "coverage": {
+                "attempted": 1,
+                "response_received": 1,
+                "substantive_response": 1,
+                "claims_contributed": 1,
+            },
+            "models_tested": ["GPT"],
+            "strategies": ["original"],
+            "include_remediation": False,
+        },
+        "pages": {
+            "executive_summary": {"title": "What the models disclosed"},
+            "risk_overview": {"title": "Which models disclosed the most"},
+            "findings": {"title": "Findings that carry this exposure"},
+            "evidence": {"title": "Verbatim excerpts with line numbers"},
+            "model_comparison": {"title": "Where the models validate"},
+            "appendix": {"claims_title": "Cluster index"},
+            "inventory": {"title": "Every cluster, ranked"},
+            "sources": {"title": "What the models cited"},
+            "glossary": {"title": "How to read the scores"},
+        },
+        "assets": {},
+        "abridged_findings": [],
+        "evidence_findings": [],
+        "top_finding": {"text": "x", "badges": []},
+        "specific_findings": [],
+        "next_steps": {
+            "snapshot": {"title": "Next", "items": []},
+            "basis": {"title": "Next", "items": []},
+        },
+        "basis": {"inventory": [], "findings_full": [], "chain_details": []},
+        "model_contrast": {},
+        "sources": [],
+        "glossary": [],
+        "followups": [],
+        "response_corpus": [],
+    }
+    snap = env.get_template("report.html.j2").render(
+        content=content,
+        graphics={},
+        logo_uri="",
+        partner_logo_uri="",
+        favicon_uri="",
+        css_href="css/report.css",
+    )
+    basis = env.get_template("basis.html.j2").render(
+        content=content,
+        graphics={},
+        logo_uri="",
+        partner_logo_uri="",
+        favicon_uri="",
+        css_href="css/basis.css",
+    )
+    assert 'class="page page--contents"' in snap
+    assert 'class="page page--contents"' in basis
+    assert 'href="#evidence"' in snap
+    assert 'id="evidence"' in snap
+    assert 'href="#inventory"' in basis
+    assert 'id="inventory"' in basis
+    assert "Contents" in snap
+    assert "Contents" in basis

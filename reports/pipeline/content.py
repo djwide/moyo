@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from graphics.graph import snapshot_graph_findings
 from graphics.style import format_source_cite, short_model_name
 from .cluster import dedupe_findings_by_group, present_id
 from pipeline.graphics import ASSET_NAMES
@@ -542,6 +543,11 @@ def build_content_doc(
         )[:specific_cap]
 
     abridged = english_findings[:snapshot_cap]
+    evidence_findings = snapshot_graph_findings(
+        english_findings,
+        cap=snapshot_cap,
+        limit=10,
+    )
     shown_ids = {top_id} | {f.get("claim_id") for f in specific_findings}
     onepage_more = [
         f
@@ -702,7 +708,7 @@ def build_content_doc(
                 "body": "",
             },
             "evidence": {
-                "title": "Verbatim excerpts, with line offsets",
+                "title": "Verbatim excerpts with line numbers",
                 "body": "",
             },
             "model_comparison": {
@@ -749,6 +755,7 @@ def build_content_doc(
         "top_finding": top,
         "findings": findings,
         "abridged_findings": abridged,
+        "evidence_findings": evidence_findings,
         "basis": basis_section,
         "next_steps": build_next_steps(include_remediation=include_remediation),
         "specific_findings": specific_findings,

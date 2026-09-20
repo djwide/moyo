@@ -438,18 +438,26 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
     from moyo.llm.client import (
         PARAPHRASER_TIMEOUT,
         RETRIEVAL_TIMEOUT_DEFAULT,
+        RETRIEVAL_TIMEOUT_REASONING,
         RETRIEVAL_TIMEOUT_WEB_SEARCH,
         SNAPSHOT_TIMEOUT,
         apply_retrieval_timeout,
     )
 
     gpt = LLMSpec(provider="openai", model="gpt-4o", api_key="x")
+    kimi = LLMSpec(provider="custom", model="kimi-k3", api_key="x")
+    qwen = LLMSpec(provider="custom", model="qwen3.8-max", api_key="x")
+    sol = LLMSpec(provider="openai", model="gpt-5.6-sol", api_key="x")
     assert RETRIEVAL_TIMEOUT_DEFAULT == 120
     assert SNAPSHOT_TIMEOUT == 120
     assert PARAPHRASER_TIMEOUT == 120
+    assert RETRIEVAL_TIMEOUT_REASONING == 240
     assert RETRIEVAL_TIMEOUT_WEB_SEARCH == 300
     assert apply_retrieval_timeout(gpt, None) == RETRIEVAL_TIMEOUT_DEFAULT
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT) == SNAPSHOT_TIMEOUT
+    assert apply_retrieval_timeout(kimi, None) == RETRIEVAL_TIMEOUT_REASONING
+    assert apply_retrieval_timeout(qwen, SNAPSHOT_TIMEOUT) == RETRIEVAL_TIMEOUT_REASONING
+    assert apply_retrieval_timeout(sol, None) == RETRIEVAL_TIMEOUT_REASONING
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT, web_search=True) == (
         RETRIEVAL_TIMEOUT_WEB_SEARCH
     )

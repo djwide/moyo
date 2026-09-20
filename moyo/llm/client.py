@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_TIMEOUT = 120
 SNAPSHOT_MAX_ATTEMPTS = 1
 RETRIEVAL_TIMEOUT_DEFAULT = 120
+RETRIEVAL_TIMEOUT_REASONING = 240
 RETRIEVAL_TIMEOUT_WEB_SEARCH = 300
 PARAPHRASER_TIMEOUT = 120
 
@@ -316,6 +317,12 @@ def _uses_responses_web_search(provider: str, base_url: Optional[str] = None) ->
     return provider == "custom" and _is_xai_url(base_url)
 
 
+def _is_qwen_reasoning_model(model: str) -> bool:
+    """Qwen 3.8-max (and similar) spend the completion budget on thinking first."""
+    name = (model or "").lower()
+    return "qwen3.8" in name or "qwen3-8" in name
+
+
 def _is_reasoning_budget_model(model: str, base_url: Optional[str] = None) -> bool:
     """Models whose reasoning tokens share the completion budget with content."""
     if _is_gemini_model(model, base_url):
@@ -327,6 +334,8 @@ def _is_reasoning_budget_model(model: str, base_url: Optional[str] = None) -> bo
     if _is_deepseek_v4(model):
         return True
     if _is_anthropic_no_temperature_model(model):
+        return True
+    if _is_qwen_reasoning_model(model):
         return True
     name = (model or "").lower()
     return "sonar-reasoning" in name
@@ -696,9 +705,16 @@ def apply_retrieval_timeout(
     """Resolve per-call timeout for retrieval fan-out."""
     if web_search:
         return RETRIEVAL_TIMEOUT_WEB_SEARCH
+    if _is_reasoning_budget_model(spec.model, spec.base_url):
+        configured = int(getattr(spec, "timeout", 0) or 0)
+        floor = max(RETRIEVAL_TIMEOUT_REASONING, configured)
+        if override is not None:
+            return max(floor, int(override))
+        return floor
     if override is not None:
         return max(1, int(override))
-    return RETRIEVAL_TIMEOUT_DEFAULT
+    configured = int(getattr(spec, "timeout", 0) or 0)
+    return configured if configured > 0 else RETRIEVAL_TIMEOUT_DEFAULT
 
 
 def llm_spec_has_auth(spec: LLMSpec) -> bool:

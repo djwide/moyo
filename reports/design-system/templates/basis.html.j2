@@ -9,6 +9,30 @@
 </head>
 <body>
   {% include "pages/basis_cover.j2" %}
+  {% set ns = namespace(toc=[
+    {"id": "executive-summary", "title": content.pages.executive_summary.title or "What the models disclosed"},
+    {"id": "risk-overview", "title": content.pages.risk_overview.title or "Which models disclosed the most"},
+    {"id": "model-comparison", "title": content.pages.model_comparison.title or "Where the models validate and surface the same information, and where they don't"},
+    {"id": "inventory", "title": content.pages.inventory.title or "Every cluster, ranked"},
+    {"id": "findings", "title": "Each cluster, with the transcript that produced it"},
+    {"id": "exposure", "title": "How outputs combine into exposures"},
+  ]) %}
+  {% if content.meta.include_remediation %}
+    {% set ns.toc = ns.toc + [{"id": "remediation", "title": "Controls that match these findings"}] %}
+  {% endif %}
+  {% if content.next_steps and content.next_steps.basis %}
+    {% set ns.toc = ns.toc + [{
+      "id": "next-steps",
+      "title": content.next_steps.basis.title or "Turn the inventory into a test plan",
+    }] %}
+  {% endif %}
+  {% set ns.toc = ns.toc + [
+    {"id": "sources", "title": content.pages.sources.title or "What the models cited"},
+    {"id": "glossary", "title": content.pages.glossary.title or "How to read the scores"},
+  ] %}
+  {% with toc = ns.toc %}
+  {% include "pages/contents.j2" %}
+  {% endwith %}
   {% include "pages/executive_summary.j2" %}
   {% include "pages/risk_overview.j2" %}
   {% include "pages/model_comparison.j2" %}

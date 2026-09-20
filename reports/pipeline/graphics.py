@@ -7,7 +7,7 @@ from typing import Any
 
 from graphics.exposure_score import exposure_radar_svg, llm_findings_bars_svg
 from graphics.heatmap import model_heatmap_svg
-from graphics.graph import evidence_graph_svg
+from graphics.graph import evidence_graph_svg, snapshot_graph_findings
 from graphics.style import normalize_svg_for_embed
 from pipeline.score import aggregate_findings_by_llm
 
@@ -18,6 +18,7 @@ ASSET_NAMES = {
     "model_heatmap_full": "model-heatmap-full.svg",
     "findings_by_llm": "findings-by-llm.svg",
     "evidence_graph": "evidence-graph.svg",
+    "evidence_graph_snapshot": "evidence-graph-snapshot.svg",
 }
 
 DEFAULT_EMIT = [
@@ -72,6 +73,15 @@ def load_graphics_assets(
             "Missing graphics under assets/ (run graphics stage first, or drop "
             f"--keep-graphics):\n  " + "\n  ".join(missing)
         )
+    snap_name = ASSET_NAMES.get("evidence_graph_snapshot")
+    if snap_name:
+        snap_path = out / snap_name
+        if snap_path.exists():
+            graphics["evidence_graph_snapshot"] = normalize_svg_for_embed(
+                snap_path.read_text(encoding="utf-8")
+            )
+        elif "evidence_graph" in graphics:
+            graphics["evidence_graph_snapshot"] = graphics["evidence_graph"]
     return graphics
 
 
@@ -148,6 +158,15 @@ def generate_graphics(
             chart_chains,
             aliases=aliases,
             models_probed=probed or None,
+        )
+        snap_source = list(report_data.get("findings") or chart_findings)
+        snap_findings = snapshot_graph_findings(snap_source)
+        graphics["evidence_graph_snapshot"] = evidence_graph_svg(
+            snap_findings or chart_findings,
+            chart_chains,
+            aliases=aliases,
+            models_probed=probed or None,
+            max_claims=max(len(snap_findings), 1) if snap_findings else 10,
         )
 
     graphics = {k: normalize_svg_for_embed(v) for k, v in graphics.items()}

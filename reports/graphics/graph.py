@@ -149,7 +149,43 @@ def _finding_models(finding: dict, aliases: dict[str, str]) -> set[str]:
 
 
 def _present_id(finding: dict) -> str:
-    return str(finding.get("cluster_id") or finding.get("claim_id") or "").strip()
+    return str(
+        finding.get("present_id")
+        or finding.get("cluster_id")
+        or finding.get("claim_id")
+        or ""
+    ).strip()
+
+
+def snapshot_graph_findings(
+    findings: Sequence[dict],
+    *,
+    cap: int = 12,
+    limit: int = 10,
+) -> list[dict]:
+    """Clusters the snapshot graph may show: abridged set, excerpted first.
+
+    The Exposure Snapshot lists a capped English cluster set, then prints
+    verbatim excerpts for a subset. Graph nodes must come from that same
+    subset so every cluster on the graph appears in the following section.
+    """
+    from pipeline.cluster import dedupe_findings_by_group
+    from pipeline.language import looks_like_english
+
+    grouped = dedupe_findings_by_group(list(findings))
+    english = [
+        f
+        for f in grouped
+        if looks_like_english(str(f.get("claim") or ""))
+        and not f.get("english_pending")
+    ] or [
+        f for f in grouped if looks_like_english(str(f.get("claim") or ""))
+    ] or grouped
+    abridged = english[: max(0, cap)]
+    excerpted = [
+        f for f in abridged if str(f.get("raw_excerpt") or "").strip()
+    ][: max(0, limit)]
+    return excerpted or abridged[: max(0, limit)]
 
 
 def _clusters_by_agreement(
@@ -234,6 +270,20 @@ def evidence_graph_svg(
         aliases=aliases,
         limit=max_claims,
     )
+
+    def _chain_clusters(ch: dict) -> set[str]:
+        wanted: set[str] = set()
+        for cid in ch.get("claim_ids") or []:
+            f = by_id.get(str(cid))
+            wanted.add(_present_id(f) if f else str(cid))
+        return wanted
+
+    shown = set(cluster_ids)
+    chains = [
+        c
+        for c in chains
+        if _chain_clusters(c) & shown
+    ] or chains
 
     cite_ys = _ys(len(citations) or 1, node_top, node_bot)
     model_ys = _ys(len(models) or 1, node_top, node_bot)

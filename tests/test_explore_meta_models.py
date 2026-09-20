@@ -220,3 +220,52 @@ def test_attach_explore_meta_coverage_metrics(tmp_path: Path):
         "Claude (Anthropic Sonnet)",
         "Grok (xAI grok-4.5)",
     }
+
+
+def test_snapshot_evidence_graph_omits_clusters_not_in_abridged_set(tmp_path: Path):
+    findings = []
+    for i in range(1, 16):
+        models = ["ChatGPT (OpenAI gpt-4o)"]
+        if i >= 13:
+            models = [
+                "ChatGPT (OpenAI gpt-4o)",
+                "Claude (Anthropic Sonnet)",
+                "Grok (xAI grok-4.5)",
+            ]
+        findings.append(
+            {
+                "claim_id": f"C{i:04d}",
+                "cluster_id": f"CL{i:03d}",
+                "present_id": f"CL{i:03d}",
+                "claim": f"English disclosure {i} about the vault path.",
+                "raw_excerpt": f"excerpt {i}" if i <= 12 else "",
+                "sensitivity": 5 if i >= 13 else 2,
+                "source_model": models[0],
+                "source_models": models,
+            }
+        )
+    graphics = generate_graphics(
+        {
+            "radar_averages": {},
+            "explore_meta": {
+                "models_tested": [
+                    "ChatGPT (OpenAI gpt-4o)",
+                    "Claude (Anthropic Sonnet)",
+                    "Grok (xAI grok-4.5)",
+                ]
+            },
+            "findings": findings,
+            "findings_all": findings,
+            "chains": [],
+        },
+        tmp_path,
+        aliases=ALIASES,
+        write_files=False,
+        write_assets=False,
+    )
+    full = graphics["evidence_graph"]
+    snap = graphics["evidence_graph_snapshot"]
+    assert "CL013" in full
+    assert "CL013" not in snap
+    assert "CL001" in snap
+    assert "CL010" in snap
