@@ -2,29 +2,29 @@
 
 /* Editorial status marks: a color tick + sentence-case label. Not chips. */
 .severity-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28em;
+  display: inline-block;
   font-family: var(--font-sans);
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   text-transform: none;
   padding: 0;
-  margin-right: 0.7em;
+  margin: 0 0.7em 0 0;
   background: transparent;
   color: var(--moyo-ink);
   border: 0;
   border-radius: 0;
   vertical-align: middle;
   line-height: 1.2;
+  white-space: nowrap;
 }
 .severity-badge::before {
   content: "";
   display: inline-block;
   width: 0.42em;
   height: 0.42em;
-  flex: 0 0 0.42em;
+  margin-right: 0.28em;
+  vertical-align: 0.05em;
   background: var(--moyo-muted);
 }
 .severity-badge--high,
@@ -123,6 +123,16 @@
 }
 .finding--high .finding__id { color: var(--moyo-high); }
 
+.finding__head {
+  display: block;
+  white-space: nowrap;
+  margin: 0 0 0.12rem;
+  line-height: 1.2;
+}
+.finding__head .finding__id {
+  margin-right: 0.7em;
+}
+
 .finding__id,
 .finding-card__id {
   font-family: var(--font-mono);
@@ -213,18 +223,10 @@
 }
 
 .confidence {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-  vertical-align: middle;
+  display: inline;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.confidence__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--moyo-border);
-}
-.confidence__dot--on { background: var(--moyo-ink); }
 
 .remediation-box {
   background: var(--moyo-ink);

@@ -620,7 +620,7 @@ class LLMSpec:
     base_url: Optional[str] = None
     label: Optional[str] = None
     temperature: float = 0.7
-    max_tokens: int = 1000
+    max_tokens: int = 1024
     timeout: int = 120
     max_retries: int = 3
     web_search: bool = False
@@ -668,7 +668,7 @@ class LLMSpec:
             base_url=data.get("base_url"),
             label=data.get("label"),
             temperature=float(data.get("temperature", 0.7)),
-            max_tokens=int(data.get("max_tokens", 1000)),
+            max_tokens=int(data.get("max_tokens", 1024)),
             timeout=int(data.get("timeout", 120)),
             max_retries=int(data.get("max_retries", 3)),
             web_search=bool(data.get("web_search", False)),

@@ -206,7 +206,10 @@ body {
   -webkit-line-clamp: 5;
   overflow: hidden;
 }
-.badges { margin: 0 0 0.15rem; }
+.badges {
+  margin: 0 0 0.15rem;
+  white-space: nowrap;
+}
 
 .onepage .severity-badge {
   font-size: 0.7rem;

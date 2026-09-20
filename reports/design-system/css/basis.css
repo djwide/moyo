@@ -82,11 +82,13 @@
   border-bottom: 0.4pt solid var(--moyo-ink);
 }
 .basis-finding__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
+  display: block;
+  white-space: nowrap;
   margin-bottom: 0.2rem;
+  line-height: 1.2;
+}
+.basis-finding__head .basis-finding__id {
+  margin-right: 0.7em;
 }
 .basis-finding__id {
   font-family: var(--font-mono);

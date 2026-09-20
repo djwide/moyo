@@ -1099,7 +1099,6 @@ def _required_llm_env_presence() -> dict[str, bool]:
         "GEMINI_API_KEY",
         "DASHSCOPE_API_KEY",
         "MOONSHOT_API_KEY",
-        "PERPLEXITY_API_KEY",
         "OPENROUTER_API_KEY",
     )
     return {k: bool(os.environ.get(k, "").strip()) for k in keys}

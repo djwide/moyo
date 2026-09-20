@@ -88,7 +88,6 @@ graphics:
     "DeepSeek Chat": DeepSeek
     "Qwen (Alibaba qwen-plus)": Qwen
     "Claude (Anthropic Sonnet)": Claude
-    "Perplexity (sonar-pro)": Perplexity
   dot_max: 5
 
 render:

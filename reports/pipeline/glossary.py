@@ -99,7 +99,7 @@ _GROUPS: list[dict[str, Any]] = [
             (
                 "Confidence",
                 "How clearly the evidence shows the claim was actually stated "
-                "(extraction and grounding confidence), drawn as filled dots.",
+                "(extraction and grounding confidence), shown as n/5.",
             ),
             (
                 "Corroboration",

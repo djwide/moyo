@@ -90,7 +90,7 @@ Foreign-language sections are annotated in headers (e.g. `Kimi (Mandarin Chinese
 |------|--------|----------|
 | **Utility fuzzer** | Desktop: Ollama at `127.0.0.1:11434`. Cloud Run: OpenRouter Llama 3.1 8B Instruct | Seed rewording + response translation |
 | **Default LLM** | `MOYO_LLM_*` in `.env` | Summary / claims synthesis |
-| **Retrieval LLMs** | `config/retrieval_llms.json` | Fan-out targets (ChatGPT, Claude, Grok, Gemini, Qwen, Kimi, Perplexity, OpenRouter, …) |
+| **Retrieval LLMs** | `config/retrieval_llms.json` | Fan-out targets (ChatGPT, Claude, Grok, Gemini, Qwen, Kimi, OpenRouter, …) |
 
 Copy `config/retrieval_llms.example.json` → `config/retrieval_llms.json` and put API keys in `.env` (see `.env.example`). Providers without a key fail that source only; the run continues.
 

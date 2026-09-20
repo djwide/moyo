@@ -170,7 +170,7 @@ MOYO_EMBEDDING_DEVICE=cuda
 
 API keys for hosted LLM providers (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `XAI_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY`,
-`PERPLEXITY_API_KEY`, `OPENROUTER_API_KEY`, …) also live in `.env`. See
+`OPENROUTER_API_KEY`, …) also live in `.env`. See
 `.env.example` for the full list. The LLM layer loads `.env` into the process environment so those keys
 are available to `config/retrieval_llms.json` (`$VAR` references).
 
