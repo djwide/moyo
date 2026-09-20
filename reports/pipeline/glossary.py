@@ -158,8 +158,15 @@ _GROUPS: list[dict[str, Any]] = [
                 "informational mix.",
             ),
             (
-                "Model heatmap",
-                "Which models produced disclosures in which categories.",
+                "Model comparison",
+                "Where tested models agreed on the same fact, and where one "
+                "model diverged (model-specific, contested, or outlier).",
+            ),
+            (
+                "Sensitivity by model and claim",
+                "Which models supported which clusters. Cell color is the "
+                "cluster's sensitivity (1–5); empty means that model did not "
+                "support it.",
             ),
             (
                 "Claim support graph",
@@ -193,7 +200,9 @@ _GROUPS: list[dict[str, Any]] = [
             (
                 "Technique",
                 "How a prompt was reworded before retrieval: paraphrase, "
-                "translate, summarize, abstract, typo, or shuffle.",
+                "abstract, summarize, translate, typo, or shuffle. Basic scans "
+                "stay in English (paraphrase / abstract / summarize). Translate "
+                "runs only in a multilingual scan.",
             ),
             (
                 "Remediation / follow-up",

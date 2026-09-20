@@ -205,9 +205,10 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
     show_default=True,
     help="Language fan-out: basic = English seeds; multilingual = English + "
          "Spanish / French / Mandarin Chinese (extend with --language). "
-         "Default strategy sets: basic = paraphrase/translate/summarize; "
-         "multilingual = paraphrase/abstract/summarize. Override with -S "
-         "(typo and shuffle available a la carte).",
+         "Default strategy sets: basic = paraphrase/abstract/summarize "
+         "(English, no translate); multilingual = paraphrase/abstract/"
+         "summarize per language. Override with -S (translate, typo, and "
+         "shuffle available a la carte).",
 )
 @click.option(
     "--strategy",

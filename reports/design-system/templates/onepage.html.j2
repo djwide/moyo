@@ -96,7 +96,7 @@
         <ul class="specific-list">
           {% for f in content.specific_findings[:4] %}
           <li>
-            <span class="mono">{{ f.claim_id }}</span>
+            <span class="mono">{{ f.present_id or f.claim_id }}</span>
             {{ severity_badge('SPECIFIC') }}
             {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
             <span class="specific-claim">{{ f.claim | clip(120) }}</span>
@@ -114,7 +114,7 @@
       <ul class="snap-more-list">
         {% for f in content.onepage_more[:6] %}
         <li>
-          <span class="mono">{{ f.claim_id }}</span>
+          <span class="mono">{{ f.present_id or f.claim_id }}</span>
           {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
           {{ f.claim | clip(110) }}
         </li>

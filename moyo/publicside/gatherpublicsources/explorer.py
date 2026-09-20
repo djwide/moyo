@@ -316,10 +316,10 @@ def reword_prompt(
     Vertex Gemini Flash on Cloud Run). No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
-    ``fuzz_mode`` ``basic`` emits ``n`` seeds rotating paraphrase / translate /
-    summarize; ``multilingual`` emits ``n`` seeds per language (English
-    plus each language in ``languages``) rotating paraphrase / abstract /
-    summarize. Pass ``strategies`` to override the mode default rotation
+    ``fuzz_mode`` ``basic`` emits ``n`` English seeds rotating paraphrase /
+    abstract / summarize (no translate); ``multilingual`` emits ``n`` seeds
+    per language (English plus each language in ``languages``) rotating
+    paraphrase / abstract / summarize. Pass ``strategies`` to override the mode default rotation
     a la carte (include ``typo`` or ``shuffle`` explicitly). ``llm`` is ignored (kept for
     call-site compatibility).
     Pass ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer`.
@@ -1501,13 +1501,13 @@ def explore_topic(
     Rewording stays on the runtime utility fuzzer; summary synthesis stays
     serial on :func:`get_summary_llm` (Ollama locally, Vertex Flash in cloud).
 
-    ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` seeds rotating
-    paraphrase / translate / summarize; ``multilingual`` emits
-    ``num_seeds`` of paraphrase / abstract / summarize per language
-    (English plus Spanish / French / Mandarin Chinese and any
-    ``extra_languages``). Pass ``strategies`` to override that rotation a la
-    carte (include ``typo`` or ``shuffle`` explicitly); mode still controls
-    language fan-out.
+    ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` English seeds
+    rotating paraphrase / abstract / summarize (no translate);
+    ``multilingual`` emits ``num_seeds`` of paraphrase / abstract /
+    summarize per language (English plus Spanish / French / Mandarin
+    Chinese and any ``extra_languages``). Pass ``strategies`` to override
+    that rotation a la carte (include ``translate``, ``typo`` or ``shuffle``
+    explicitly); mode still controls language fan-out.
     Every seed is sent to every retrieval LLM.
 
     ``impact_definition`` / ``impact_definition_files`` add user-specific

@@ -242,7 +242,7 @@ desktop; OpenRouter Llama 3.1 8B Instruct on Cloud Run via
 writes `exploration.md` only.
 
 ```bash
-# basic (default): English seeds; default strategies paraphrase/translate/summarize
+# basic (default): English seeds; paraphrase/abstract/summarize (no translate)
 moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic
 # Multiple prompts: repeat --prompt and/or use --prompts-file (one per line)
 moyo-gather explore -p "What is the recipe for Coca-Cola?" -p "Who killed JFK?"

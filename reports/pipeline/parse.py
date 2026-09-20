@@ -305,7 +305,7 @@ def exploration_run_meta(path: Path) -> dict:
         if fuzz_mode == "multilingual":
             strategies = ["paraphrase", "abstract", "summarize"]
         else:
-            strategies = ["paraphrase", "translate", "summarize"]
+            strategies = ["paraphrase", "abstract", "summarize"]
 
     languages = parse_languages_line(text)
 
@@ -336,6 +336,52 @@ def exploration_run_meta(path: Path) -> dict:
         "models_tested": models,
         "collection_issues": issues,
     }
+
+
+def attach_explore_meta(
+    report_data: dict,
+    exploration: Path | None,
+    *,
+    aliases: dict[str, str] | None = None,
+) -> dict:
+    """Parse exploration.md into ``explore_meta`` and sync ``counts.llms_tested``.
+
+    Local rebuilds (including ``--graphics-only``) should discover the scanned
+    model set from the exploration file rather than only from finding sources.
+    """
+    if exploration is None:
+        return report_data
+    path = Path(exploration)
+    if not path.exists():
+        return report_data
+
+    meta = exploration_run_meta(path)
+    report_data["explore_meta"] = meta
+
+    models = [str(m).strip() for m in (meta.get("models_tested") or []) if str(m).strip()]
+    if not models:
+        return report_data
+
+    # Prefer short display labels when aliases are available (cover + counts).
+    if aliases:
+        from graphics.style import short_model_name
+
+        short: list[str] = []
+        seen: set[str] = set()
+        for raw in models:
+            key = short_model_name(raw, aliases)
+            if not key or key == "unknown" or key in seen:
+                continue
+            seen.add(key)
+            short.append(key)
+        n = len(short) or len(models)
+    else:
+        n = len(models)
+
+    counts = dict(report_data.get("counts") or {})
+    counts["llms_tested"] = n
+    report_data["counts"] = counts
+    return report_data
 
 
 def collection_issues_from_exploration(text: str) -> list[dict]:
@@ -482,7 +528,7 @@ def resolve_exploration_path(
     run_dir: Path,
     repo_root: Path,
 ) -> Path | None:
-    """Locate exploration.md from CLI, pointer, slug, or chunk seed match."""
+    """Locate exploration.md from CLI, pointer, run dir, slug, or chunk seeds."""
     if exploration is not None:
         path = Path(exploration)
         if path.is_file():
@@ -491,6 +537,11 @@ def resolve_exploration_path(
     pointed = _read_exploration_pointer(run_dir, repo_root)
     if pointed is not None:
         return pointed
+
+    # Local rebuilds often keep a copy next to report_data.json.
+    in_run = run_dir / "exploration.md"
+    if in_run.is_file():
+        return in_run
 
     projects = repo_root / "projects"
     by_slug = projects / run_id / "public_sources" / "exploration.md"

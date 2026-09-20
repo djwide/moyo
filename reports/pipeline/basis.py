@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .textclean import plain_text
-from .cluster import dedupe_findings_by_group
+from .cluster import dedupe_findings_by_group, present_id
 
 
 def _severity_label(sensitivity: int) -> str:
@@ -139,6 +139,8 @@ def build_basis_section(
     inventory = [
         {
             "claim_id": f.get("claim_id"),
+            "cluster_id": f.get("cluster_id"),
+            "present_id": present_id(f),
             "claim": plain_text(f.get("claim")),
             "category": plain_text(f.get("category")).replace("_", " ") or "unclassified",
             "corroboration": f.get("corroboration") or 1,
@@ -153,6 +155,7 @@ def build_basis_section(
     for f in narrative:
         row = dict(f)
         row["claim"] = plain_text(f.get("claim"))
+        row["present_id"] = present_id(f)
         row["severity"] = _severity_label(int(f.get("sensitivity") or 0))
         row["rationale"] = _rationale(f)
         findings_full.append(row)

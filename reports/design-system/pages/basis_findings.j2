@@ -1,15 +1,15 @@
 {% from "components/macros.j2" import severity_badge, confidence, evidence_box, citation_line, language_badge %}
 <section class="page page--basis-findings">
-  <h2>Each claim, with the transcript that produced it</h2>
+  <h2>Each cluster, with the transcript that produced it</h2>
   <p class="basis-lede">
-    One finding per collapsed group. Claim text is English; foreign-language
+    One finding per cluster. Claim text is English; foreign-language
     prompting is annotated. Line offsets point back into the exploration transcript.
     Every extracted claim from the investigation is listed here.
   </p>
   {% for f in content.basis.findings_full %}
   <article class="basis-finding{% if f.severity == 'high' %} basis-finding--high{% endif %}{% if loop.first %} basis-finding--lead{% elif loop.index % 4 == 0 %} basis-finding--band{% endif %}">
     <div class="basis-finding__head">
-      <span class="basis-finding__id">{{ f.claim_id }}</span>
+      <span class="basis-finding__id">{{ f.present_id or f.cluster_id or f.claim_id }}</span>
       {{ severity_badge(f.status) }}
       {{ severity_badge(f.severity) }}
       {{ language_badge(f.prompt_language) }}

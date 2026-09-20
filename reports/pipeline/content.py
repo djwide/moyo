@@ -13,9 +13,10 @@ from typing import Any
 import yaml
 
 from graphics.style import format_source_cite, short_model_name
-from pipeline.cluster import dedupe_findings_by_group
+from .cluster import dedupe_findings_by_group, present_id
 from pipeline.graphics import ASSET_NAMES
 from pipeline.synthesize import parse_executive_payload
+from pipeline.score import build_model_contrast
 from pipeline.basis import build_basis_section
 from pipeline.glossary import glossary_groups
 from pipeline.isvf import load_isvf_controls, select_remediation
@@ -190,6 +191,7 @@ def _enrich_findings(
         peers = peers_by_cluster.get(row.get("cluster_id"))
         row["claim"] = plain_text(row.get("claim"))
         row["category"] = plain_text(row.get("category")) or "unclassified"
+        row["present_id"] = present_id(row)
         row["source_short"] = short_model_name(row.get("source_model") or "", aliases)
         source_models = row.get("source_models")
         if isinstance(source_models, list) and len(source_models) > 1:
@@ -450,6 +452,12 @@ def _build_executive_page(
         "why_it_matters": strip_markdown(why),
         "defensive_action": strip_markdown(defensive),
         "exposure_teaser": plain_text(teaser),
+        "model_commonality": [
+            plain_text(x) for x in (fields.get("model_commonality") or []) if str(x).strip()
+        ][:5],
+        "model_differences": [
+            plain_text(x) for x in (fields.get("model_differences") or []) if str(x).strip()
+        ][:5],
     }
 
 
@@ -485,6 +493,14 @@ def build_content_doc(
         sources=sources,
         include_remediation=include_remediation,
     )
+
+    contrast = dict(report_data.get("model_contrast") or {})
+    if not contrast.get("lede") and not (
+        contrast.get("commonality") or contrast.get("differences")
+    ):
+        contrast = build_model_contrast(findings_enriched or findings, aliases or {})
+    contrast["commonality_prose"] = list(exec_page.get("model_commonality") or [])
+    contrast["differences_prose"] = list(exec_page.get("model_differences") or [])
 
     # One-pager budget: fill a single A4 landscape sheet, nothing more.
     # Lead + ~4 rail claims + ~6 compact further rows is the ceiling.
@@ -534,16 +550,25 @@ def build_content_doc(
     ][:onepage_more_cap]
 
     explore_meta = report_data.get("explore_meta") or {}
-    models_tested = list(explore_meta.get("models_tested") or [])
+    alias_map = aliases or {}
+    models_tested: list[str] = []
+    seen_models: set[str] = set()
+    for raw in list(explore_meta.get("models_tested") or []):
+        name = short_model_name(str(raw or ""), alias_map)
+        if not name or name == "unknown" or name in seen_models:
+            continue
+        seen_models.add(name)
+        models_tested.append(name)
     if not models_tested:
-        models_tested = [
-            (m.get("model") or "").strip()
-            for m in (report_data.get("model_exposure") or [])
-            if (m.get("model") or "").strip()
-        ]
+        for m in report_data.get("model_exposure") or []:
+            name = (m.get("model") or "").strip()
+            if not name or name in seen_models:
+                continue
+            seen_models.add(name)
+            models_tested.append(name)
     strategies = list(explore_meta.get("strategies") or [])
     if not strategies:
-        strategies = ["paraphrase", "translate", "summarize"]
+        strategies = ["paraphrase", "abstract", "summarize"]
 
     collection_issues = list(report_data.get("collection_issues") or [])
     if not collection_issues:
@@ -587,7 +612,7 @@ def build_content_doc(
 
     n_findings = int(counts.get("findings", len(findings)) or 0)
     n_high = int(counts.get("high_sensitivity", 0) or 0)
-    n_models = int(counts.get("llms_tested", 0) or 0)
+    n_models = len(models_tested) if models_tested else int(counts.get("llms_tested", 0) or 0)
     n_abridged = len(abridged)
     if n_high:
         exec_page["title"] = (
@@ -615,7 +640,7 @@ def build_content_doc(
             "collection_issues": collection_issues,
             "counts": {
                 "findings": counts.get("findings", len(findings)),
-                "llms_tested": counts.get("llms_tested", 0),
+                "llms_tested": n_models,
                 "high_sensitivity": counts.get("high_sensitivity", 0),
                 "contested": counts.get("contested", 0),
                 "outliers": counts.get("outliers", 0),
@@ -635,15 +660,10 @@ def build_content_doc(
                 ),
                 "chart_captions": {
                     "findings_by_llm": (
-                        "Each bar is one tested model, scored on every extracted "
-                        "claim in this investigation. Height is the sum of "
-                        "finding sensitivities; fill shows the high / medium / "
-                        "low / informational mix."
+                        "Each bar is the sum of finding sensitivities per model."
                     ),
                     "exposure_radar": (
-                        "Mean specificity, sensitivity, corroboration, novelty, "
-                        "and confidence across every extracted claim in this "
-                        "investigation (1–5), not only the claims printed below."
+                        "Mean metrics across every extracted claim"
                     ),
                 },
             },
@@ -662,15 +682,16 @@ def build_content_doc(
                 "body": "",
             },
             "model_comparison": {
-                "title": "Sensitivity by model and claim",
-                "body": "",
+                "title": "Where the models agree, and where they don't",
+                "body": contrast.get("lede") or "",
+                "heatmap_title": "Sensitivity by model and claim",
             },
             "appendix": {
-                "claims_title": "Claim index",
+                "claims_title": "Cluster index",
                 "claims_body": "",
             },
             "inventory": {
-                "title": "Every exposure group, ranked",
+                "title": "Every cluster, ranked",
             },
             "sources": {
                 "title": "What the models cited",
@@ -707,6 +728,7 @@ def build_content_doc(
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],
         "model_exposure": report_data.get("model_exposure") or [],
         "findings_by_llm": report_data.get("findings_by_llm") or [],
+        "model_contrast": contrast,
         "chains": report_data.get("chains") or [],
         "followups": followups,
         "radar_averages": report_data.get("radar_averages") or {},
@@ -771,6 +793,39 @@ def render_report_md(content: dict[str, Any]) -> str:
         f"- Contested: {meta['counts'].get('contested', 0)}",
         f"- Outliers: {meta['counts'].get('outliers', 0)}",
         "",
+        "## Where the models agree, and where they don't",
+        "",
+        (pages.get("model_comparison") or {}).get("body")
+        or (content.get("model_contrast") or {}).get("lede")
+        or "",
+        "",
+    ]
+    contrast = content.get("model_contrast") or {}
+    common_lines = contrast.get("commonality_prose") or []
+    if not common_lines:
+        common_lines = [
+            f"{row.get('claim_id')} {row.get('claim')} "
+            f"({', '.join(row.get('models') or [])})".strip()
+            for row in (contrast.get("commonality") or [])
+        ]
+    diff_lines = contrast.get("differences_prose") or []
+    if not diff_lines:
+        diff_lines = [
+            f"{row.get('claim_id')} {row.get('claim')} "
+            f"({', '.join(row.get('models') or [])})".strip()
+            for row in (contrast.get("differences") or [])
+        ]
+    if common_lines:
+        lines += ["### Commonality", ""]
+        for line in common_lines:
+            lines.append(f"- {line}")
+        lines.append("")
+    if diff_lines:
+        lines += ["### Differences", ""]
+        for line in diff_lines:
+            lines.append(f"- {line}")
+        lines.append("")
+    lines += [
         "## Findings that carry this exposure",
         "",
         pages["findings"]["body"],

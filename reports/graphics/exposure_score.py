@@ -23,8 +23,17 @@ from .style import (
     truncate,
 )
 
+# Matched canvas + panel so the risk-overview pair aligns in the PDF.
+PAIR_CHART_HEIGHT = 360
+PAIR_PANEL_Y = 8.0
+PAIR_PANEL_H = 336.0
 
-def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
+
+def exposure_radar_svg(
+    averages: Mapping[str, float],
+    size: int = PAIR_CHART_HEIGHT,
+    width: int | None = None,
+) -> str:
     """Radar of mean claim scores; axis labels sit inside a hairline panel."""
     axes = [
         ("specificity", "Specificity"),
@@ -33,17 +42,14 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
         ("novelty", "Novelty"),
         ("confidence", "Confidence"),
     ]
-    # Canvas is 10px wider on each side than the square plot so the outline
-    # and rings can grow without clipping labels.
-    extra_x = 20
-    width = size + extra_x
-    title_h = 8
-    pad = 14
+    # Same canvas size as findings-by-llm so the risk-split pair scales evenly.
+    height = size
+    width = int(width) if width is not None else 520
     inset = 4
     panel_x = inset
-    panel_y = title_h
+    panel_y = PAIR_PANEL_Y
     panel_w = width - 2 * inset
-    panel_h = size - title_h - pad
+    panel_h = PAIR_PANEL_H
 
     cx = width / 2
     cy = panel_y + panel_h / 2
@@ -58,7 +64,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
 
     panel = (
         f'<rect x="{panel_x}" y="{panel_y}" width="{panel_w}" '
-        f'height="{panel_h}" fill="{WHITE}" stroke="{RULE}"/>'
+        f'height="{panel_h}" fill="{WHITE}" stroke="{INK}" stroke-width="1.25"/>'
     )
 
     rings = []
@@ -122,7 +128,7 @@ def exposure_radar_svg(averages: Mapping[str, float], size: int = 380) -> str:
   {polygon}
   {"".join(dots)}
   {"".join(labels)}"""
-    return svg_root(width, size, body)
+    return svg_root(width, height, body)
 
 
 def _band_score(row: Mapping[str, Any], band: str) -> float:
@@ -143,7 +149,7 @@ def _llm_row_score(row: Mapping[str, Any]) -> float:
 def llm_findings_bars_svg(
     rows: Sequence[Mapping[str, Any]],
     width: int = 520,
-    height: int = 350,
+    height: int = PAIR_CHART_HEIGHT,
 ) -> str:
     """Bar chart of test LLMs scored by finding quantity and sensitivity.
 
@@ -155,10 +161,18 @@ def llm_findings_bars_svg(
     series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 
-    # Title + subtitle sit above the panel (subtitle is 16px below the title).
-    left, right, top, bottom = 48, 20, 18, 72
+    # Plot area sits inside a hairline panel matched to the exposure radar.
+    panel_y = PAIR_PANEL_Y
+    panel_h = PAIR_PANEL_H
+    panel_pad_top = 28
+    panel_pad_bot = 54
+    left, right = 48, 20
+    top = panel_y + panel_pad_top
+    bottom = max(24.0, height - (panel_y + panel_h - panel_pad_bot))
     plot_w = width - left - right
     plot_h = height - top - bottom
+    # Keep plot inside the shared panel box.
+    plot_h = min(plot_h, panel_h - panel_pad_top - panel_pad_bot)
     base = top + plot_h
     n = max(len(series), 1)
     gap = 10.0 if n >= 8 else (16.0 if n >= 5 else 24.0)
@@ -167,16 +181,12 @@ def llm_findings_bars_svg(
     x0 = left + max(0.0, (plot_w - total_w) / 2)
 
     panel_pad_x = 20
-    panel_pad_top = 18
-    panel_pad_bot = 48
     panel_left = left - panel_pad_x - LETTER_W
-    # Outline box sits 6px higher than the plot padding alone would place it.
-    panel_y = top - panel_pad_top - 6
     panel = (
         f'<rect x="{panel_left}" y="{panel_y}" '
         f'width="{plot_w + 2 * panel_pad_x + LETTER_W}" '
-        f'height="{plot_h + panel_pad_top + panel_pad_bot}" '
-        f'fill="{WHITE}" stroke="{RULE}"/>'
+        f'height="{panel_h}" '
+        f'fill="{WHITE}" stroke="{INK}" stroke-width="1.25"/>'
     )
 
     grid = []
@@ -248,21 +258,26 @@ def llm_findings_bars_svg(
         )
 
     legend = []
-    legend_y = height - 18
+    legend_y = height - 34
     items = [(k, BAR_LABELS[k]) for k in ("high", "medium", "low", "informational")]
-    item_w = 72
-    legend_w = item_w * len(items)
-    lx = (width - legend_w) / 2 + 8
-    for name, label in items:
+    n_leg = len(items)
+    # Even slots across the plot area; each swatch+label pair is centered in its slot.
+    char_w = 5.5  # ~font-size 10
+    swatch_w, swatch_gap = 10.0, 4.0
+    for i, (name, label) in enumerate(items):
+        slot_cx = left + plot_w * (i + 0.5) / n_leg
+        text_w = max(len(label) * char_w, 1.0)
+        item_w = swatch_w + swatch_gap + text_w
+        lx = slot_cx - item_w / 2
         legend.append(
             f'<rect x="{lx:.1f}" y="{legend_y - 8:.1f}" width="10" height="10" rx="2" '
             f'fill="{BAR_COLORS[name]}"/>'
         )
         legend.append(
-            f'<text x="{lx + 14:.1f}" y="{legend_y:.1f}" font-family="{FONT}" '
-            f'font-size="10" fill="{MUTED}">{escape_xml(label)}</text>'
+            f'<text x="{lx + swatch_w + swatch_gap:.1f}" y="{legend_y:.1f}" '
+            f'font-family="{FONT}" font-size="10" fill="{MUTED}">'
+            f"{escape_xml(label)}</text>"
         )
-        lx += item_w
 
     body = f"""  {panel}
   {"".join(grid)}

@@ -1202,10 +1202,10 @@ class GatherPublicSourcesTab(QWidget):
             "Do not run the Build Report tab for a cloud job — it would start "
             "a second, unrelated worker. PDFs land in the GCS bucket, not "
             "in this GUI.\n\n"
-            "Default fuzz mode is basic (English seeds). Multilingual fans "
-            "out English plus Spanish / French / Mandarin Chinese (add more "
-            "below). Strategies are a la carte. Non-English responses are "
-            "translated back to English."
+            "Default fuzz mode is basic (English seeds, no translation). "
+            "Multilingual fans out English plus Spanish / French / Mandarin "
+            "Chinese (add more below) and translates answers back to English. "
+            "Strategies are a la carte."
         )
         self.explore_note.setWordWrap(True)
         self.explore_note.setVisible(False)

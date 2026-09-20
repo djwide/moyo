@@ -103,7 +103,7 @@ def build_alert_email(
     full_bits = [
         "complete finding index",
         "evidence excerpts with line references",
-        "model heatmap",
+        "sensitivity heatmap",
         "cited real-world sources",
     ]
     if include_remediation:

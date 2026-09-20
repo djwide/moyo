@@ -1,13 +1,12 @@
-"""Model × claim heatmap SVG — sized for A4 graphic boxes."""
+"""Model × cluster heatmap SVG — sized for A4 graphic boxes."""
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Iterable
 
 from .style import (
-    CREAM,
     FONT,
-    FONT_MONO,
     HEAT_SCALE,
     INK,
     MUTED,
@@ -50,6 +49,10 @@ def _wrap_label(label: str, width: int = 20) -> list[str]:
     return lines or [label]
 
 
+def _column_id(finding: dict) -> str:
+    return str(finding.get("cluster_id") or finding.get("claim_id") or "—").strip() or "—"
+
+
 def _multiline_text(
     lines: list[str],
     *,
@@ -83,20 +86,26 @@ def model_heatmap_svg(
     *,
     aliases: dict[str, str] | None = None,
     models_probed: Iterable[str] | None = None,
-    max_findings: int = 48,
+    max_findings: int | None = 48,
     max_width: float = PRINT_MAX_WIDTH,
     max_height: float = PRINT_MAX_HEIGHT,
+    full: bool = False,
 ) -> str:
-    """Heatmap with claims across the top and models down the left.
+    """Heatmap with clusters across the top and models down the left.
 
     When ``models_probed`` is provided, rows are exactly that set: every probed
     model appears (even with zero hits), and models that were not probed never
     appear — including labels that only show up on findings.
+
+    When ``full`` is true, every cluster is kept and the SVG grows as wide as
+    needed (companion asset for operators; not sized for the A4 graphic box).
     """
     aliases = aliases or {}
     all_findings = list(findings)
+    if full:
+        max_findings = None
 
-    # Rows = models (left); columns = claims (top).
+    # Rows = models (left); columns = clusters (top).
     model_keys: list[str] = []
     model_labels: dict[str, str] = {}
     seen_m: set[str] = set()
@@ -128,15 +137,52 @@ def model_heatmap_svg(
         model_keys = ["—"]
         model_labels = {"—": "—"}
 
-    claims = all_findings[:max_findings]
-    if not claims:
-        claims = [{"claim_id": "—", "source_model": "", "sensitivity": 0}]
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for f in all_findings:
+        grouped[_column_id(f)].append(f)
+    columns: list[dict] = []
+    for col_id, members in grouped.items():
+        if col_id == "—":
+            continue
+        sens = 0
+        models_in_col: set[str] = set()
+        for f in members:
+            try:
+                sens = max(sens, int(f.get("sensitivity", 0) or 0))
+            except (TypeError, ValueError):
+                pass
+            raw_models = f.get("source_models")
+            if not isinstance(raw_models, list) or not raw_models:
+                raw_models = [f.get("source_model") or ""]
+            for raw in raw_models:
+                key = short_model_name(str(raw or ""), aliases)
+                if key and key != "unknown":
+                    models_in_col.add(key)
+        columns.append(
+            {
+                "id": col_id,
+                "sensitivity": max(0, min(5, sens)),
+                "models": models_in_col,
+                # Cross-model agreement among rows shown on this chart.
+                "agreement": len(models_in_col & set(model_keys)),
+            }
+        )
+    # Deliverable heatmap prefers clusters with the most model overlap first.
+    columns.sort(
+        key=lambda row: (
+            -int(row["agreement"]),
+            -int(row["sensitivity"]),
+            str(row["id"]),
+        )
+    )
+    if max_findings is not None:
+        columns = columns[:max_findings]
+    if not columns:
+        columns = [{"id": "—", "sensitivity": 0, "models": set(), "agreement": 0}]
 
     model_lines = {k: _wrap_label(model_labels[k], 20) for k in model_keys}
-    # Top axis: claim ids (wrapped at 20 if ever long).
-    claim_lines = {
-        f["claim_id"]: _wrap_label(str(f.get("claim_id") or "—"), 20) for f in claims
-    }
+    # Top axis: cluster ids (wrapped at 20 if ever long).
+    claim_lines = {col["id"]: _wrap_label(str(col["id"]), 20) for col in columns}
 
     font_axis = 9
     max_model_lines = max(len(v) for v in model_lines.values())
@@ -155,45 +201,44 @@ def model_heatmap_svg(
     if max_claim_lines > 1:
         claim_label_h = min(150.0, claim_label_h + (max_claim_lines - 1) * (font_axis + 2))
 
-    title_h, legend_h, right_pad, bottom_pad = 8, 72, 16, 12
+    title_h, legend_h, right_pad, bottom_pad = 8, 44, 16, 12
     top = title_h + 8 + claim_label_h
     n_models = len(model_keys)
-    n_claims = len(claims)
+    n_claims = len(columns)
 
-    avail_w = max_width - left - right_pad
     # Row height fits wrapped model labels (left axis sits beside each row).
     line_gap_model = font_axis + 1
     min_row = max(22.0, max_model_lines * line_gap_model + 6)
-    cell_w = max(16.0, min(28.0, avail_w / max(1, n_claims)))
     cell_h = min_row
 
-    # Drop claims (columns) if overflowing width; keep all models (SVG may grow taller).
-    while left + n_claims * cell_w + right_pad > max_width and n_claims > 6:
-        n_claims -= 1
-        claims = claims[:n_claims]
-        cell_w = max(16.0, min(28.0, (max_width - left - right_pad) / max(1, n_claims)))
+    if full:
+        # Fixed cell width; SVG grows horizontally to fit every cluster.
+        cell_w = 18.0
+    else:
+        avail_w = max_width - left - right_pad
+        cell_w = max(16.0, min(28.0, avail_w / max(1, n_claims)))
+        # Drop clusters (columns) if overflowing width; keep all models.
+        while left + n_claims * cell_w + right_pad > max_width and n_claims > 6:
+            n_claims -= 1
+            columns = columns[:n_claims]
+            cell_w = max(
+                16.0, min(28.0, (max_width - left - right_pad) / max(1, n_claims))
+            )
 
     n_models = len(model_keys)
+    n_claims = len(columns)
     width = left + n_claims * cell_w + right_pad
     height = top + n_models * cell_h + legend_h + bottom_pad
+    # max_height is unused for layout (rows already determine height); keep param
+    # for API compatibility with print-boxed callers.
+    del max_height
 
-    # Presence only: which models support each claim. Sensitivity lives on the
-    # claim (one value per column), not on the model.
+    # Presence: which models support each cluster. Color is that cluster's
+    # peak sensitivity (one value per column).
     supported: set[tuple[int, int]] = set()
-    claim_sens: list[int] = [
-        max(0, min(5, int(f.get("sensitivity", 0) or 0))) for f in claims
-    ]
-    claim_index = {f["claim_id"]: j for j, f in enumerate(claims)}
-    for f in all_findings:
-        cid = f.get("claim_id")
-        if cid not in claim_index:
-            continue
-        j = claim_index[cid]
-        raw_models = f.get("source_models")
-        if not isinstance(raw_models, list) or not raw_models:
-            raw_models = [f.get("source_model") or ""]
-        for raw in raw_models:
-            key = short_model_name(str(raw or ""), aliases)
+    claim_sens: list[int] = [int(col["sensitivity"]) for col in columns]
+    for j, col in enumerate(columns):
+        for key in col["models"]:
             if key in model_keys:
                 supported.add((model_keys.index(key), j))
 
@@ -220,12 +265,12 @@ def model_heatmap_svg(
                 f'rx="3" fill="{fill}" stroke="{WHITE}" stroke-width="1"/>'
             )
 
-    # Claims across the top — vertical, wrapped at 20 chars.
+    # Clusters across the top — vertical, wrapped at 20 chars.
     claim_base_y = top - 10
     line_gap = font_axis + 3
     xlabels = []
-    for j, f in enumerate(claims):
-        lines = claim_lines[f["claim_id"]]
+    for j, col in enumerate(columns):
+        lines = claim_lines[col["id"]]
         tx = left + j * cell_w + cell_w / 2
         tspans = []
         for i, line in enumerate(lines):
@@ -254,35 +299,44 @@ def model_heatmap_svg(
             )
         )
 
-    # One sensitivity score per claim, aligned under that column.
-    sens_y = top + n_models * cell_h + 26
-    sens_row = [
-        f'<text x="{left - 10:.1f}" y="{sens_y:.1f}" text-anchor="end" '
-        f'font-family="{FONT}" font-size="9" fill="{MUTED}">Claim sensitivity</text>'
+    # Color key: empty + sensitivity 1–5.
+    key_y = top + n_models * cell_h + 20
+    key_items = [
+        (0, "Empty"),
+        (1, "1"),
+        (2, "2"),
+        (3, "3"),
+        (4, "4"),
+        (5, "5"),
     ]
-    for j, v in enumerate(claim_sens):
-        x = left + j * cell_w + cell_w / 2
-        ink = WHITE if v >= 3 else INK
-        fill = HEAT_SCALE.get(v, HEAT_SCALE[0]) if v else CREAM
-        sens_row.append(
-            f'<rect x="{x - 8:.1f}" y="{sens_y - 11:.1f}" width="16" height="14" rx="2" '
-            f'fill="{fill}" stroke="{RULE}"/>'
-            f'<text x="{x:.1f}" y="{sens_y:.1f}" text-anchor="middle" '
-            f'font-family="{FONT_MONO}" font-size="9" font-weight="600" '
-            f'fill="{ink if v else MUTED}">{v}</text>'
-        )
-
-    legend_y = sens_y + 22
     legend = [
-        f'<text x="{left}" y="{legend_y:.1f}" font-family="{FONT}" font-size="9" '
-        f'fill="{MUTED}">Filled = model supported this claim · darker = higher claim sensitivity'
-        f"{' · showing top ' + str(n_claims) if len(all_findings) > n_claims else ''}</text>"
+        f'<text x="{left:.1f}" y="{key_y:.1f}" font-family="{FONT}" font-size="9" '
+        f'font-weight="600" fill="{INK}">Sensitivity</text>'
     ]
+    swatch_y = key_y + 8
+    lx = left
+    for level, label in key_items:
+        fill = HEAT_SCALE.get(level, HEAT_SCALE[0])
+        legend.append(
+            f'<rect x="{lx:.1f}" y="{swatch_y:.1f}" width="12" height="12" rx="2" '
+            f'fill="{fill}" stroke="{RULE}"/>'
+            f'<text x="{lx + 16:.1f}" y="{swatch_y + 10:.1f}" font-family="{FONT}" '
+            f'font-size="9" fill="{MUTED}">{escape_xml(label)}</text>'
+        )
+        lx += 52 if level == 0 else 36
+    note = "Filled = model supported this cluster · color = that cluster's sensitivity"
+    if full:
+        note += f" · all {n_claims} clusters"
+    elif len(grouped) > n_claims:
+        note += f" · top {n_claims} by cross-model agreement"
+    legend.append(
+        f'<text x="{left:.1f}" y="{swatch_y + 26:.1f}" font-family="{FONT}" '
+        f'font-size="9" fill="{MUTED}">{escape_xml(note)}</text>'
+    )
 
     body = f"""  {panel}
   {"".join(cells)}
   {"".join(xlabels)}
   {"".join(ylabels)}
-  {"".join(sens_row)}
   {"".join(legend)}"""
     return svg_root(width, height, body)

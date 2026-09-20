@@ -76,7 +76,7 @@
   font-family: var(--font-sans);
   font-size: 0.62rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-muted);
   margin-top: 0.15rem;
 }
@@ -182,7 +182,7 @@
   font-family: var(--font-sans);
   font-size: 0.55rem;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-muted);
   margin-bottom: 0.12rem;
 }
@@ -238,7 +238,7 @@
   font-family: var(--font-sans);
   font-size: 0.64rem;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-cream);
   margin-bottom: var(--space-2);
 }
@@ -266,7 +266,7 @@
 }
 
 .graphic {
-  margin: var(--space-2) 0 var(--space-3);
+  margin: var(--space-2) 0 0.2rem;
   text-align: center;
   width: 100%;
   max-width: 170mm;
@@ -276,11 +276,24 @@
   margin-left: auto;
   margin-right: auto;
 }
+.graphic__label {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--moyo-ink);
+  text-align: center;
+  margin: 0.4rem auto 0.15rem;
+  max-width: 178mm;
+}
+.graphic__label + .graphic {
+  margin-top: 0;
+}
 .graphic svg,
 .graphic img {
   display: block;
   width: 100%;
-  max-width: 170mm;
+  max-width: 100%;
   max-height: 115mm;
   height: auto;
   margin: 0 auto;
@@ -291,7 +304,7 @@
 }
 .graphic--compact svg,
 .graphic--compact img {
-  max-width: 150mm;
+  max-width: 100%;
   max-height: 90mm;
 }
 .graphic.findings-llm {
@@ -299,6 +312,7 @@
 }
 .graphic.findings-llm svg,
 .graphic.findings-llm img {
+  max-width: 100%;
   max-height: calc(90mm + 20px);
 }
 .graphic--wide {
@@ -307,7 +321,7 @@
 }
 .graphic--wide svg,
 .graphic--wide img {
-  max-width: 178mm;
+  max-width: 100%;
   max-height: 105mm;
 }
 
@@ -357,7 +371,7 @@
 .citation-line__label {
   font-weight: 700;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-ink);
   margin-right: 0.3rem;
 }

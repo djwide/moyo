@@ -1,0 +1,155 @@
+"""Scanned models from exploration.md drive cover counts and chart rows."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from graphics.style import short_model_name
+from pipeline.graphics import generate_graphics
+from pipeline.parse import attach_explore_meta, exploration_run_meta
+from pipeline.score import aggregate_findings_by_llm
+
+ALIASES = {
+    "ChatGPT (OpenAI gpt-4o)": "GPT",
+    "Claude (Anthropic Sonnet)": "Claude",
+    "Grok (xAI grok-4.5)": "Grok",
+}
+
+
+def test_exploration_run_meta_reads_retrieval_sources(tmp_path: Path):
+    path = tmp_path / "exploration.md"
+    path.write_text(
+        """# Topic exploration: Test
+
+_Fuzz mode: `basic`_
+_Techniques (basic): `paraphrase`, `abstract`, `summarize`_
+
+## Retrieval sources
+
+- **Closed API:** `ChatGPT (OpenAI gpt-4o)`, `Claude (Anthropic Sonnet)`
+- **Open API:** `Grok (xAI grok-4.5)`
+
+## Detailed findings by language, query, and source
+""",
+        encoding="utf-8",
+    )
+    meta = exploration_run_meta(path)
+    assert meta["models_tested"] == [
+        "ChatGPT (OpenAI gpt-4o)",
+        "Claude (Anthropic Sonnet)",
+        "Grok (xAI grok-4.5)",
+    ]
+
+
+def test_attach_explore_meta_syncs_llms_tested(tmp_path: Path):
+    path = tmp_path / "exploration.md"
+    path.write_text(
+        """# Topic exploration: Test
+
+_Fuzz mode: `basic`_
+
+## Retrieval sources
+
+- **Closed API:** `ChatGPT (OpenAI gpt-4o)`, `Claude (Anthropic Sonnet)`
+
+## Detailed findings
+""",
+        encoding="utf-8",
+    )
+    report_data = {"counts": {"findings": 1, "llms_tested": 0}}
+    attach_explore_meta(report_data, path, aliases=ALIASES)
+    assert report_data["explore_meta"]["models_tested"][0].startswith("ChatGPT")
+    assert report_data["counts"]["llms_tested"] == 2
+
+
+def test_aggregate_findings_by_llm_respects_probed_models():
+    claims = [
+        {
+            "sensitivity": 5,
+            "source_model": "ChatGPT (OpenAI gpt-4o)",
+            "source_models": ["ChatGPT (OpenAI gpt-4o)"],
+        },
+        {
+            "sensitivity": 3,
+            "source_model": "MysteryBot",
+            "source_models": ["MysteryBot"],
+        },
+    ]
+    probed = [
+        "ChatGPT (OpenAI gpt-4o)",
+        "Claude (Anthropic Sonnet)",
+    ]
+    rows = aggregate_findings_by_llm(claims, ALIASES, models_probed=probed)
+    names = [r["model"] for r in rows]
+    assert names == ["GPT", "Claude"]
+    assert "MysteryBot" not in names
+    by_name = {r["model"]: r for r in rows}
+    assert by_name["GPT"]["count"] == 1
+    assert by_name["Claude"]["count"] == 0
+
+
+def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
+    report_data = {
+        "radar_averages": {
+            "specificity": 3,
+            "sensitivity": 3,
+            "corroboration": 2,
+            "novelty": 3,
+            "confidence": 3,
+        },
+        "explore_meta": {
+            "models_tested": [
+                "ChatGPT (OpenAI gpt-4o)",
+                "Claude (Anthropic Sonnet)",
+            ]
+        },
+        "findings_all": [
+            {
+                "claim_id": "C0001",
+                "cluster_id": "CL001",
+                "sensitivity": 4,
+                "source_model": "ChatGPT (OpenAI gpt-4o)",
+                "source_models": ["ChatGPT (OpenAI gpt-4o)"],
+                "claim": "example",
+            },
+            {
+                "claim_id": "C0002",
+                "cluster_id": "CL002",
+                "sensitivity": 2,
+                "source_model": "MysteryBot",
+                "source_models": ["MysteryBot"],
+                "claim": "noise",
+            },
+        ],
+        "chains": [],
+    }
+    graphics = generate_graphics(
+        report_data,
+        tmp_path,
+        aliases=ALIASES,
+        write_files=False,
+        write_assets=False,
+    )
+    bars = graphics["findings_by_llm"]
+    heat = graphics["model_heatmap"]
+    assert "GPT" in bars
+    assert "Claude" in bars
+    assert "MysteryBot" not in bars
+    assert "MysteryBot" not in heat
+    assert short_model_name("ChatGPT (OpenAI gpt-4o)", ALIASES) == "GPT"
+
+
+def test_resolve_exploration_path_uses_run_dir_copy(tmp_path: Path):
+    from pipeline.parse import resolve_exploration_path
+
+    run_dir = tmp_path / "build" / "Enron"
+    run_dir.mkdir(parents=True)
+    expl = run_dir / "exploration.md"
+    expl.write_text("# Topic exploration: Enron\n", encoding="utf-8")
+    found = resolve_exploration_path(
+        exploration=None,
+        run_id="Enron",
+        run_dir=run_dir,
+        repo_root=tmp_path,
+    )
+    assert found == expl

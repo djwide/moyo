@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .language import looks_like_english
-from .cluster import dedupe_findings_by_group
+from .cluster import dedupe_findings_by_group, present_id
 
 
 def _headline_for_topic(topic: str) -> str:
@@ -60,9 +60,96 @@ def _source_models(claim: dict, aliases: dict[str, str]) -> list[str]:
     return out
 
 
+def _clip_claim(text: str, n: int = 140) -> str:
+    text = " ".join(str(text or "").split())
+    if len(text) <= n:
+        return text
+    return text[: max(0, n - 1)].rstrip() + "…"
+
+
+def build_model_contrast(
+    claims: list[dict],
+    aliases: dict[str, str] | None = None,
+    *,
+    max_items: int = 6,
+) -> dict[str, Any]:
+    """Compare model answers: shared claims vs unique / contested disclosures."""
+    aliases = aliases or {}
+    shared: list[dict[str, Any]] = []
+    unique: list[dict[str, Any]] = []
+    contested: list[dict[str, Any]] = []
+    models_seen: set[str] = set()
+
+    for claim in claims or []:
+        models = _source_models(claim, aliases)
+        models_seen.update(models)
+        status = str(claim.get("status") or "").upper().replace("_", "-").replace(" ", "-")
+        item = {
+            "claim_id": str(claim.get("claim_id") or ""),
+            "present_id": present_id(claim),
+            "claim": _clip_claim(claim.get("claim") or ""),
+            "models": models,
+            "status": status,
+        }
+        n_models = len(models)
+        if status in {"CONTESTED", "OUTLIER"}:
+            contested.append({**item, "kind": status.lower()})
+        elif n_models >= 2 or status == "CORROBORATED":
+            shared.append(item)
+        elif n_models == 1 or status == "MODEL-SPECIFIC":
+            unique.append({**item, "kind": "model-specific"})
+
+    shared_count = len(shared)
+    unique_count = len(unique)
+    shared = sorted(
+        shared,
+        key=lambda row: (-len(row.get("models") or []), str(row.get("claim_id") or "")),
+    )[:max_items]
+    differences = (contested + unique)[:max_items]
+
+    n_models = len(models_seen)
+    if n_models <= 0:
+        lede = "No model findings were scored in this run."
+    elif n_models == 1:
+        only = next(iter(models_seen))
+        lede = (
+            f"Only {only} produced findings in this run, so there is no "
+            "cross-model comparison yet."
+        )
+    else:
+        lede = (
+            f"{n_models} models answered the same investigation. "
+            f"{shared_count} claim{'s' if shared_count != 1 else ''} "
+            f"{'were' if shared_count != 1 else 'was'} corroborated across models. "
+            f"{unique_count} disclosure{'s' if unique_count != 1 else ''} "
+            f"{'are' if unique_count != 1 else 'is'} unique to a single model."
+        )
+
+    return {
+        "lede": lede,
+        "commonality": shared,
+        "differences": differences,
+        "model_count": n_models,
+        "shared_count": shared_count,
+        "unique_count": unique_count,
+    }
+
+
+def _empty_llm_row(name: str) -> dict[str, Any]:
+    band_keys = ("high", "medium", "low", "informational")
+    return {
+        "model": name,
+        "count": 0,
+        "score": 0.0,
+        "bands": {k: {"count": 0, "score": 0.0} for k in band_keys},
+    }
+
+
 def aggregate_findings_by_llm(
     claims: list[dict],
     aliases: dict[str, str] | None = None,
+    *,
+    models_probed: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Score each test LLM by finding quantity and sensitivity.
 
@@ -70,6 +157,9 @@ def aggregate_findings_by_llm(
     that model, so more findings and more sensitive findings both rank higher.
     ``bands`` splits that score (and the raw counts) into high / medium / low /
     informational so the chart can stack by sensitivity.
+
+    When ``models_probed`` is set, the result includes exactly those models
+    (zero-filled when they produced no findings) and drops any other labels.
     """
     aliases = aliases or {}
     band_keys = ("high", "medium", "low", "informational")
@@ -80,22 +170,37 @@ def aggregate_findings_by_llm(
         for name in _source_models(claim, aliases):
             row = rows.get(name)
             if row is None:
-                row = {
-                    "model": name,
-                    "count": 0,
-                    "score": 0.0,
-                    "bands": {
-                        k: {"count": 0, "score": 0.0} for k in band_keys
-                    },
-                }
+                row = _empty_llm_row(name)
                 rows[name] = row
             row["count"] += 1
             row["score"] += float(sens)
             row["bands"][band]["count"] += 1
             row["bands"][band]["score"] += float(sens)
 
+    probed_raw = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
+    if probed_raw:
+        from graphics.style import short_model_name
+
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for raw in probed_raw:
+            key = short_model_name(raw, aliases)
+            if not key or key == "unknown" or key in seen:
+                continue
+            seen.add(key)
+            ordered.append(key)
+        ranked_src = []
+        for key in ordered:
+            row = rows.get(key) or _empty_llm_row(key)
+            ranked_src.append(row)
+    else:
+        ranked_src = list(rows.values())
+
     ranked: list[dict[str, Any]] = []
-    for row in sorted(rows.values(), key=lambda r: (-float(r["score"]), -int(r["count"]), str(r["model"]))):
+    for row in sorted(
+        ranked_src,
+        key=lambda r: (-float(r["score"]), -int(r["count"]), str(r["model"])),
+    ):
         ranked.append(
             {
                 "model": row["model"],
@@ -150,6 +255,7 @@ def score_report(
             model_counts[m] += 1
 
     findings_by_llm = aggregate_findings_by_llm(investigation, aliases)
+    model_contrast = build_model_contrast(investigation, aliases)
 
     if model_scores:
         peak = max(model_scores.values()) or 1.0
@@ -264,6 +370,7 @@ def score_report(
         },
         "model_exposure": model_exposure,
         "findings_by_llm": findings_by_llm,
+        "model_contrast": model_contrast,
         "exposure_chain": chain,
         "what_else": what_else,
         "findings": ranked,

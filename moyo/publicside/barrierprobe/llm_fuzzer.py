@@ -29,18 +29,18 @@ DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Scan modes:
-#   basic        — rotate paraphrase / translate / summarize
-#                  (n=3 => each once; n=6 => each twice, …)
-#   multilingual — same strategy rotation as the former full-multilingual scan:
-#                  paraphrase / abstract / summarize, applied once in
-#                  English and once per target language.
-# ``typo`` and ``shuffle`` are optional a la carte (CLI ``-S`` / GUI checkbox),
-# not part of the default mode rotation.
-BASIC_FUZZ_STRATEGIES = ("paraphrase", "translate", "summarize")
+#   basic        — English-only paraphrase / abstract / summarize
+#                  (n=3 => each once; n=6 => each twice, …). No translate.
+#   multilingual — paraphrase / abstract / summarize, applied once in
+#                  English and once per target language (responses translated
+#                  back to English after retrieval).
+# ``translate``, ``typo`` and ``shuffle`` are optional a la carte
+# (CLI ``-S`` / GUI checkbox), not part of the default basic rotation.
+BASIC_FUZZ_STRATEGIES = ("paraphrase", "abstract", "summarize")
 MULTILINGUAL_LANGUAGE_STRATEGIES = ("paraphrase", "abstract", "summarize")
 # Back-compat aliases used by older call sites / white-box fuzz paths.
 FULL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
-MULTILINGUAL_FUZZ_STRATEGIES = BASIC_FUZZ_STRATEGIES
+MULTILINGUAL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
 OPTIONAL_FUZZ_STRATEGIES = ("typo", "shuffle")
 FUZZ_STRATEGIES = tuple(
     dict.fromkeys(
@@ -78,9 +78,9 @@ def normalize_fuzz_mode(mode: Optional[str]) -> str:
 def strategies_for_fuzz_mode(mode: str) -> List[str]:
     """Resolve fuzz strategies for a fuzz mode.
 
-    - ``basic`` -> paraphrase / translate / summarize
+    - ``basic`` -> paraphrase / abstract / summarize (English only)
     - ``multilingual`` -> paraphrase / abstract / summarize
-      (explore applies these per language)
+      (explore applies these per language; answers are translated)
     White-box fuzz uses ``WHITEBOX_FUZZ_STRATEGIES`` (paraphrase / translate).
     ``typo`` and ``shuffle`` remain available a la carte via
     :func:`normalize_fuzz_strategies`.
@@ -630,10 +630,10 @@ class LLMFuzzerConfig:
     # Similarity / FAISS neighbour lookup. Overridden by the index's
     # embedding_model when present so query dim matches the corpus.
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    # ``basic`` = paraphrase / translate / summarize;
+    # ``basic`` = paraphrase / abstract / summarize (English, no translate);
     # ``multilingual`` = paraphrase / abstract / summarize per language
-    # in ``multilingual_languages`` (plus English). ``typo`` and ``shuffle``
-    # are a la carte.
+    # in ``multilingual_languages`` (plus English). ``translate``, ``typo``
+    # and ``shuffle`` are a la carte.
     # Explore seed generation still fans these out (n=3 => each once).
     # White-box search uses ``whitebox_strategies`` / ``translate_languages``.
     fuzz_mode: str = "basic"
@@ -1116,8 +1116,8 @@ class LLMFuzzer:
         and only needs diverse retrieval phrasings of the user's request.
 
         ``fuzz_mode``:
-        - ``basic`` — ``n`` seeds rotating paraphrase / translate / summarize
-          (``n=3`` => each once; ``n=6`` => each twice)
+        - ``basic`` — ``n`` English seeds rotating paraphrase / abstract /
+          summarize (``n=3`` => each once; ``n=6`` => each twice). No translate.
         - ``multilingual`` — ``n`` seeds per language (English plus each target
           language) rotating paraphrase / abstract / summarize
 

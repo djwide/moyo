@@ -7,6 +7,7 @@ column, teal curves only, ink/muted labels (no teal text).
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from typing import Iterable, Sequence
 
 from .style import (
@@ -34,8 +35,6 @@ def _curve(
     y1: float,
     x2: float,
     y2: float,
-    *,
-    opacity: float = 0.28,
 ) -> str:
     dx = max(36.0, abs(x2 - x1) * 0.4)
     c1x = x1 + dx
@@ -43,7 +42,7 @@ def _curve(
     return (
         f'<path d="M {x1:.1f},{y1:.1f} C {c1x:.1f},{y1:.1f} {c2x:.1f},{y2:.1f} '
         f'{x2:.1f},{y2:.1f}" fill="none" stroke="{TEAL}" '
-        f'stroke-opacity="{opacity:.2f}" stroke-width="1.2"/>'
+        f'stroke-opacity="0.28" stroke-width="0.75"/>'
     )
 
 
@@ -150,12 +149,40 @@ def _finding_models(finding: dict, aliases: dict[str, str]) -> set[str]:
     return out
 
 
-def _claim_sort_key(finding: dict) -> tuple:
-    try:
-        sens = int(finding.get("sensitivity") or 0)
-    except (TypeError, ValueError):
+def _present_id(finding: dict) -> str:
+    return str(finding.get("cluster_id") or finding.get("claim_id") or "").strip()
+
+
+def _clusters_by_agreement(
+    findings: list[dict],
+    *,
+    model_keys: Sequence[str],
+    aliases: dict[str, str],
+    limit: int,
+) -> list[str]:
+    """Top cluster ids by cross-model agreement (same metric as the heatmap)."""
+    key_set = {m for m in model_keys if m and m != "unknown"}
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for f in findings:
+        kid = _present_id(f)
+        if kid:
+            grouped[kid].append(f)
+
+    ranked: list[tuple[int, int, str]] = []
+    for kid, members in grouped.items():
+        models_in: set[str] = set()
         sens = 0
-    return (-sens, str(finding.get("claim_id") or ""))
+        for f in members:
+            try:
+                sens = max(sens, int(f.get("sensitivity") or 0))
+            except (TypeError, ValueError):
+                pass
+            models_in |= _finding_models(f, aliases)
+        agreement = len(models_in & key_set) if key_set else len(models_in)
+        ranked.append((agreement, sens, kid))
+
+    ranked.sort(key=lambda row: (-row[0], -row[1], row[2]))
+    return [kid for _, _, kid in ranked[: max(0, limit)]]
 
 
 def evidence_graph_svg(
@@ -165,10 +192,10 @@ def evidence_graph_svg(
     models_probed: Sequence[str] | None = None,
     max_citations: int = 8,
     max_models: int = 9,
-    max_claims: int = 8,
-    max_conclusions: int = 4,
+    max_claims: int = 10,
+    max_conclusions: int = 8,
     aliases: dict[str, str] | None = None,
-    max_width: float = 700,
+    max_width: float = 640,
     max_height: float = PRINT_MAX_HEIGHT,
 ) -> str:
     """Print evidence graph matching /how-it-works EvidenceGraph columns."""
@@ -177,7 +204,7 @@ def evidence_graph_svg(
     by_id = {f.get("claim_id"): f for f in all_findings if f.get("claim_id")}
     chains = [c for c in list(chains)[:max_conclusions] if c.get("chain_id")]
 
-    width = min(max(max_width, 680), 720)
+    width = min(max(max_width, 600), 660)
     height = min(max_height, 420)
 
     band_top = 8
@@ -204,46 +231,26 @@ def evidence_graph_svg(
         if len(models) >= max_models:
             break
 
-    # Prefer claims that participate in selected chains; fill from findings.
-    claim_ids: list[str] = []
-    seen_c: set[str] = set()
-    for ch in chains:
-        for cid in list(ch.get("claim_ids") or []):
-            cid = str(cid)
-            if not cid or cid in seen_c or cid not in by_id:
-                continue
-            seen_c.add(cid)
-            claim_ids.append(cid)
-            if len(claim_ids) >= max_claims:
-                break
-        if len(claim_ids) >= max_claims:
-            break
-    if len(claim_ids) < max_claims:
-        ranked = sorted(
-            (f for f in all_findings if f.get("claim_id")),
-            key=_claim_sort_key,
-        )
-        for f in ranked:
-            cid = str(f.get("claim_id"))
-            if cid in seen_c:
-                continue
-            seen_c.add(cid)
-            claim_ids.append(cid)
-            if len(claim_ids) >= max_claims:
-                break
+    # Same ranking as the deliverable model heatmap: most cross-model agreement.
+    cluster_ids = _clusters_by_agreement(
+        all_findings,
+        model_keys=models,
+        aliases=aliases,
+        limit=max_claims,
+    )
 
     cite_ys = _ys(len(citations) or 1, node_top, node_bot)
     model_ys = _ys(len(models) or 1, node_top, node_bot)
-    claim_ys = _ys(len(claim_ids) or 1, node_top, node_bot)
+    claim_ys = _ys(len(cluster_ids) or 1, node_top, node_bot)
     chain_ys = _ys(len(chains) or 1, node_top, node_bot)
 
-    # Column geometry scaled from the 960px how-it-works SVG.
-    x_cite, x_model, x_claim, x_chain = 28, 250, 430, 560
+    # Column geometry: conclusions are id-only, so that band stays narrow.
+    x_cite, x_model, x_claim, x_chain = 28, 235, 400, 525
     col_boxes = (
-        (8, 155, "Real-world citations"),
-        (220, 130, "Model inference"),
-        (400, 115, "Claims"),
-        (540, 150, "Inferred conclusions"),
+        (8, 150, "Real-world citations"),
+        (205, 125, "Model inference"),
+        (370, 110, "Clusters"),
+        (500, 98, "Inferred conclusions"),
     )
 
     bands: list[str] = []
@@ -258,10 +265,18 @@ def evidence_graph_svg(
 
     cite_pos = {c["key"]: (x_cite, cite_ys[i]) for i, c in enumerate(citations)}
     model_pos = {m: (x_model, model_ys[i]) for i, m in enumerate(models)}
-    claim_pos = {cid: (x_claim, claim_ys[i]) for i, cid in enumerate(claim_ids)}
+    claim_pos = {cid: (x_claim, claim_ys[i]) for i, cid in enumerate(cluster_ids)}
     chain_pos = {c["chain_id"]: (x_chain, chain_ys[i]) for i, c in enumerate(chains)}
 
     edges: list[str] = []
+    seen_edges: set[tuple[float, float, float, float]] = set()
+
+    def _add_edge(x1: float, y1: float, x2: float, y2: float) -> None:
+        key = (round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1))
+        if key in seen_edges:
+            return
+        seen_edges.add(key)
+        edges.append(_curve(x1, y1, x2, y2))
 
     # Citation → model inference
     for f in all_findings:
@@ -275,45 +290,51 @@ def evidence_graph_svg(
                 if m not in model_pos:
                     continue
                 x2, y2 = model_pos[m]
-                edges.append(_curve(x1 + 120, y1, x2 - 10, y2, opacity=0.22))
+                _add_edge(x1 + 28, y1, x2 - 10, y2)
 
-    # Model inference → claims
-    for cid in claim_ids:
-        f = by_id.get(cid)
-        if not f or cid not in claim_pos:
+    # Model inference → clusters
+    for kid in cluster_ids:
+        if kid not in claim_pos:
             continue
-        x2, y2 = claim_pos[cid]
-        for m in _finding_models(f, aliases):
+        x2, y2 = claim_pos[kid]
+        linked: set[str] = set()
+        for f in all_findings:
+            if _present_id(f) != kid:
+                continue
+            linked |= _finding_models(f, aliases)
+        for m in linked:
             if m not in model_pos:
                 continue
             x1, y1 = model_pos[m]
-            edges.append(_curve(x1 + 14, y1, x2 - 10, y2, opacity=0.28))
+            _add_edge(x1 + 14, y1, x2 - 10, y2)
 
-    # Claims → inferred conclusions
+    # Clusters → inferred conclusions
     for ch in chains:
         chid = ch["chain_id"]
         if chid not in chain_pos:
             continue
         x2, y2 = chain_pos[chid]
-        wanted = {str(c) for c in (ch.get("claim_ids") or [])}
-        for cid in claim_ids:
-            if cid not in wanted or cid not in claim_pos:
+        wanted: set[str] = set()
+        for cid in ch.get("claim_ids") or []:
+            f = by_id.get(str(cid))
+            wanted.add(_present_id(f) if f else str(cid))
+        for kid in cluster_ids:
+            if kid not in wanted or kid not in claim_pos:
                 continue
-            x1, y1 = claim_pos[cid]
-            edges.append(_curve(x1 + 14, y1, x2 - 10, y2, opacity=0.28))
+            x1, y1 = claim_pos[kid]
+            _add_edge(x1 + 14, y1, x2 - 10, y2)
 
     nodes: list[str] = []
     for c in citations:
         x, y = cite_pos[c["key"]]
+        title = c.get("title") or c["ref"]
         nodes.append(
             f"<g>"
+            f"<title>{escape_xml(title)}</title>"
             f"{_bullseye(x, y)}"
-            f'<text x="{x + 14:.1f}" y="{y - 3:.1f}" font-family="{FONT_MONO}" '
-            f'font-size="9.5" font-weight="600" fill="{INK}">'
+            f'<text x="{x + 14:.1f}" y="{y + 4:.1f}" font-family="{FONT_MONO}" '
+            f'font-size="10" fill="{INK}">'
             f"{escape_xml(c['ref'])}</text>"
-            f'<text x="{x + 14:.1f}" y="{y + 11:.1f}" font-family="{FONT}" '
-            f'font-size="9.5" font-style="italic" fill="{MUTED}">'
-            f"{escape_xml(c['title'])}</text>"
             f"</g>"
         )
 
@@ -327,7 +348,7 @@ def evidence_graph_svg(
             f"</g>"
         )
 
-    for cid in claim_ids:
+    for cid in cluster_ids:
         x, y = claim_pos[cid]
         nodes.append(
             f"<g>"
@@ -341,17 +362,14 @@ def evidence_graph_svg(
     for ch in chains:
         chid = ch["chain_id"]
         x, y = chain_pos[chid]
-        title = truncate(ch.get("label") or chid, 22)
+        tip = truncate(ch.get("label") or chid, 80)
         nodes.append(
             f"<g>"
-            f"<title>{escape_xml(title)}</title>"
+            f"<title>{escape_xml(tip)}</title>"
             f"{_bullseye(x, y)}"
-            f'<text x="{x + 14:.1f}" y="{y - 3:.1f}" font-family="{FONT_MONO}" '
-            f'font-size="9.5" font-weight="600" fill="{INK}">'
+            f'<text x="{x + 14:.1f}" y="{y + 4:.1f}" font-family="{FONT_MONO}" '
+            f'font-size="10" font-weight="600" fill="{INK}">'
             f"{escape_xml(chid)}</text>"
-            f'<text x="{x + 14:.1f}" y="{y + 11:.1f}" font-family="{FONT}" '
-            f'font-size="9.5" font-style="italic" fill="{MUTED}">'
-            f"{escape_xml(title)}</text>"
             f"</g>"
         )
 
@@ -359,7 +377,7 @@ def evidence_graph_svg(
     empties = (
         (not citations, x_cite, "No citations"),
         (not models, x_model, "No models"),
-        (not claim_ids, x_claim, "No claims"),
+        (not cluster_ids, x_claim, "No clusters"),
         (not chains, x_chain, "No conclusions"),
     )
     for empty, x, msg in empties:

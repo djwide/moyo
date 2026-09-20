@@ -14,7 +14,7 @@ Explore is the path for non-technical “give me everything you know about X” 
 ### CLI
 
 ```bash
-# Basic scan: rotate paraphrase / translate / summarize (n=3 => each once)
+# Basic scan: rotate paraphrase / abstract / summarize in English (n=3 => each once)
 moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic
 
 # Multiple prompts (repeat --prompt, and/or load a file — one prompt per line)
@@ -68,7 +68,7 @@ Outputs land under `projects/<slug>/public_sources/` (or `<output-dir>/<prompt-s
 
 | Mode | Seeds |
 |------|--------|
-| **basic** | Rotate `paraphrase → translate → summarize`. `--seeds 3` does each once; `6` does each twice. Add `-S typo` or `-S shuffle` a la carte. |
+| **basic** | Rotate `paraphrase → abstract → summarize` in English. `--seeds 3` does each once; `6` does each twice. No translate. Add `-S translate`, `-S typo`, or `-S shuffle` a la carte. |
 | **multilingual** | For English and each target language, rotate `paraphrase / abstract / summarize`. `--seeds` is **per language group**. Defaults: Spanish, French, Mandarin Chinese (+ `--language`). |
 
 Seed generation uses the **local Ollama fuzzer** (`llama3.1:8b`), not the remote default LLM.

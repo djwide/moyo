@@ -15,6 +15,7 @@ from pipeline.score import aggregate_findings_by_llm
 ASSET_NAMES = {
     "exposure_radar": "exposure-radar.svg",
     "model_heatmap": "model-heatmap.svg",
+    "model_heatmap_full": "model-heatmap-full.svg",
     "findings_by_llm": "findings-by-llm.svg",
     "evidence_graph": "evidence-graph.svg",
 }
@@ -119,13 +120,26 @@ def generate_graphics(
             models_probed=probed or None,
         )
 
-    if "findings_by_llm" in emit:
-        rows = (
-            aggregate_findings_by_llm(chart_findings, aliases)
-            if chart_findings
-            else (report_data.get("findings_by_llm") or [])
+    # Full-width companion (all clusters); always written next to PDF assets.
+    if write_assets or "model_heatmap_full" in emit:
+        graphics["model_heatmap_full"] = model_heatmap_svg(
+            chart_findings,
+            aliases=aliases,
+            models_probed=probed or None,
+            full=True,
         )
+
+    if "findings_by_llm" in emit:
+        if chart_findings or probed:
+            rows = aggregate_findings_by_llm(
+                chart_findings,
+                aliases,
+                models_probed=probed or None,
+            )
+        else:
+            rows = list(report_data.get("findings_by_llm") or [])
         graphics["findings_by_llm"] = llm_findings_bars_svg(rows)
+        report_data["findings_by_llm"] = rows
 
     if "evidence_graph" in emit:
         graphics["evidence_graph"] = evidence_graph_svg(

@@ -1,18 +1,37 @@
-{% from "components/macros.j2" import svg_asset, chart_caption %}
 <section class="page page--risk-overview">
   <h2>{{ content.pages.risk_overview.title or "Which models disclosed the most" }}</h2>
   {% if content.pages.risk_overview.body %}
   <p class="section-lede">{{ content.pages.risk_overview.body }}</p>
   {% endif %}
   {% set caps = content.pages.risk_overview.chart_captions or {} %}
-  <div class="risk-split">
-    <div class="risk-split__primary">
-      {{ svg_asset(content.assets.findings_by_llm, graphics.get('findings_by_llm'), 'compact findings-llm') }}
-      {{ chart_caption(caps.get('findings_by_llm')) }}
-    </div>
-    <div class="risk-split__secondary">
-      {{ svg_asset(content.assets.exposure_radar, graphics.get('exposure_radar'), 'compact') }}
-      {{ chart_caption(caps.get('exposure_radar')) }}
-    </div>
-  </div>
+  <table class="risk-pair">
+    <thead>
+      <tr>
+        <th>Findings by LLM</th>
+        <th>Exposure radar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="risk-pair__charts">
+        <td>
+          {% if graphics.get('findings_by_llm') %}
+            {{ graphics.findings_by_llm | safe }}
+          {% elif content.assets.findings_by_llm %}
+            <img src="{{ content.assets.findings_by_llm }}" alt="Findings by LLM" />
+          {% endif %}
+        </td>
+        <td>
+          {% if graphics.get('exposure_radar') %}
+            {{ graphics.exposure_radar | safe }}
+          {% elif content.assets.exposure_radar %}
+            <img src="{{ content.assets.exposure_radar }}" alt="Exposure radar" />
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="risk-pair__captions">
+        <td>{{ caps.get('findings_by_llm') or '' }}</td>
+        <td>{{ caps.get('exposure_radar') or '' }}</td>
+      </tr>
+    </tbody>
+  </table>
 </section>

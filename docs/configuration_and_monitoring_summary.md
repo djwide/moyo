@@ -194,9 +194,10 @@ edit entries to match the providers you have keys for. Explore prints a
 preflight `name / status / reason` table at scan start; providers without a key
 (or an unreachable Ollama) fail that source only and do not stop the run.
 
-**Fuzz modes:** `basic` (paraphrase / translate / summarize) or
+**Fuzz modes:** `basic` (paraphrase / abstract / summarize, English only) or
 `multilingual` (paraphrase / abstract / summarize per language; defaults
-Spanish, French, Mandarin Chinese). ``typo`` and ``shuffle`` are optional a la
+Spanish, French, Mandarin Chinese; answers translated back). ``translate``,
+``typo`` and ``shuffle`` are optional a la
 carte. See
 [`docs/crawler.md`](crawler.md).
 

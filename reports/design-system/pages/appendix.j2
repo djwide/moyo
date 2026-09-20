@@ -1,6 +1,6 @@
 {% from "components/macros.j2" import remediation_box, severity_badge, source_refs %}
 <section class="page page--appendix">
-  <h2>{{ content.pages.appendix.claims_title or "Claim index" }}</h2>
+  <h2>{{ content.pages.appendix.claims_title or "Cluster index" }}</h2>
   {% if content.meta.include_remediation %}
   <h3>Run-specific follow-ups</h3>
   {% for item in content.followups %}
@@ -17,7 +17,7 @@
     <tbody>
       {% for f in content.abridged_findings %}
       <tr{% if loop.first %} class="is-priority"{% endif %}>
-        <td class="mono">{{ f.claim_id }}</td>
+        <td class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}</td>
         <td>{{ f.claim }}</td>
         <td>{{ severity_badge(f.status) }}</td>
         <td class="num">{{ f.sensitivity | format_score }}</td>

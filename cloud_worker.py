@@ -1457,12 +1457,10 @@ def run_moyo(
         "num_seeds": spec.seeds,
         "progress": _progress,
     }
-    if spec.scan_language_selection:
+    if spec.languages:
         explore_kwargs["fuzz_mode"] = "multilingual"
         explore_kwargs["extra_languages"] = spec.languages
         explore_kwargs["language_selection_explicit"] = True
-    elif spec.languages:
-        explore_kwargs["extra_languages"] = spec.languages
     if spec.retrieval_models:
         from moyo.llm.registry import get_retrieval_llms
 

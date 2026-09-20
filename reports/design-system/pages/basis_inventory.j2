@@ -1,9 +1,9 @@
 {% from "components/macros.j2" import source_refs %}
 <section class="page page--basis-inventory">
-  <h2>{{ content.pages.inventory.title | default("Every exposure group, ranked") }}</h2>
+  <h2>{{ content.pages.inventory.title | default("Every cluster, ranked") }}</h2>
   <p class="basis-lede">
-    One row per collapsed group, ranked by weighted exposure. Paraphrases from
-    multiple models share a claim; corroboration counts distinct model outputs.
+    One row per cluster, ranked by weighted exposure. Paraphrases from
+    multiple models share a cluster; corroboration counts distinct model outputs.
     Outliers, contested, and single-model disclosures stay in the table.
     S-numbers point to cited sources.
   </p>
@@ -27,7 +27,7 @@
     <tbody>
       {% for row in content.basis.inventory %}
       <tr{% if loop.first %} class="is-priority"{% endif %}>
-        <td class="mono">{{ row.claim_id }}</td>
+        <td class="mono">{{ row.present_id or row.cluster_id or row.claim_id }}</td>
         <td class="claim-cell">{{ row.claim }}</td>
         <td class="category-cell">{{ row.category | sentence_case }}</td>
         <td class="num">{{ row.corroboration | format_int }}</td>

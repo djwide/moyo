@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from pipeline.parse import (
-    exploration_run_meta,
+    attach_explore_meta,
     load_chunks_manifest,
     parse_exploration,
     prompts_from_exploration,
@@ -62,10 +62,10 @@ def _format_date(raw: str | None) -> str:
         try:
             d = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
-            return raw.upper()
+            return raw
     else:
         d = datetime.now()
-    return d.strftime("%-d %b %Y").upper()
+    return d.strftime("%-d %b %Y")
 
 
 def _design_system_root(cfg: dict) -> Path:
@@ -654,8 +654,11 @@ def main(argv: list[str] | None = None) -> int:
             report_data["topic"] = prompts[0]
         if render_cfg.get("headline"):
             report_data["headline"] = render_cfg["headline"]
-        if exploration and exploration.exists():
-            report_data["explore_meta"] = exploration_run_meta(exploration)
+        attach_explore_meta(
+            report_data,
+            exploration,
+            aliases=graphics_cfg.get("model_aliases") or {},
+        )
         report_data["collection_issues"] = _merge_collection_issues(
             report_data, run_dir
         )
@@ -663,13 +666,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  → {report_data_path}", file=sys.stderr)
     elif start > stage_index("score"):
         report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
+        attach_explore_meta(
+            report_data,
+            exploration,
+            aliases=graphics_cfg.get("model_aliases") or {},
+        )
 
     if want("synthesize"):
         print("[3] synthesize", file=sys.stderr)
         if not report_data:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
-        if exploration and exploration.exists() and not report_data.get("explore_meta"):
-            report_data["explore_meta"] = exploration_run_meta(exploration)
+        attach_explore_meta(
+            report_data,
+            exploration,
+            aliases=graphics_cfg.get("model_aliases") or {},
+        )
         report_data["collection_issues"] = _merge_collection_issues(
             report_data, run_dir
         )
@@ -693,6 +704,11 @@ def main(argv: list[str] | None = None) -> int:
         print("[4] graphics (SVG)", file=sys.stderr)
         if not report_data:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
+        attach_explore_meta(
+            report_data,
+            exploration,
+            aliases=graphics_cfg.get("model_aliases") or {},
+        )
         if args.keep_graphics:
             graphics = load_graphics_assets(run_dir, emit=emit or None)
             print(f"  → kept {len(graphics)} SVG figures from assets/", file=sys.stderr)
@@ -718,8 +734,11 @@ def main(argv: list[str] | None = None) -> int:
         print("[5] render PDF", file=sys.stderr)
         if not report_data:
             report_data = json.loads(report_data_path.read_text(encoding="utf-8"))
-        if exploration and exploration.exists() and not report_data.get("explore_meta"):
-            report_data["explore_meta"] = exploration_run_meta(exploration)
+        attach_explore_meta(
+            report_data,
+            exploration,
+            aliases=graphics_cfg.get("model_aliases") or {},
+        )
         report_data["collection_issues"] = _merge_collection_issues(
             report_data, run_dir
         )

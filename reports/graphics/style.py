@@ -168,7 +168,12 @@ def fit_canvas(
 
 
 def normalize_svg_for_embed(svg: str) -> str:
-    """Ensure root SVG uses viewBox + width=100% for graphic-box fitting."""
+    """Ensure root SVG uses viewBox only; CSS owns width/height for print fit.
+
+    WeasyPrint often treats ``width="100%"`` as the viewBox's pixel width, which
+    overflows A4 when charts sit side-by-side. Omit width/height on the root so
+    ``max-width: 100%`` in CSS can constrain them.
+    """
 
     def _rewrite(match: re.Match[str]) -> str:
         tag = match.group(0)
@@ -183,7 +188,8 @@ def normalize_svg_for_embed(svg: str) -> str:
             view = f"0 0 {PRINT_MAX_WIDTH} {PRINT_MAX_HEIGHT}"
         return (
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view}" '
-            f'width="100%" preserveAspectRatio="xMidYMid meet" role="img">'
+            f'preserveAspectRatio="xMidYMid meet" role="img" '
+            f'style="width:100%;height:auto;max-width:100%;display:block">'
         )
 
     return re.sub(r"<svg\b[^>]*>", _rewrite, svg, count=1)

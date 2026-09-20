@@ -127,8 +127,8 @@ code, .mono {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--moyo-muted);
   margin: 0 0 var(--space-5);
 }
@@ -143,8 +143,8 @@ code, .mono {
   font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--moyo-muted);
   margin: 0 0 0.3rem;
 }
@@ -196,8 +196,8 @@ code, .mono {
   font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--moyo-muted);
   margin: 0 0 var(--space-2);
   border: 0;
@@ -289,8 +289,9 @@ code, .mono {
   font-size: 0.7rem;
   line-height: 1.3;
   color: var(--moyo-muted);
-  margin: 0.2rem 0 0.8rem;
-  max-width: 62ch;
+  margin: -0.15rem auto 0.55rem;
+  max-width: 42ch;
+  text-align: center;
 }
 
 .exec-layout {
@@ -343,7 +344,7 @@ code, .mono {
   font-family: var(--font-sans);
   font-size: 0.58rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-muted);
 }
 
@@ -363,7 +364,7 @@ code, .mono {
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.12em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-muted);
   margin: 0 0 var(--space-2);
 }
@@ -397,13 +398,50 @@ code, .mono {
   margin-right: 0.3rem;
 }
 
-.risk-split {
-  display: flex;
-  gap: 6mm;
-  align-items: flex-start;
+/* Two-column chart pair. Table layout is reliable in WeasyPrint. */
+.risk-pair {
+  width: 100%;
+  max-width: 180mm;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0 auto;
 }
-.risk-split__primary { flex: 1.25 1 0; min-width: 0; }
-.risk-split__secondary { flex: 0.85 1 0; min-width: 0; }
+.risk-pair th,
+.risk-pair td {
+  width: 50%;
+  padding: 0 2.5mm;
+  vertical-align: top;
+  text-align: center;
+}
+.risk-pair thead th {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--moyo-ink);
+  padding-bottom: 1.5mm;
+}
+.risk-pair__charts td {
+  overflow: hidden;
+}
+.risk-pair__charts svg,
+.risk-pair__charts img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.risk-pair__captions td {
+  height: 11mm;
+  padding-top: 1.5mm;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--moyo-muted);
+  text-align: center;
+  vertical-align: top;
+}
 
 .model-exposure-list {
   list-style: none;
@@ -424,6 +462,69 @@ code, .mono {
   padding-top: 0.35rem;
 }
 .dots { letter-spacing: 0.08em; color: var(--moyo-ink); font-size: 0.9rem; }
+
+.contrast-split {
+  display: flex;
+  gap: 7mm;
+  align-items: flex-start;
+  margin: var(--space-2) 0 var(--space-4);
+}
+.contrast-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.contrast-col h3,
+.contrast-heatmap-title {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: var(--moyo-ink);
+  margin: 0 0 0.35rem;
+  border: 0;
+  padding: 0;
+}
+.contrast-heatmap-title {
+  margin-top: var(--space-4);
+}
+.contrast-col--diff {
+  background: var(--moyo-cream);
+  margin-right: -2mm;
+  padding: var(--space-3) 2mm var(--space-3) var(--space-3);
+}
+.contrast-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.contrast-list li {
+  font-family: var(--font-serif);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--moyo-ink);
+  padding: 0.28rem 0;
+  border-bottom: 0.35pt solid var(--moyo-border);
+  break-inside: avoid;
+}
+.contrast-list li.empty {
+  font-style: italic;
+  color: var(--moyo-muted);
+  border-bottom: 0;
+}
+.contrast-models {
+  display: block;
+  margin-top: 0.08rem;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--moyo-muted);
+}
+.contrast-list .mono {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
 
 .methodology-list {
   font-family: var(--font-sans);
@@ -464,7 +565,7 @@ code, .mono {
   font-size: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-ink);
   background: var(--moyo-cream);
   border-bottom: 0.6pt solid var(--moyo-ink);
@@ -515,7 +616,7 @@ code, .mono {
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--moyo-ink);
   margin: 0 0 0.15rem;
   border: 0;

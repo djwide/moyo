@@ -1,6 +1,60 @@
-{% from "components/macros.j2" import svg_asset %}
+{% from "components/macros.j2" import svg_asset, severity_badge %}
+{% set contrast = content.model_contrast or {} %}
 <section class="page page--model-comparison">
-  <h2>{{ content.pages.model_comparison.title or "Sensitivity by model and claim" }}</h2>
+  <h2>{{ content.pages.model_comparison.title or "Where the models agree, and where they don't" }}</h2>
+  {% if content.pages.model_comparison.body or contrast.lede %}
+  <p class="section-lede">{{ content.pages.model_comparison.body or contrast.lede }}</p>
+  {% endif %}
+
+  <div class="contrast-split">
+    <div class="contrast-col">
+      <h3>Commonality</h3>
+      <ul class="contrast-list">
+        {% if contrast.commonality_prose %}
+          {% for line in contrast.commonality_prose %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        {% elif contrast.commonality %}
+          {% for row in contrast.commonality %}
+          <li>
+            {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
+            {{ row.claim }}
+            {% if row.models %}
+            <span class="contrast-models">{{ row.models | join(', ') }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        {% else %}
+          <li class="empty">No cross-model agreement in this run.</li>
+        {% endif %}
+      </ul>
+    </div>
+    <div class="contrast-col contrast-col--diff">
+      <h3>Differences</h3>
+      <ul class="contrast-list">
+        {% if contrast.differences_prose %}
+          {% for line in contrast.differences_prose %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        {% elif contrast.differences %}
+          {% for row in contrast.differences %}
+          <li>
+            {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
+            {% if row.kind %}{{ severity_badge(row.kind) }}{% elif row.status %}{{ severity_badge(row.status) }}{% endif %}
+            {{ row.claim }}
+            {% if row.models %}
+            <span class="contrast-models">{{ row.models | join(', ') }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        {% else %}
+          <li class="empty">No model-specific or contested disclosures in this run.</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="contrast-heatmap-title">{{ content.pages.model_comparison.heatmap_title or "Sensitivity by model and claim" }}</h3>
   {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
   <ul class="model-exposure-list">
     {% for m in content.model_exposure %}

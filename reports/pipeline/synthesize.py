@@ -44,6 +44,8 @@ _SECTION_KEYS = (
     "exposure_teaser",
     "exposure_chain",
     "what_else",
+    "model_commonality",
+    "model_differences",
     "executive_summary",
     "body",
 )
@@ -64,7 +66,14 @@ def _parse_labeled_sections(text: str) -> dict[str, Any]:
     for m in pattern.finditer(cleaned):
         key = m.group(1).strip().lower()
         body = m.group(2).strip()
-        if key in {"public_sources", "inference_chain", "exposure_chain", "what_else"}:
+        if key in {
+            "public_sources",
+            "inference_chain",
+            "exposure_chain",
+            "what_else",
+            "model_commonality",
+            "model_differences",
+        }:
             items = []
             for line in body.splitlines():
                 s = re.sub(r"^[-*•\d.)\s]+", "", line).strip()
@@ -140,6 +149,8 @@ def parse_executive_payload(raw: Any) -> dict[str, Any]:
         "exposure_teaser": _str("exposure_teaser"),
         "exposure_chain": _list("exposure_chain", 6),
         "what_else": _list("what_else", 5),
+        "model_commonality": _list("model_commonality", 5),
+        "model_differences": _list("model_differences", 5),
     }
 
 
@@ -273,6 +284,7 @@ def synthesize(
                         "findings": report_data.get("findings", [])[:25],
                         "chains": report_data.get("chains", [])[:5],
                         "followups": report_data.get("followups", [])[:5],
+                        "model_contrast": report_data.get("model_contrast") or {},
                     },
                     ensure_ascii=False,
                     indent=2,

@@ -40,6 +40,13 @@ def group_key(finding: dict[str, Any]) -> str:
     return str(finding.get("cluster_id") or finding.get("claim_id") or "").strip()
 
 
+def present_id(finding: dict[str, Any] | None) -> str:
+    """Cluster ID when clustered, otherwise the claim ID."""
+    if not finding:
+        return ""
+    return group_key(finding)
+
+
 def _group_prefer_rank(finding: dict[str, Any]) -> tuple:
     """Prefer richer collapsed survivors when deduping a group."""
     try:
