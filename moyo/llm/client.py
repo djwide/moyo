@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 # Snapshot retrieval: one hard per-call deadline, no client-side retries.
 # SDK retries are also disabled in LLMClient so this is the only retry layer.
-SNAPSHOT_TIMEOUT = 45
-SNAPSHOT_SLOW_TIMEOUT = 90
+SNAPSHOT_TIMEOUT = 20
 SNAPSHOT_MAX_ATTEMPTS = 1
+RETRIEVAL_TIMEOUT_DEFAULT = 20
+RETRIEVAL_TIMEOUT_WEB_SEARCH = 300
 
 
 # --- Rate-limit / transient retry -------------------------------------------
@@ -380,22 +381,26 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
 
 
 def _openai_create_extras(
-    model: str, base_url: Optional[str] = None
+    model: str,
+    base_url: Optional[str] = None,
+    *,
+    web_search: bool = False,
 ) -> Dict[str, Any]:
     """Extra kwargs for ``chat.completions.create`` beyond messages/tokens.
 
-    Turns on provider web-search options when the Chat Completions endpoint
-    exposes a simple flag (Qwen ``enable_search``, Gemini ``web_search_options``,
-    OpenRouter ``web`` plugin). OpenAI/xAI/Anthropic use dedicated tool paths
-    elsewhere in this module.
+    When ``web_search`` is true, turns on provider web-search options where the
+    Chat Completions endpoint exposes a simple flag (Qwen ``enable_search``,
+    Gemini ``web_search_options``, OpenRouter ``web`` plugin). OpenAI/xAI/
+    Anthropic use dedicated tool paths elsewhere in this module.
     """
     extras: Dict[str, Any] = {}
     extra_body = dict(_openai_extra_body_for_model(model))
-    if _is_dashscope_url(base_url):
-        extra_body["enable_search"] = True
-    if _is_openrouter_url(base_url):
-        # Works for any OpenRouter model, including ones without tool calling.
-        extra_body["plugins"] = [{"id": "web"}]
+    if web_search:
+        if _is_dashscope_url(base_url):
+            extra_body["enable_search"] = True
+        if _is_openrouter_url(base_url):
+            # Works for any OpenRouter model, including ones without tool calling.
+            extra_body["plugins"] = [{"id": "web"}]
     if extra_body:
         for key in ("reasoning_effort",):
             if key in extra_body:
@@ -407,7 +412,8 @@ def _openai_create_extras(
     # ``none`` is rejected by Pro-class aliases that require thinking mode.
     if _is_gemini_model(model, base_url):
         extras["reasoning_effort"] = "low"
-        extras["web_search_options"] = {}
+        if web_search:
+            extras["web_search_options"] = {}
     if _is_openai_max_completion_tokens_model(model):
         extras.setdefault("reasoning_effort", "low")
     return extras
@@ -596,6 +602,7 @@ class LLMSpec:
     max_tokens: int = 1000
     timeout: int = 120
     max_retries: int = 3
+    web_search: bool = False
     # Ollama context-window allocation (tokens). None = server/model default
     # (commonly 2048–4096). Raise for long summarise prompts.
     num_ctx: Optional[int] = None
@@ -643,6 +650,7 @@ class LLMSpec:
             max_tokens=int(data.get("max_tokens", 1000)),
             timeout=int(data.get("timeout", 120)),
             max_retries=int(data.get("max_retries", 3)),
+            web_search=bool(data.get("web_search", False)),
             num_ctx=int(num_ctx) if num_ctx is not None else None,
         )
 
@@ -658,14 +666,18 @@ def is_slow_search_retrieval(spec: LLMSpec) -> bool:
     return False
 
 
-def apply_retrieval_timeout(spec: LLMSpec, override: Optional[int] = None) -> int:
-    """Resolve per-call timeout, keeping slow search models at ≥ 90s on snapshot."""
-    if override is None:
-        return max(1, int(spec.timeout or 120))
-    value = max(1, int(override))
-    if is_slow_search_retrieval(spec):
-        return max(value, SNAPSHOT_SLOW_TIMEOUT)
-    return value
+def apply_retrieval_timeout(
+    spec: LLMSpec,
+    override: Optional[int] = None,
+    *,
+    web_search: bool = False,
+) -> int:
+    """Resolve per-call timeout for retrieval fan-out."""
+    if web_search:
+        return RETRIEVAL_TIMEOUT_WEB_SEARCH
+    if override is not None:
+        return max(1, int(override))
+    return RETRIEVAL_TIMEOUT_DEFAULT
 
 
 def llm_spec_has_auth(spec: LLMSpec) -> bool:
@@ -943,7 +955,9 @@ class LLMClient:
                 num_ctx=self.spec.num_ctx,
             )
 
-        if _uses_responses_web_search(provider, self.spec.base_url):
+        web_search = bool(self.spec.web_search)
+
+        if web_search and _uses_responses_web_search(provider, self.spec.base_url):
             return self._complete_via_responses(
                 prompt,
                 system=system,
@@ -952,7 +966,11 @@ class LLMClient:
             )
 
         if provider in ("openai", "custom"):
-            if _is_moonshot_url(self.spec.base_url) and not _is_kimi_k3(self.spec.model):
+            if (
+                web_search
+                and _is_moonshot_url(self.spec.base_url)
+                and not _is_kimi_k3(self.spec.model)
+            ):
                 return self._complete_moonshot_with_web_search(
                     prompt,
                     system=system,
@@ -977,7 +995,9 @@ class LLMClient:
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
                 create_kwargs["temperature"] = temperature
             create_kwargs.update(
-                _openai_create_extras(self.spec.model, self.spec.base_url)
+                _openai_create_extras(
+                    self.spec.model, self.spec.base_url, web_search=web_search
+                )
             )
             response = self._client.chat.completions.create(**create_kwargs)
             message = response.choices[0].message if response.choices else None
@@ -988,13 +1008,14 @@ class LLMClient:
             kwargs: Dict[str, Any] = {}
             if system:
                 kwargs["system"] = system
-            create_kwargs = {
+            create_kwargs: Dict[str, Any] = {
                 "model": self.spec.model,
                 "max_tokens": max_tokens,
                 "messages": [{"role": "user", "content": prompt}],
-                "tools": _anthropic_web_search_tools(),
                 **kwargs,
             }
+            if web_search:
+                create_kwargs["tools"] = _anthropic_web_search_tools()
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
                 create_kwargs["temperature"] = temperature
             response = self._client.messages.create(**create_kwargs)
@@ -1072,7 +1093,9 @@ class LLMClient:
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
                 create_kwargs["temperature"] = temperature
             create_kwargs.update(
-                _openai_create_extras(self.spec.model, self.spec.base_url)
+                _openai_create_extras(
+                    self.spec.model, self.spec.base_url, web_search=True
+                )
             )
             response = self._client.chat.completions.create(**create_kwargs)
             message = response.choices[0].message if response.choices else None

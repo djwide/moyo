@@ -10,11 +10,26 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-try:
-    import faiss  # type: ignore
-except ImportError:  # pragma: no cover
-    faiss = None
-    logger.warning("FAISS not available")
+_faiss_module: Any = None
+_faiss_unavailable = False
+
+
+def _require_faiss():
+    """Load the native FAISS library on first index use (skipped for black-box explore)."""
+    global _faiss_module, _faiss_unavailable
+    if _faiss_module is not None:
+        return _faiss_module
+    if _faiss_unavailable:
+        raise RuntimeError("FAISS not available")
+    try:
+        import faiss as mod  # type: ignore
+
+        _faiss_module = mod
+        return mod
+    except ImportError:  # pragma: no cover
+        _faiss_unavailable = True
+        logger.warning("FAISS not available")
+        raise RuntimeError("FAISS not available") from None
 
 
 class StringStore:
@@ -147,9 +162,6 @@ class FAISSIndex:
             dimension: Embedding dimension
             index_type: Type of index ("flat", "ivf", "hnsw")
         """
-        if faiss is None:
-            raise RuntimeError("FAISS not available")
-        
         self.dimension = dimension
         self.index_type = index_type
         self.index = self._create_index()
@@ -160,6 +172,7 @@ class FAISSIndex:
         
     def _create_index(self):
         """Create FAISS index based on type with GPU support."""
+        faiss = _require_faiss()
         # Check for GPU availability
         gpu_available = hasattr(faiss, 'GpuIndexFlatIP')
         
@@ -423,7 +436,8 @@ class FAISSIndex:
         """
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
-        
+        faiss = _require_faiss()
+
         # Save FAISS index, named after the corpus it was built from
         index_path = directory / f"{name}.faiss"
         
@@ -516,7 +530,7 @@ class FAISSIndex:
         instance.embedding_model = info.get("embedding_model") or info.get("model_name")
         
         # Load FAISS index
-        instance.index = faiss.read_index(str(index_path))
+        instance.index = _require_faiss().read_index(str(index_path))
         instance.dimension = int(instance.index.d)
         
         # Load metadata
@@ -543,9 +557,7 @@ class FAISSIndex:
 
 def build_index(vectors: List[List[float]], dimension: int = 384) -> FAISSIndex:
     """Build a FAISS index from vectors."""
-    if faiss is None:
-        raise RuntimeError("FAISS not available")
-    
+    _require_faiss()
     index = FAISSIndex(dimension=dimension)
     index.add_vectors(vectors)
     return index
@@ -559,9 +571,8 @@ def build_index_from_text(lines: List[str], index_path: Path, model_name: str) -
         index_path: Path to save the index
         model_name: Name of the embedding model to use
     """
-    if faiss is None:
-        raise RuntimeError("FAISS not available")
-    
+    faiss = _require_faiss()
+
     # Check if this is an OpenAI model
     openai_models = {"text-embedding-3-large", "text-embedding-3-small", "openai-small", "openai-large"}
     

@@ -250,6 +250,27 @@ def with_leading_sort_stamp(text: str, stamp: str | None = None) -> str:
     return f"{prefix} {cleaned}"
 
 
+def report_title_for_firestore(
+    *,
+    storage_folder: str,
+    prompts: list[str] | None = None,
+    existing_title: str | None = None,
+) -> str:
+    """Firestore ``title``: existing display name with a leading sort stamp."""
+    stamp = sort_stamp_from_text(storage_folder)
+    raw = (existing_title or "").strip()
+    if raw:
+        return with_leading_sort_stamp(raw, stamp)
+    prompt = ""
+    for item in prompts or []:
+        prompt = str(item).strip()
+        if prompt:
+            break
+    topic = slugify_topic(prompt)
+    pretty = " ".join(part.capitalize() for part in topic.split("_") if part) or "Report"
+    return with_leading_sort_stamp(pretty, stamp)
+
+
 def order_storage_folder(
     order_id: str,
     prompts: list[str] | None = None,

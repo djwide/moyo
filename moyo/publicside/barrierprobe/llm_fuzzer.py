@@ -6,9 +6,11 @@ stored on the index (GUI default is BGE-base, 768-d). MiniLM is only the
 fallback when the index has no model recorded.
 """
 
+from __future__ import annotations
+
 import logging
 import threading
-from typing import List, Dict, Any, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 import json
 import time
@@ -16,11 +18,13 @@ import random
 
 from shared_utils import (
     embed,
-    FAISSIndex,
     normalize_text,
     TextNormalizationConfig,
-    get_logger
+    get_logger,
 )
+
+if TYPE_CHECKING:
+    from shared_utils.faiss_index import FAISSIndex
 
 logger = get_logger(__name__)
 

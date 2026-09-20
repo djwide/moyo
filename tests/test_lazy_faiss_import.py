@@ -1,0 +1,36 @@
+"""Black-box paths should not load the native FAISS library at import time."""
+
+import sys
+
+import shared_utils.faiss_index as faiss_index_module
+
+
+def test_llm_fuzzer_import_does_not_load_faiss(monkeypatch):
+    monkeypatch.setattr(faiss_index_module, "_faiss_module", None, raising=False)
+    monkeypatch.setattr(faiss_index_module, "_faiss_unavailable", False, raising=False)
+    sys.modules.pop("faiss", None)
+
+    from moyo.publicside.barrierprobe import llm_fuzzer  # noqa: F401
+
+    assert faiss_index_module._faiss_module is None
+    assert "faiss" not in sys.modules
+
+
+def test_faiss_index_load_still_imports_faiss(monkeypatch, tmp_path):
+    monkeypatch.setattr(faiss_index_module, "_faiss_module", None, raising=False)
+    monkeypatch.setattr(faiss_index_module, "_faiss_unavailable", False, raising=False)
+    sys.modules.pop("faiss", None)
+
+    from shared_utils.faiss_index import FAISSIndex
+
+    dim = 8
+    index = FAISSIndex(dimension=dim, index_type="flat")
+    index.add_vectors([[0.0] * dim])
+    index.save(tmp_path, name="probe")
+
+    sys.modules.pop("faiss", None)
+    monkeypatch.setattr(faiss_index_module, "_faiss_module", None, raising=False)
+
+    FAISSIndex.load(tmp_path)
+    assert faiss_index_module._faiss_module is not None
+    assert "faiss" in sys.modules

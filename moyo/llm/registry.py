@@ -26,7 +26,7 @@ import logging
 import os
 from dataclasses import replace
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Set, Union
 
 from moyo.llm.client import LLMClient, LLMSpec, apply_retrieval_timeout
 
@@ -175,6 +175,7 @@ def get_retrieval_llms(
     *,
     timeout: Optional[int] = None,
     max_retries: Optional[int] = None,
+    web_search_model_ids: Optional[Set[str]] = None,
 ) -> List[LLMClient]:
     """Return an :class:`LLMClient` for each configured retrieval LLM.
 
@@ -183,12 +184,12 @@ def get_retrieval_llms(
     extras. Unknown ids are ignored. If nothing matches, falls back to the
     default (non-optional) configured set.
 
-    ``timeout`` / ``max_retries`` override each spec before the client is
-    constructed (used for snapshot hard deadlines). Dashscope, xAI, and
-    Perplexity reasoning keep at least 90s when a shorter snapshot cap is
-    passed, so those models are not dropped from the roster.
+    ``web_search_model_ids`` lists retrieval ids that should use hosted web
+    search (300s timeout). Others use the default 20s cap unless ``timeout`` is
+    set (snapshot hard deadlines). ``max_retries`` overrides each spec.
     """
     wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}
+    web_search_wanted = {str(x).strip() for x in (web_search_model_ids or set()) if str(x).strip()}
     specs = get_retrieval_specs(include_optional=bool(wanted))
     if wanted:
         filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
@@ -201,7 +202,15 @@ def get_retrieval_llms(
         specs = filtered
     clients: List[LLMClient] = []
     for spec in specs:
-        spec = replace(spec, timeout=apply_retrieval_timeout(spec, timeout))
+        model_id = retrieval_model_id(spec)
+        use_web_search = model_id in web_search_wanted
+        spec = replace(
+            spec,
+            web_search=use_web_search,
+            timeout=apply_retrieval_timeout(
+                spec, timeout, web_search=use_web_search
+            ),
+        )
         if max_retries is not None:
             spec = replace(spec, max_retries=max(0, int(max_retries)))
         clients.append(LLMClient(spec))

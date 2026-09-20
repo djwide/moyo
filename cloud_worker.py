@@ -76,7 +76,11 @@ from moyo.llm.client import (
     SNAPSHOT_TIMEOUT,
     ensure_env_loaded,
 )
-from moyo.order_storage import order_storage_folder
+from moyo.order_storage import (
+    order_storage_folder,
+    report_title_for_firestore,
+    sort_stamp_from_text,
+)
 from moyo.report_storage import (
     DEFAULT_MOYO_REPORTS_BUCKET,
     reports_bucket_name as _storage_bucket_name,
@@ -200,6 +204,7 @@ class OrderSpec:
     seeds: int = 3
     languages: list[str] = field(default_factory=list)
     retrieval_models: list[str] = field(default_factory=list)
+    retrieval_web_search_models: list[str] = field(default_factory=list)
     scan_language_selection: bool = False
     strategies: list[str] = field(default_factory=list)
     include_remediation: bool = False
@@ -218,7 +223,7 @@ class OrderSpec:
 
     def __post_init__(self) -> None:
         folder = (self.storage_folder or "").strip().strip("/")
-        if not folder:
+        if not sort_stamp_from_text(folder):
             folder = order_storage_folder(self.order_id, self.prompts)
         self.storage_folder = folder
 
@@ -229,8 +234,8 @@ class OrderSpec:
 def snapshot_scan_deadlines(product: str) -> dict[str, int]:
     """Hard per-call timeout and single attempt for Exposure Snapshot models.
 
-    ``get_retrieval_llms`` still raises Dashscope / xAI / Perplexity reasoning
-    to 90s so those models stay on the snapshot roster.
+    Models with admin-enabled web search still get 300s inside
+    ``get_retrieval_llms``.
     """
     if normalize_product(product) != "snapshot":
         return {}
@@ -561,6 +566,25 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
             part.strip() for part in retrieval_models.split(",") if part.strip()
         ]
 
+    retrieval_web_search_models = _first(
+        data,
+        "retrievalWebSearchModels",
+        "retrieval_web_search_models",
+        default=[],
+    ) or []
+    if isinstance(retrieval_web_search_models, str):
+        retrieval_web_search_models = [
+            part.strip()
+            for part in retrieval_web_search_models.split(",")
+            if part.strip()
+        ]
+    retrieval_model_set = {str(x) for x in retrieval_models}
+    retrieval_web_search_models = [
+        str(x)
+        for x in retrieval_web_search_models
+        if str(x) in retrieval_model_set
+    ]
+
     scan_language_selection = _coerce_bool(
         _first(
             data,
@@ -604,6 +628,7 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         seeds=seeds,
         languages=[str(x) for x in languages],
         retrieval_models=[str(x) for x in retrieval_models],
+        retrieval_web_search_models=[str(x) for x in retrieval_web_search_models],
         scan_language_selection=bool(scan_language_selection),
         strategies=[str(x) for x in strategies],
         include_remediation=bool(
@@ -882,6 +907,7 @@ def success_update_fields(
     urls: dict[str, str],
     manifest: dict[str, Any],
     validation: ValidationResult | None = None,
+    title: str | None = None,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "generationStartedAt": started,
@@ -895,6 +921,8 @@ def success_update_fields(
         "reportStage": None,
         "error": None,
     }
+    if title:
+        fields["title"] = title
     if spec.qc_required:
         fields["reportStatus"] = CANONICAL_AWAITING_QC
         fields["qcStatus"] = "pending"
@@ -1509,6 +1537,7 @@ def run_moyo(
 
     explore_kwargs["retrieval_llms"] = get_retrieval_llms(
         spec.retrieval_models or None,
+        web_search_model_ids=set(spec.retrieval_web_search_models or []),
         **snapshot_scan_deadlines(spec.product),
     )
     if spec.strategies:
@@ -2118,6 +2147,11 @@ def main() -> int:
     try:
         data, order_ref = _load_order_data(order_id)
         spec = parse_order(order_id, data)
+        firestore_title = report_title_for_firestore(
+            storage_folder=spec.storage_folder,
+            prompts=spec.prompts,
+            existing_title=str(data.get("title") or ""),
+        )
         if spec.payment_status and str(spec.payment_status).lower() != "paid":
             logger.warning(
                 "order %s paymentStatus=%s (continuing)",
@@ -2148,6 +2182,7 @@ def main() -> int:
                 "generationStartedAt": started,
                 "generationFinishedAt": None,
                 "storageFolder": spec.storage_folder,
+                "title": firestore_title,
                 "error": None,
             }
         )
@@ -2235,6 +2270,7 @@ def main() -> int:
                 urls=urls,
                 manifest=manifest,
                 validation=validation,
+                title=firestore_title,
             )
         )
         status = CANONICAL_AWAITING_QC if spec.qc_required else "delivered"

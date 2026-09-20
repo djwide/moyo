@@ -104,7 +104,14 @@ def test_anthropic_message_text_skips_thinking_blocks():
 
 
 def test_complete_omits_temperature_for_opus_5(monkeypatch):
-    client = LLMClient(LLMSpec(provider="anthropic", model="claude-opus-5", api_key="sk-test"))
+    client = LLMClient(
+        LLMSpec(
+            provider="anthropic",
+            model="claude-opus-5",
+            api_key="sk-test",
+            web_search=True,
+        )
+    )
     captured: dict = {}
 
     class FakeMessages:
@@ -131,7 +138,14 @@ def test_complete_omits_temperature_for_opus_5(monkeypatch):
 
 
 def test_complete_uses_responses_web_search_for_openai(monkeypatch):
-    client = LLMClient(LLMSpec(provider="openai", model="gpt-5.6-sol", api_key="sk-test"))
+    client = LLMClient(
+        LLMSpec(
+            provider="openai",
+            model="gpt-5.6-sol",
+            api_key="sk-test",
+            web_search=True,
+        )
+    )
     captured: dict = {}
 
     class FakeResponses:
@@ -157,21 +171,30 @@ def test_complete_uses_responses_web_search_for_openai(monkeypatch):
 
 def test_web_search_extras_for_qwen_gemini_openrouter():
     qwen = _openai_create_extras(
-        "qwen-plus", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        "qwen-plus",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        web_search=True,
     )
     assert qwen["extra_body"]["enable_search"] is True
 
     gemini = _openai_create_extras(
         "gemini-3.1-pro-preview",
         "https://generativelanguage.googleapis.com/v1beta/openai/",
+        web_search=True,
     )
     assert gemini["web_search_options"] == {}
     assert gemini["reasoning_effort"] == "low"
 
     openrouter = _openai_create_extras(
-        "meta-llama/llama-3.3-70b-instruct", "https://openrouter.ai/api/v1"
+        "meta-llama/llama-3.3-70b-instruct",
+        "https://openrouter.ai/api/v1",
+        web_search=True,
     )
     assert openrouter["extra_body"]["plugins"] == [{"id": "web"}]
+
+    assert "enable_search" not in _openai_create_extras(
+        "qwen-plus", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    ).get("extra_body", {})
 
 
 def test_complete_retries_then_succeeds(monkeypatch):
@@ -329,6 +352,7 @@ def test_complete_kimi_k26_keeps_web_search_tools(monkeypatch):
             model="kimi-k2.6",
             api_key="sk-test",
             base_url="https://api.moonshot.ai/v1",
+            web_search=True,
         )
     )
     captured: dict = {}
@@ -338,55 +362,26 @@ def test_complete_kimi_k26_keeps_web_search_tools(monkeypatch):
     assert captured.get("extra_body") == {"thinking": {"type": "disabled"}}
 
 
-def test_apply_retrieval_timeout_keeps_slow_search_models_at_90s():
+def test_apply_retrieval_timeout_web_search_and_defaults():
     from moyo.llm.client import (
-        SNAPSHOT_SLOW_TIMEOUT,
+        RETRIEVAL_TIMEOUT_DEFAULT,
+        RETRIEVAL_TIMEOUT_WEB_SEARCH,
         SNAPSHOT_TIMEOUT,
         apply_retrieval_timeout,
-        is_slow_search_retrieval,
     )
 
     gpt = LLMSpec(provider="openai", model="gpt-4o", api_key="x")
-    qwen = LLMSpec(
-        provider="custom",
-        model="qwen3.8-max",
-        api_key="x",
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    )
-    grok = LLMSpec(
-        provider="custom",
-        model="grok-4.6",
-        api_key="x",
-        base_url="https://api.x.ai/v1",
-    )
-    sonar_reason = LLMSpec(
-        provider="custom",
-        model="sonar-reasoning-pro",
-        api_key="x",
-        base_url="https://api.perplexity.ai",
-    )
-    sonar = LLMSpec(
-        provider="custom",
-        model="sonar-pro",
-        api_key="x",
-        base_url="https://api.perplexity.ai",
-    )
-    assert not is_slow_search_retrieval(gpt)
-    assert is_slow_search_retrieval(qwen)
-    assert is_slow_search_retrieval(grok)
-    assert is_slow_search_retrieval(sonar_reason)
-    assert not is_slow_search_retrieval(sonar)
+    assert apply_retrieval_timeout(gpt, None) == RETRIEVAL_TIMEOUT_DEFAULT
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT) == SNAPSHOT_TIMEOUT
-    assert apply_retrieval_timeout(qwen, SNAPSHOT_TIMEOUT) == SNAPSHOT_SLOW_TIMEOUT
-    assert apply_retrieval_timeout(grok, SNAPSHOT_TIMEOUT) == SNAPSHOT_SLOW_TIMEOUT
-    assert apply_retrieval_timeout(sonar_reason, SNAPSHOT_TIMEOUT) == SNAPSHOT_SLOW_TIMEOUT
-    assert apply_retrieval_timeout(sonar, SNAPSHOT_TIMEOUT) == SNAPSHOT_TIMEOUT
-    assert apply_retrieval_timeout(qwen, None) == qwen.timeout
+    assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT, web_search=True) == (
+        RETRIEVAL_TIMEOUT_WEB_SEARCH
+    )
 
 
 def test_get_retrieval_llms_applies_per_spec_snapshot_timeouts(monkeypatch):
     from moyo.llm import registry as reg
-    from moyo.llm.client import SNAPSHOT_SLOW_TIMEOUT, SNAPSHOT_TIMEOUT
+    from moyo.llm.client import RETRIEVAL_TIMEOUT_WEB_SEARCH, SNAPSHOT_TIMEOUT
+    from moyo.llm.registry import retrieval_model_id
 
     specs = [
         LLMSpec(provider="openai", model="gpt-4o", api_key="x", timeout=120),
@@ -397,18 +392,50 @@ def test_get_retrieval_llms_applies_per_spec_snapshot_timeouts(monkeypatch):
             base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
             timeout=120,
         ),
-        LLMSpec(
-            provider="custom",
-            model="sonar-reasoning-pro",
-            api_key="x",
-            base_url="https://api.perplexity.ai",
-            timeout=120,
-        ),
     ]
     monkeypatch.setattr(reg, "get_retrieval_specs", lambda include_optional=False: list(specs))
-    clients = reg.get_retrieval_llms(timeout=SNAPSHOT_TIMEOUT, max_retries=0)
-    by_model = {c.spec.model: c.spec.timeout for c in clients}
-    assert by_model["gpt-4o"] == SNAPSHOT_TIMEOUT
-    assert by_model["qwen3.8-max"] == SNAPSHOT_SLOW_TIMEOUT
-    assert by_model["sonar-reasoning-pro"] == SNAPSHOT_SLOW_TIMEOUT
+    qwen_id = retrieval_model_id(specs[1])
+    clients = reg.get_retrieval_llms(
+        timeout=SNAPSHOT_TIMEOUT,
+        max_retries=0,
+        web_search_model_ids={qwen_id},
+    )
+    by_model = {c.spec.model: c for c in clients}
+    assert by_model["gpt-4o"].spec.timeout == SNAPSHOT_TIMEOUT
+    assert not by_model["gpt-4o"].spec.web_search
+    assert by_model["qwen3.8-max"].spec.timeout == RETRIEVAL_TIMEOUT_WEB_SEARCH
+    assert by_model["qwen3.8-max"].spec.web_search
     assert all(c.spec.max_retries == 0 for c in clients)
+
+
+def test_complete_openai_skips_web_search_by_default(monkeypatch):
+    client = LLMClient(LLMSpec(provider="openai", model="gpt-5.6-sol", api_key="sk-test"))
+    captured: dict = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+
+            class Msg:
+                content = "OK"
+                tool_calls = None
+
+            class Choice:
+                message = Msg()
+
+            class Resp:
+                choices = [Choice()]
+                citations = None
+
+            return Resp()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+        responses = None
+
+    monkeypatch.setattr(client, "_client", FakeClient())
+    assert client.complete("hi", max_tokens=16, retries=0) == "OK"
+    assert "tools" not in captured

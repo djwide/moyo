@@ -45,16 +45,42 @@ def test_parse_order_storage_folder_from_prompt():
     assert spec.storage_folder == "20260821T085712Z_enron_a3f9c2e1"
 
 
-def test_parse_order_honors_storage_folder_field():
+def test_parse_order_honors_timestamped_storage_folder_field():
     spec = cw.parse_order(
         "ord_x",
         {
             "product": "snapshot",
             "prompts": ["Enron"],
-            "storageFolder": "custom_folder",
+            "storageFolder": "20260821T085712Z_custom_folder",
         },
     )
-    assert spec.storage_folder == "custom_folder"
+    assert spec.storage_folder == "20260821T085712Z_custom_folder"
+
+
+def test_parse_order_replaces_unstamped_storage_folder():
+    spec = cw.parse_order(
+        "ord_deadbeef",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "storageFolder": "enron_ord",
+        },
+    )
+    assert spec.storage_folder.startswith("20")
+    assert spec.storage_folder.endswith("_enron_deadbeef")
+    assert "T" in spec.storage_folder and spec.storage_folder.split("_")[0].endswith("Z")
+
+
+def test_report_title_for_firestore_prefixes_stamp():
+    from moyo.order_storage import report_title_for_firestore
+
+    title = report_title_for_firestore(
+        storage_folder="20260821T085712Z_enron_a3f9c2e1",
+        prompts=["Enron"],
+        existing_title="Moyo Exposure Snapshot",
+    )
+    assert title.startswith("20260821T085712Z ")
+    assert "Moyo Exposure Snapshot" in title
 
 
 def test_storage_bucket_name_prefers_explicit_env(monkeypatch):
@@ -818,7 +844,8 @@ def test_success_update_fields_awaiting_qc_when_qc_required():
     assert "deliveredAt" not in fields
     assert fields["output"]["pdfPath"] == f"reports/{folder}/report.pdf"
     assert fields["reportStatus"] != "qc_pending"
-    assert folder == "enron_ord"
+    assert folder.endswith("_enron_ord")
+    assert folder.split("_")[0].endswith("Z")
 
 
 def test_success_update_fields_delivered_when_qc_not_required():
@@ -1066,7 +1093,7 @@ def test_snapshot_scan_deadlines():
         "timeout": SNAPSHOT_TIMEOUT,
         "max_retries": SNAPSHOT_MAX_ATTEMPTS - 1,
     }
-    assert SNAPSHOT_TIMEOUT == 45
+    assert SNAPSHOT_TIMEOUT == 20
     assert SNAPSHOT_MAX_ATTEMPTS == 1
     assert cw.snapshot_scan_deadlines("basis") == {}
     assert cw.snapshot_scan_deadlines("both") == {}
