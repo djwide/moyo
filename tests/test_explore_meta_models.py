@@ -62,7 +62,7 @@ _Fuzz mode: `basic`_
     assert report_data["counts"]["llms_tested"] == 2
 
 
-def test_aggregate_findings_by_llm_respects_probed_models():
+def test_aggregate_findings_by_llm_omits_silent_probed_models():
     claims = [
         {
             "sensitivity": 5,
@@ -81,11 +81,10 @@ def test_aggregate_findings_by_llm_respects_probed_models():
     ]
     rows = aggregate_findings_by_llm(claims, ALIASES, models_probed=probed)
     names = [r["model"] for r in rows]
-    assert names == ["GPT", "Claude"]
+    assert names == ["GPT"]
+    assert "Claude" not in names
     assert "MysteryBot" not in names
-    by_name = {r["model"]: r for r in rows}
-    assert by_name["GPT"]["count"] == 1
-    assert by_name["Claude"]["count"] == 0
+    assert rows[0]["count"] == 1
 
 
 def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
@@ -132,10 +131,14 @@ def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
     )
     bars = graphics["findings_by_llm"]
     heat = graphics["model_heatmap"]
+    graph = graphics["evidence_graph"]
     assert "GPT" in bars
-    assert "Claude" in bars
+    assert "Claude" not in bars
     assert "MysteryBot" not in bars
     assert "MysteryBot" not in heat
+    assert "Claude" not in heat
+    assert "MysteryBot" not in graph
+    assert "Claude" not in graph
     assert short_model_name("ChatGPT (OpenAI gpt-4o)", ALIASES) == "GPT"
 
 

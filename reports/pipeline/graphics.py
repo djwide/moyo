@@ -103,6 +103,7 @@ def generate_graphics(
         graphics["exposure_radar"] = exposure_radar_svg(report_data.get("radar_averages") or {})
 
     explore = report_data.get("explore_meta") or {}
+    # Roster of models queried. Charts keep only those that produced findings.
     probed = [
         str(m).strip()
         for m in (

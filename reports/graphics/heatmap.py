@@ -16,6 +16,8 @@ from .style import (
     WHITE,
     escape_xml,
     full_model_name,
+    models_with_results,
+    raw_finding_models,
     short_model_name,
     svg_root,
 )
@@ -93,9 +95,9 @@ def model_heatmap_svg(
 ) -> str:
     """Heatmap with clusters across the top and models down the left.
 
-    When ``models_probed`` is provided, rows are exactly that set: every probed
-    model appears (even with zero hits), and models that were not probed never
-    appear — including labels that only show up on findings.
+    When ``models_probed`` is provided, rows are the probed models that
+    produced at least one finding. Empty rows for failed or silent models are
+    omitted, and labels that were never probed never appear.
 
     When ``full`` is true, every cluster is kept and the SVG grows as wide as
     needed (companion asset for operators; not sized for the A4 graphic box).
@@ -110,28 +112,15 @@ def model_heatmap_svg(
     model_labels: dict[str, str] = {}
     seen_m: set[str] = set()
 
-    probed = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
-    if probed:
-        for raw in probed:
-            key = short_model_name(raw, aliases)
-            if not key or key == "unknown" or key in seen_m:
-                continue
-            seen_m.add(key)
-            model_keys.append(key)
-            model_labels[key] = full_model_name(raw)
-    else:
-        # Fallback when explore_meta is missing: models that appear on findings.
-        for f in all_findings:
-            raw_models = f.get("source_models")
-            if not isinstance(raw_models, list) or not raw_models:
-                raw_models = [f.get("source_model") or ""]
-            for raw in raw_models:
-                key = short_model_name(str(raw or ""), aliases)
-                if not key or key == "unknown" or key in seen_m:
-                    continue
-                seen_m.add(key)
-                model_keys.append(key)
-                model_labels[key] = full_model_name(str(raw or ""))
+    for raw in models_with_results(
+        all_findings, models_probed=models_probed, aliases=aliases
+    ):
+        key = short_model_name(raw, aliases)
+        if not key or key == "unknown" or key in seen_m:
+            continue
+        seen_m.add(key)
+        model_keys.append(key)
+        model_labels[key] = full_model_name(raw)
 
     if not model_keys:
         model_keys = ["—"]
@@ -151,10 +140,7 @@ def model_heatmap_svg(
                 sens = max(sens, int(f.get("sensitivity", 0) or 0))
             except (TypeError, ValueError):
                 pass
-            raw_models = f.get("source_models")
-            if not isinstance(raw_models, list) or not raw_models:
-                raw_models = [f.get("source_model") or ""]
-            for raw in raw_models:
+            for raw in raw_finding_models(f):
                 key = short_model_name(str(raw or ""), aliases)
                 if key and key != "unknown":
                     models_in_col.add(key)

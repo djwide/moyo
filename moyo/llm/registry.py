@@ -24,10 +24,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import replace
 from pathlib import Path
 from typing import List, Optional, Union
 
-from moyo.llm.client import LLMClient, LLMSpec
+from moyo.llm.client import LLMClient, LLMSpec, apply_retrieval_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,9 @@ def get_retrieval_llms(
     default (non-optional) configured set.
 
     ``timeout`` / ``max_retries`` override each spec before the client is
-    constructed (used for snapshot hard deadlines).
+    constructed (used for snapshot hard deadlines). Dashscope, xAI, and
+    Perplexity reasoning keep at least 90s when a shorter snapshot cap is
+    passed, so those models are not dropped from the roster.
     """
     wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}
     specs = get_retrieval_specs(include_optional=bool(wanted))
@@ -198,9 +201,8 @@ def get_retrieval_llms(
         specs = filtered
     clients: List[LLMClient] = []
     for spec in specs:
-        if timeout is not None:
-            spec.timeout = int(timeout)
+        spec = replace(spec, timeout=apply_retrieval_timeout(spec, timeout))
         if max_retries is not None:
-            spec.max_retries = max(0, int(max_retries))
+            spec = replace(spec, max_retries=max(0, int(max_retries)))
         clients.append(LLMClient(spec))
     return clients

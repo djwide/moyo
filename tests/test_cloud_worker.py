@@ -460,6 +460,28 @@ def test_serialize_raw_responses():
     )
     assert rows[0]["prompt"] == "q1"
     assert rows[0]["text"] == "hello"
+    assert rows[0]["source_label"] == "GPT"
+
+
+def test_serialize_raw_responses_uses_source_label_property():
+    from types import SimpleNamespace
+
+    from moyo.publicside.gatherpublicsources.explorer import RetrievalResult
+
+    item = RetrievalResult(
+        seed="s",
+        llm_label="Kimi (Moonshot kimi-k3)",
+        provider="custom",
+        model="kimi-k3",
+        kind="closed",
+        error="tokenization failed",
+        language="French",
+    )
+    rows = cw.serialize_raw_responses(
+        [SimpleNamespace(prompt="q", results=[item])]
+    )
+    assert rows[0]["source_label"] == "Kimi (Moonshot kimi-k3) (French)"
+    assert rows[0]["llm_label"] == "Kimi (Moonshot kimi-k3)"
 
 
 def test_collect_artifacts_and_evidence(tmp_path: Path):
@@ -614,6 +636,25 @@ def test_note_explore_gaps_partial_failures_does_not_raise(tmp_path: Path):
     assert notes
     assert "1/2 usable" in notes[0]
     assert "Grok" in notes[0]
+
+
+def test_note_explore_gaps_uses_llm_label_when_source_label_missing(tmp_path: Path):
+    (tmp_path / "raw_responses.json").write_text(
+        json.dumps(
+            [
+                {
+                    "llm_label": "Kimi (Moonshot kimi-k3)",
+                    "error": "tokenization failed",
+                    "text": "",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    notes = cw.note_explore_gaps(tmp_path, "Holmes?")
+    assert notes
+    assert "Kimi (Moonshot kimi-k3)" in notes[0]
+    assert "unknown:" not in notes[0]
 
 
 def test_note_explore_gaps_ok(tmp_path: Path):

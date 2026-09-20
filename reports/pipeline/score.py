@@ -44,16 +44,13 @@ def _sensitivity_band(sensitivity: int) -> str:
 
 
 def _source_models(claim: dict, aliases: dict[str, str]) -> list[str]:
-    models = claim.get("source_models")
-    if not isinstance(models, list) or not models:
-        models = [claim.get("source_model")]
+    from graphics.style import raw_finding_models, short_model_name
+
     out: list[str] = []
     seen: set[str] = set()
-    for raw in models:
-        if not raw:
-            continue
-        name = _alias(str(raw), aliases)
-        if name in seen:
+    for raw in raw_finding_models(claim):
+        name = short_model_name(raw, aliases)
+        if not name or name == "unknown" or name in seen:
             continue
         seen.add(name)
         out.append(name)
@@ -158,8 +155,9 @@ def aggregate_findings_by_llm(
     ``bands`` splits that score (and the raw counts) into high / medium / low /
     informational so the chart can stack by sensitivity.
 
-    When ``models_probed`` is set, the result includes exactly those models
-    (zero-filled when they produced no findings) and drops any other labels.
+    When ``models_probed`` is set, the result includes those models that
+    produced at least one finding (roster order, then score) and drops empty
+    rows plus any labels that were never probed.
     """
     aliases = aliases or {}
     band_keys = ("high", "medium", "low", "informational")
@@ -177,22 +175,22 @@ def aggregate_findings_by_llm(
             row["bands"][band]["count"] += 1
             row["bands"][band]["score"] += float(sens)
 
-    probed_raw = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
-    if probed_raw:
-        from graphics.style import short_model_name
+    from graphics.style import models_with_results, short_model_name
 
-        ordered: list[str] = []
+    responding = models_with_results(
+        claims, models_probed=models_probed, aliases=aliases
+    )
+    if models_probed:
+        ranked_src = []
         seen: set[str] = set()
-        for raw in probed_raw:
+        for raw in responding:
             key = short_model_name(raw, aliases)
             if not key or key == "unknown" or key in seen:
                 continue
             seen.add(key)
-            ordered.append(key)
-        ranked_src = []
-        for key in ordered:
-            row = rows.get(key) or _empty_llm_row(key)
-            ranked_src.append(row)
+            row = rows.get(key)
+            if row:
+                ranked_src.append(row)
     else:
         ranked_src = list(rows.values())
 

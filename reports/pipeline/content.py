@@ -144,7 +144,7 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
 
     return {
         "snapshot": {
-            "title": "This snapshot is a scout, not the record",
+            "title": "This snapshot is scouting  for AI assertions, not a record of truths",
             "lede": (
                 "The abridged product stops at the top findings. Use the "
                 "Basis Report for the rest of the inventory, then re-prompt "
@@ -712,7 +712,7 @@ def build_content_doc(
                 ),
             },
             "next_steps": {
-                "title": "This snapshot is a scout, not the record",
+                "title": "This snapshot is scouting  for AI assertions, not a record of truths",
                 "body": "",
             },
         },

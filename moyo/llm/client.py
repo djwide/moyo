@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Snapshot retrieval: one hard per-call deadline, no client-side retries.
 # SDK retries are also disabled in LLMClient so this is the only retry layer.
 SNAPSHOT_TIMEOUT = 45
+SNAPSHOT_SLOW_TIMEOUT = 90
 SNAPSHOT_MAX_ATTEMPTS = 1
 
 
@@ -366,12 +367,13 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
     ``max_tokens``, so short caps often return empty ``content``. Disable
     thinking so retrieval replies land in ``content``.
 
-    Kimi K3 always thinks; use low ``reasoning_effort`` instead of ``thinking``.
+    Kimi K3 always thinks. Do not send OpenAI ``reasoning_effort`` or K2
+    ``thinking`` toggles — Moonshot rejects them with tokenization failed.
     """
     if _is_kimi_k25_or_k26(model):
         return {"thinking": {"type": "disabled"}}
     if _is_kimi_k3(model):
-        return {"reasoning_effort": "low"}
+        return {}
     if _is_deepseek_v4(model):
         return {"reasoning": {"effort": "low"}}
     return {}
@@ -643,6 +645,27 @@ class LLMSpec:
             max_retries=int(data.get("max_retries", 3)),
             num_ctx=int(num_ctx) if num_ctx is not None else None,
         )
+
+
+def is_slow_search_retrieval(spec: LLMSpec) -> bool:
+    """True for hosted search models that often miss the 45s snapshot cap."""
+    if _is_dashscope_url(spec.base_url) or _is_xai_url(spec.base_url):
+        return True
+    url = (spec.base_url or "").lower()
+    model = (spec.model or "").lower()
+    if "perplexity" in url:
+        return "reason" in model or "sonar-reasoning" in model
+    return False
+
+
+def apply_retrieval_timeout(spec: LLMSpec, override: Optional[int] = None) -> int:
+    """Resolve per-call timeout, keeping slow search models at ≥ 90s on snapshot."""
+    if override is None:
+        return max(1, int(spec.timeout or 120))
+    value = max(1, int(override))
+    if is_slow_search_retrieval(spec):
+        return max(value, SNAPSHOT_SLOW_TIMEOUT)
+    return value
 
 
 def llm_spec_has_auth(spec: LLMSpec) -> bool:
@@ -929,7 +952,7 @@ class LLMClient:
             )
 
         if provider in ("openai", "custom"):
-            if _is_moonshot_url(self.spec.base_url):
+            if _is_moonshot_url(self.spec.base_url) and not _is_kimi_k3(self.spec.model):
                 return self._complete_moonshot_with_web_search(
                     prompt,
                     system=system,
@@ -1018,7 +1041,11 @@ class LLMClient:
         max_tokens: int,
         use_max_completion_tokens: bool,
     ) -> str:
-        """Moonshot Kimi: declare ``$web_search`` and echo tool results server-side."""
+        """Moonshot Kimi K2: declare ``$web_search`` and echo tool results server-side.
+
+        Kimi K3 does not use this path: its tokenizer rejects the builtin tool
+        schema (HTTP 400 ``tokenization failed``).
+        """
         messages: List[Dict[str, Any]] = []
         if system:
             messages.append({"role": "system", "content": system})

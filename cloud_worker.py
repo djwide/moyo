@@ -227,7 +227,11 @@ class OrderSpec:
 
 
 def snapshot_scan_deadlines(product: str) -> dict[str, int]:
-    """Hard per-call timeout and single attempt for Exposure Snapshot models."""
+    """Hard per-call timeout and single attempt for Exposure Snapshot models.
+
+    ``get_retrieval_llms`` still raises Dashscope / xAI / Perplexity reasoning
+    to 90s so those models stay on the snapshot roster.
+    """
     if normalize_product(product) != "snapshot":
         return {}
     return {
@@ -650,6 +654,13 @@ def serialize_raw_responses(explore_results: Iterable[Any]) -> list[dict[str, An
         prompt = getattr(result, "prompt", "")
         for item in getattr(result, "results", []) or []:
             row = asdict(item) if hasattr(item, "__dataclass_fields__") else dict(item)
+            label = getattr(item, "source_label", None)
+            if label:
+                row["source_label"] = label
+            elif not row.get("source_label"):
+                row["source_label"] = (
+                    row.get("llm_label") or row.get("label") or row.get("model") or ""
+                )
             row["prompt"] = prompt
             rows.append(row)
     return rows
@@ -992,7 +1003,13 @@ def _count_usable_raw_responses(raw_path: Path) -> tuple[int, int, list[str]]:
         err = (row.get("error") or "").strip()
         text = (row.get("text") or "").strip()
         if err or not text:
-            label = row.get("source_label") or row.get("label") or "unknown"
+            label = (
+                row.get("source_label")
+                or row.get("llm_label")
+                or row.get("label")
+                or row.get("model")
+                or "unknown"
+            )
             reason = err or "(no content returned)"
             if len(errors) < 8:
                 errors.append(f"{label}: {reason[:160]}")

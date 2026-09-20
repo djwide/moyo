@@ -157,7 +157,11 @@ def llm_findings_bars_svg(
     colored by sensitivity band so both volume and severity are visible.
     """
     band_order = ("informational", "low", "medium", "high")  # bottom → top
-    series = [dict(r) for r in (rows or []) if r.get("model")]
+    series = [
+        dict(r)
+        for r in (rows or [])
+        if r.get("model") and (int(r.get("count") or 0) > 0 or _llm_row_score(r) > 0)
+    ]
     series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 

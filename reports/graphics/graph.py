@@ -21,6 +21,8 @@ from .style import (
     TEAL,
     WHITE,
     escape_xml,
+    models_with_results,
+    raw_finding_models,
     short_model_name,
     svg_root,
     truncate,
@@ -138,12 +140,9 @@ def _finding_citation_keys(finding: dict) -> set[str]:
 
 
 def _finding_models(finding: dict, aliases: dict[str, str]) -> set[str]:
-    raw_models = finding.get("source_models")
-    if not isinstance(raw_models, list) or not raw_models:
-        raw_models = [finding.get("source_model") or ""]
     out: set[str] = set()
-    for raw in raw_models:
-        m = short_model_name(str(raw or ""), aliases)
+    for raw in raw_finding_models(finding):
+        m = short_model_name(raw, aliases)
         if m and m != "unknown":
             out.add(m)
     return out
@@ -217,12 +216,9 @@ def evidence_graph_svg(
 
     models: list[str] = []
     seen_m: set[str] = set()
-    probed = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
-    source_pool: list[str] = list(probed) if probed else []
-    if not source_pool:
-        for f in all_findings:
-            source_pool.extend(_finding_models(f, aliases))
-    for raw in source_pool:
+    for raw in models_with_results(
+        all_findings, models_probed=models_probed, aliases=aliases
+    ):
         m = short_model_name(str(raw), aliases)
         if not m or m == "unknown" or m in seen_m:
             continue

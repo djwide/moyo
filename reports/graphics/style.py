@@ -71,6 +71,51 @@ def truncate(text: str, n: int) -> str:
     return text[: max(0, n - 1)].rstrip() + "…"
 
 
+def raw_finding_models(finding: dict) -> list[str]:
+    """Full source labels on a finding (``source_models``, else ``source_model``)."""
+    raw_models = finding.get("source_models") if isinstance(finding, dict) else None
+    if not isinstance(raw_models, list) or not raw_models:
+        raw_models = [(finding or {}).get("source_model") or ""]
+    return [str(m).strip() for m in raw_models if str(m).strip()]
+
+
+def models_with_results(
+    findings,
+    *,
+    models_probed=None,
+    aliases: dict[str, str] | None = None,
+) -> list[str]:
+    """Full labels of models that produced at least one finding.
+
+    ``models_probed`` is a whitelist in roster order. Models that were queried
+    but returned no findings are omitted. Labels that only appear on findings
+    and were never probed are also omitted when the whitelist is set.
+    """
+    aliases = aliases or {}
+    present: set[str] = set()
+    for finding in findings or []:
+        for raw in raw_finding_models(finding):
+            key = short_model_name(raw, aliases)
+            if key and key != "unknown":
+                present.add(key)
+
+    probed = [str(m).strip() for m in (models_probed or []) if str(m).strip()]
+    source = probed if probed else [
+        raw for finding in (findings or []) for raw in raw_finding_models(finding)
+    ]
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in source:
+        key = short_model_name(raw, aliases)
+        if not key or key == "unknown" or key in seen:
+            continue
+        if key not in present:
+            continue
+        seen.add(key)
+        ordered.append(raw)
+    return ordered
+
+
 def short_model_name(source_model: str, aliases: dict[str, str] | None = None) -> str:
     """Map a finding's source_model to a short display label.
 

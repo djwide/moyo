@@ -37,6 +37,7 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 from moyo.llm.client import LLMClient
 from moyo.llm.registry import get_default_llm, get_retrieval_llms
@@ -44,6 +45,33 @@ from moyo.llm.registry import get_default_llm, get_retrieval_llms
 logger = logging.getLogger(__name__)
 
 ProgressFn = Callable[[str], None]
+
+# Provider-aware retrieval scheduler. The stock config has ~7 default models;
+# a generic N-worker queue either serializes a host or stampedes it. Caps are
+# global (all hosts) and per API host, with a circuit breaker so a failing
+# provider stops receiving work for the rest of the process.
+RETRIEVAL_GLOBAL_CONCURRENCY = 12  # ~10–14
+RETRIEVAL_PER_PROVIDER_CONCURRENCY = 2  # 1–2
+PROVIDER_CIRCUIT_FAILURE_THRESHOLD = 2
+
+_CIRCUIT_ERROR_MARKERS = (
+    "timed out",
+    "timeout",
+    "rate limit",
+    "rate_limit",
+    "overloaded",
+    "connection",
+    "429",
+    "502",
+    "503",
+    "529",
+    "unauthorized",
+    "invalid_api_key",
+    "invalid api key",
+    "insufficient",
+    "quota",
+    "circuit open",
+)
 
 RETRIEVAL_SYSTEM = (
     "You are a knowledgeable research assistant. Answer with factual, specific "
@@ -1138,6 +1166,7 @@ def set_cached_provider_health(llm: LLMClient, status: LLMStatus) -> LLMStatus:
 def clear_provider_health_cache() -> None:
     with _PROVIDER_HEALTH_LOCK:
         _PROVIDER_HEALTH.clear()
+    _PROVIDER_CIRCUITS.reset()
 
 
 def record_retrieval_health(
@@ -1163,6 +1192,104 @@ def record_retrieval_health(
                 reason=_short_error(sample.error if sample else "") or "retrieval failed",
             )
         set_cached_provider_health(llm, status)
+
+
+class ProviderCircuitBreaker:
+    """Skip further calls to a host after consecutive provider-level failures."""
+
+    def __init__(self, threshold: int = PROVIDER_CIRCUIT_FAILURE_THRESHOLD):
+        self.threshold = max(1, int(threshold))
+        self._fail_counts: Dict[str, int] = {}
+        self._open: Dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def reset(self) -> None:
+        with self._lock:
+            self._fail_counts.clear()
+            self._open.clear()
+
+    def skip_reason(self, key: str) -> Optional[str]:
+        with self._lock:
+            reason = self._open.get(key)
+        if not reason:
+            return None
+        return f"circuit open for {key}: {reason}"
+
+    def record_success(self, key: str) -> None:
+        with self._lock:
+            self._fail_counts[key] = 0
+            self._open.pop(key, None)
+
+    def record_failure(self, key: str, reason: str) -> bool:
+        """Count a failure. True if this call opened the circuit."""
+        cleaned = " ".join((reason or "provider error").split())[:120]
+        with self._lock:
+            if key in self._open:
+                return False
+            n = self._fail_counts.get(key, 0) + 1
+            self._fail_counts[key] = n
+            if n >= self.threshold:
+                self._open[key] = cleaned
+                return True
+            return False
+
+
+_PROVIDER_CIRCUITS = ProviderCircuitBreaker()
+
+
+def scheduler_provider_key(llm: LLMClient) -> str:
+    """Concurrency / circuit key: API host, not the generic 'custom' provider."""
+    spec = llm.spec
+    provider = (spec.provider or "unknown").strip().lower() or "unknown"
+    if provider in {"openai", "anthropic", "ollama", "echo"}:
+        return provider
+    host = urlparse(spec.base_url or "").netloc.strip().lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host or provider
+
+
+def _int_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def retrieval_global_concurrency(override: Optional[int] = None) -> int:
+    if override is not None:
+        return max(1, int(override))
+    return _int_setting(
+        "MOYO_RETRIEVAL_GLOBAL_CONCURRENCY",
+        RETRIEVAL_GLOBAL_CONCURRENCY,
+        1,
+        32,
+    )
+
+
+def retrieval_per_provider_concurrency() -> int:
+    return _int_setting(
+        "MOYO_RETRIEVAL_PER_PROVIDER_CONCURRENCY",
+        RETRIEVAL_PER_PROVIDER_CONCURRENCY,
+        1,
+        4,
+    )
+
+
+def _circuit_failure_reason(result: RetrievalResult) -> Optional[str]:
+    err = (result.error or "").strip()
+    if not err:
+        return None
+    text = err.lower()
+    if "circuit open" in text:
+        return None
+    if any(marker in text for marker in _CIRCUIT_ERROR_MARKERS):
+        return err
+    return None
 
 
 def skip_llm_preflight() -> bool:
@@ -1616,23 +1743,60 @@ def _timeout_retrieval_result(
     return result
 
 
+def _skipped_retrieval_result(
+    seed: str,
+    llm: LLMClient,
+    *,
+    language: Optional[str],
+    strategy: Optional[str],
+    seed_index: int,
+    llm_index: int,
+    reason: str,
+) -> RetrievalResult:
+    return RetrievalResult(
+        seed=seed,
+        llm_label=llm.label,
+        provider=llm.spec.provider,
+        model=llm.spec.model,
+        kind=llm.kind,
+        language=language,
+        strategy=strategy,
+        seed_index=seed_index,
+        llm_index=llm_index,
+        error=reason,
+    )
+
+
 async def _retrieve_jobs_async(
     jobs: Sequence[Tuple[int, Any, int, LLMClient]],
     *,
     max_tokens: Optional[int],
     max_workers: int,
     progress: Optional[ProgressFn],
+    per_provider_concurrency: Optional[int] = None,
+    circuit: Optional[ProviderCircuitBreaker] = None,
 ) -> List[RetrievalResult]:
-    """One bounded concurrent batch: semaphore + wait_for + gather."""
+    """One bounded batch: global cap, per-host cap, and a provider circuit breaker."""
     total = len(jobs)
     if not total:
         return []
-    workers = max(1, int(max_workers))
-    sem = asyncio.Semaphore(workers)
+    global_limit = max(1, int(max_workers))
+    per_provider = max(1, int(per_provider_concurrency or retrieval_per_provider_concurrency()))
+    per_provider = min(per_provider, global_limit)
+    breaker = circuit or _PROVIDER_CIRCUITS
+    global_sem = asyncio.Semaphore(global_limit)
+    provider_sems: Dict[str, asyncio.Semaphore] = {}
     done = 0
     lock = threading.Lock()
     loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(max_workers=workers)
+    executor = ThreadPoolExecutor(max_workers=global_limit)
+
+    def _provider_sem(key: str) -> asyncio.Semaphore:
+        sem = provider_sems.get(key)
+        if sem is None:
+            sem = asyncio.Semaphore(per_provider)
+            provider_sems[key] = sem
+        return sem
 
     async def _one(
         job_index: int,
@@ -1643,41 +1807,77 @@ async def _retrieve_jobs_async(
     ) -> Tuple[int, RetrievalResult]:
         nonlocal done
         timeout = _call_timeout_seconds(llm)
-        async with sem:
-            fut = loop.run_in_executor(
-                executor,
-                partial(
-                    retrieve,
-                    qs.text,
-                    llm,
-                    max_tokens,
-                    qs.language,
-                    qs.strategy,
-                    seed_index,
-                    llm_index,
-                ),
+        key = scheduler_provider_key(llm)
+        skip = breaker.skip_reason(key)
+        if skip:
+            result = _skipped_retrieval_result(
+                qs.text,
+                llm,
+                language=qs.language,
+                strategy=qs.strategy,
+                seed_index=seed_index,
+                llm_index=llm_index,
+                reason=skip,
             )
-            try:
-                # Shield so the deadline can fire without waiting for the
-                # worker thread. Hung HTTP calls are abandoned after gather.
-                result = await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
-            except Exception as exc:
-                result = _timeout_retrieval_result(
-                    qs.text,
-                    llm,
-                    language=qs.language,
-                    strategy=qs.strategy,
-                    seed_index=seed_index,
-                    llm_index=llm_index,
-                    timeout=timeout,
-                    exc=exc,
-                )
-                logger.warning(
-                    "Retrieval failed for %s via %s: %s",
-                    qs.text[:60],
-                    llm.label,
-                    result.error,
-                )
+        else:
+            async with global_sem:
+                async with _provider_sem(key):
+                    skip = breaker.skip_reason(key)
+                    if skip:
+                        result = _skipped_retrieval_result(
+                            qs.text,
+                            llm,
+                            language=qs.language,
+                            strategy=qs.strategy,
+                            seed_index=seed_index,
+                            llm_index=llm_index,
+                            reason=skip,
+                        )
+                    else:
+                        fut = loop.run_in_executor(
+                            executor,
+                            partial(
+                                retrieve,
+                                qs.text,
+                                llm,
+                                max_tokens,
+                                qs.language,
+                                qs.strategy,
+                                seed_index,
+                                llm_index,
+                            ),
+                        )
+                        try:
+                            result = await asyncio.wait_for(
+                                asyncio.shield(fut), timeout=timeout
+                            )
+                        except Exception as exc:
+                            result = _timeout_retrieval_result(
+                                qs.text,
+                                llm,
+                                language=qs.language,
+                                strategy=qs.strategy,
+                                seed_index=seed_index,
+                                llm_index=llm_index,
+                                timeout=timeout,
+                                exc=exc,
+                            )
+                            logger.warning(
+                                "Retrieval failed for %s via %s: %s",
+                                qs.text[:60],
+                                llm.label,
+                                result.error,
+                            )
+                        if result.ok:
+                            breaker.record_success(key)
+                        else:
+                            trip = _circuit_failure_reason(result)
+                            if trip and breaker.record_failure(key, trip):
+                                logger.warning(
+                                    "Provider circuit open for %s after failures: %s",
+                                    key,
+                                    trip,
+                                )
         with lock:
             done += 1
             n = done
@@ -1731,11 +1931,12 @@ def explore_topic(
     """Run the full naive-prompt exploration and return an :class:`ExploreResult`.
 
     Retrieval calls (seed × LLM) run in one bounded concurrent batch
-    (``asyncio.gather`` + semaphore + per-call ``wait_for``). ``workers``
-    caps how many run at once (default: one per configured retrieval LLM).
-    Foreign-response translations use the same cap. Pass ``workers=1`` for
-    sequential behaviour. Rewording stays on the runtime utility fuzzer;
-    summary synthesis stays serial on :func:`get_summary_llm`.
+    (``asyncio.gather`` + global/per-provider semaphores + per-call
+    ``wait_for``). Default global concurrency is 12 (~10–14); each API host
+    is capped at 2 concurrent calls. A provider circuit breaker stops further
+    work to a host after consecutive timeouts / 429s / connection failures.
+    ``workers`` overrides the global cap (``1`` is sequential). Translations
+    use the per-provider cap because they hit a single utility LLM.
 
     ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` English seeds
     rotating original / paraphrase / abstract (no translate);
@@ -1841,17 +2042,20 @@ def explore_topic(
         for llm_index, llm in enumerate(retrieval_llms)
     ]
     total = len(jobs)
-    max_workers = len(retrieval_llms) if workers is None else max(1, int(workers))
-    max_workers = min(max_workers, total) if total else 1
+    global_workers = retrieval_global_concurrency(workers)
+    global_workers = min(global_workers, total) if total else 1
+    per_provider = min(retrieval_per_provider_concurrency(), global_workers)
     _report(
-        f"Retrieving raw answers with {max_workers} worker(s) across {total} queries "
+        f"Retrieving raw answers with global={global_workers} "
+        f"per-provider={per_provider} across {total} queries "
         f"({len(query_seeds)} seeds × {len(retrieval_llms)} LLMs) ..."
     )
     raw_results = _run_coro(
         _retrieve_jobs_async(
             jobs,
             max_tokens=max_tokens,
-            max_workers=max_workers,
+            max_workers=global_workers,
+            per_provider_concurrency=per_provider,
             progress=_report,
         )
     )
@@ -1876,8 +2080,9 @@ def explore_topic(
         languages=languages,
         fuzzer=local_fuzzer,
         progress=_report,
-        # Same concurrency cap as retrieval (CLI --workers / default).
-        workers=max_workers,
+        # Translations hit one utility LLM; keep them at the per-provider cap
+        # unless the caller forced a global worker count of 1.
+        workers=per_provider if workers is None else global_workers,
     )
 
     compiled_results = corpus.results

@@ -231,9 +231,9 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
          "Added on top of the defaults Spanish, French, Mandarin Chinese.",
 )
 @click.option("--workers", type=int, default=None,
-              help="Max concurrent retrieval and translation calls "
-                   "(default: one per configured LLM for retrieval; same cap "
-                   "for foreign-response translation). Use 1 for sequential.")
+              help="Override global retrieval concurrency "
+                   "(default 12; each API host is still capped at 2). "
+                   "Use 1 for sequential.")
 @click.option(
     "--no-summary",
     is_flag=True,
