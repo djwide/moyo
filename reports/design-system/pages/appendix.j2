@@ -29,4 +29,21 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {% set corpus = content.response_corpus or [] %}
+  {% if corpus %}
+  <h2>{{ content.pages.appendix.corpus_title or "Normalized responses (every model × probe)" }}</h2>
+  <p>{{ content.pages.appendix.corpus_lede }}</p>
+  {% for row in corpus %}
+  <article class="corpus-item">
+    <h3>{{ row.model }}{% if row.language %} ({{ row.language }}){% endif %} — {{ row.query_id }}{% if row.strategy %} [{{ row.strategy }}]{% endif %}</h3>
+    <p class="corpus-query"><em>{{ row.query }}</em></p>
+    {% if row.failed %}
+    <p class="corpus-failed">Retrieval failed or returned no usable content.</p>
+    {% else %}
+    <pre class="corpus-body">{{ row.text or "(no content returned)" }}</pre>
+    {% endif %}
+  </article>
+  {% endfor %}
+  {% endif %}
 </section>

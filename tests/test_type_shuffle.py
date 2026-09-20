@@ -28,8 +28,10 @@ def test_shuffle_is_not_a_default_strategy():
     assert "summarize" in OPTIONAL_FUZZ_STRATEGIES
     assert "shuffle" not in normalize_fuzz_strategies(None, fuzz_mode="basic")
     assert normalize_fuzz_strategies(["shuffle"]) == ["shuffle"]
-    assert strategies_for_fuzz_mode("basic") == ["original", "paraphrase", "abstract"]
-    assert strategies_for_fuzz_mode("multilingual") == ["original", "paraphrase", "abstract"]
+    assert strategies_for_fuzz_mode("basic") == ["original", "paraphrase"]
+    assert strategies_for_fuzz_mode("multilingual") == ["original", "paraphrase"]
+    assert "abstract" in OPTIONAL_FUZZ_STRATEGIES
+    assert "abstract" not in strategies_for_fuzz_mode("basic")
 
 
 def test_call_plan_omits_shuffle_unless_requested():

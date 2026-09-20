@@ -179,8 +179,10 @@ def synthesize(
         report_data["executive_summary"] = {
             "headline": "What AI Systems Reveal",
             "summary": (
-                f"{counts.get('findings', 0)} findings across "
-                f"{counts.get('llms_tested', 0)} models; "
+                f"{counts.get('findings', 0)} findings from "
+                f"{counts.get('llms_substantive', counts.get('llms_tested', 0))} models "
+                f"with a substantive answer "
+                f"({counts.get('llms_attempted', counts.get('llms_tested', 0))} attempted); "
                 f"{counts.get('high_sensitivity', 0)} high-sensitivity. "
                 f"Lead finding: {top}"
             ),

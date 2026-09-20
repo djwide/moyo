@@ -114,7 +114,8 @@ CONTRACT_ARTIFACTS = (
     "report.html",
     "report.pdf",
     "report.json",
-    "raw_responses.json",
+    "normalized_responses.json",
+    "provider_responses.jsonl",
     "evidence.json",
 )
 
@@ -124,7 +125,8 @@ RAW_CONTRACT_ARTIFACTS = (
     "claims.jsonl",
     "report_data.json",
     "one-page.pdf",
-    "raw_responses.json",
+    "normalized_responses.json",
+    "provider_responses.jsonl",
     "evidence.json",
     "report.json",
 )
@@ -673,12 +675,14 @@ def work_dir_for(order_id: str) -> Path:
     return path
 
 
-def serialize_raw_responses(explore_results: Iterable[Any]) -> list[dict[str, Any]]:
+def serialize_normalized_responses(explore_results: Iterable[Any]) -> list[dict[str, Any]]:
+    """Compiled/localized retrieval rows (no provider_record / auth headers)."""
     rows: list[dict[str, Any]] = []
     for result in explore_results:
         prompt = getattr(result, "prompt", "")
         for item in getattr(result, "results", []) or []:
             row = asdict(item) if hasattr(item, "__dataclass_fields__") else dict(item)
+            row.pop("provider_record", None)
             label = getattr(item, "source_label", None)
             if label:
                 row["source_label"] = label
@@ -688,6 +692,42 @@ def serialize_raw_responses(explore_results: Iterable[Any]) -> list[dict[str, An
                 )
             row["prompt"] = prompt
             rows.append(row)
+    return rows
+
+
+def serialize_raw_responses(explore_results: Iterable[Any]) -> list[dict[str, Any]]:
+    """Back-compat alias for :func:`serialize_normalized_responses`."""
+    return serialize_normalized_responses(explore_results)
+
+
+def serialize_provider_responses(explore_results: Iterable[Any]) -> list[dict[str, Any]]:
+    """One redacted provider payload per model × probe (no sensitive headers)."""
+    from moyo.llm.content_filter import redact_secrets
+
+    rows: list[dict[str, Any]] = []
+    for result in explore_results:
+        prompt = getattr(result, "prompt", "")
+        for item in getattr(result, "results", []) or []:
+            record = getattr(item, "provider_record", None)
+            if isinstance(record, dict) and record:
+                row = dict(record)
+            else:
+                row = {
+                    "seed": getattr(item, "seed", None),
+                    "seed_index": getattr(item, "seed_index", 0),
+                    "llm_index": getattr(item, "llm_index", 0),
+                    "strategy": getattr(item, "strategy", None),
+                    "language": getattr(item, "language", None),
+                    "llm_label": getattr(item, "llm_label", None),
+                    "provider": getattr(item, "provider", None),
+                    "model": getattr(item, "model", None),
+                    "error": getattr(item, "error", None),
+                    "content": getattr(item, "original_text", None)
+                    or getattr(item, "text", None)
+                    or "",
+                }
+            row["prompt"] = prompt
+            rows.append(redact_secrets(row))
     return rows
 
 
@@ -1014,15 +1054,19 @@ def parse_validation_retry_count(data: dict[str, Any] | None) -> int:
 
 
 def _count_usable_raw_responses(raw_path: Path) -> tuple[int, int, list[str]]:
-    """Return (ok, total, sample_errors) from raw_responses.json."""
+    """Return (ok, total, sample_errors) from normalized_responses.json."""
     if not raw_path.is_file():
-        return 0, 0, ["raw_responses.json missing"]
+        legacy = raw_path.with_name("raw_responses.json")
+        if legacy.is_file():
+            raw_path = legacy
+        else:
+            return 0, 0, ["normalized_responses.json missing"]
     try:
         rows = json.loads(raw_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        return 0, 0, [f"invalid raw_responses.json: {exc}"]
+        return 0, 0, [f"invalid {raw_path.name}: {exc}"]
     if not isinstance(rows, list):
-        return 0, 0, ["raw_responses.json is not a list"]
+        return 0, 0, [f"{raw_path.name} is not a list"]
     ok = 0
     errors: list[str] = []
     for row in rows:
@@ -1063,7 +1107,7 @@ def _required_llm_env_presence() -> dict[str, bool]:
 
 def note_explore_gaps(prompt_dir: Path, prompt: str) -> list[str]:
     """Log failed/empty retrievals; never abort — the report uses what succeeded."""
-    ok, total, errors = _count_usable_raw_responses(prompt_dir / "raw_responses.json")
+    ok, total, errors = _count_usable_raw_responses(prompt_dir / "normalized_responses.json")
     if not errors and ok > 0:
         return []
     sample = "; ".join(errors[:5]) if errors else "no error detail"
@@ -1133,9 +1177,22 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
     elif product == "basis" and (output / "basis-report.pdf").exists():
         found["report.pdf"] = output / "basis-report.pdf"
 
-    raw = work / "raw_responses.json"
+    raw = work / "normalized_responses.json"
+    if not raw.exists():
+        raw = run_dir / "normalized_responses.json"
+    if not raw.exists():
+        raw = work / "raw_responses.json"
+    if not raw.exists():
+        raw = run_dir / "raw_responses.json"
     if raw.exists():
-        found["raw_responses.json"] = raw
+        found["normalized_responses.json"] = raw
+        if raw.name == "raw_responses.json":
+            found["raw_responses.json"] = raw
+    provider = work / "provider_responses.jsonl"
+    if not provider.exists():
+        provider = run_dir / "provider_responses.jsonl"
+    if provider.exists():
+        found["provider_responses.jsonl"] = provider
     evidence = work / "evidence.json"
     if evidence.exists():
         found["evidence.json"] = evidence
@@ -1261,8 +1318,13 @@ def _run_one_prompt(
     )
     _stage("analyzing_results")
     _stage_retrieval_check(prompt_dir, result)
-    (prompt_dir / "raw_responses.json").write_text(
-        json.dumps(serialize_raw_responses([result]), indent=2, ensure_ascii=False),
+    (prompt_dir / "normalized_responses.json").write_text(
+        json.dumps(serialize_normalized_responses([result]), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    provider_rows = serialize_provider_responses([result])
+    (prompt_dir / "provider_responses.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in provider_rows),
         encoding="utf-8",
     )
     pipeline_notes = note_explore_gaps(prompt_dir, prompt)
@@ -1321,6 +1383,8 @@ REBUILD_STAGE_FILES = (
     "chunks.jsonl",
     "exploration.md",
     "extract_done.jsonl",
+    "normalized_responses.json",
+    "provider_responses.jsonl",
     "raw_responses.json",
     "evidence.json",
 )
@@ -1355,7 +1419,13 @@ def copy_rebuild_sources(src: Path, run_dir: Path, prompt_dir: Path) -> None:
         if not item.is_file():
             continue
         shutil.copy2(item, run_dir / name)
-        if name in {"raw_responses.json", "evidence.json", "exploration.md"}:
+        if name in {
+            "raw_responses.json",
+            "normalized_responses.json",
+            "provider_responses.jsonl",
+            "evidence.json",
+            "exploration.md",
+        }:
             shutil.copy2(item, prompt_dir / name)
     assets_src = src / "assets"
     if assets_src.is_dir():
@@ -1517,29 +1587,32 @@ def run_moyo(
             "providers): %s",
             ", ".join(missing_keys),
         )
-    try:
-        from moyo.llm.registry import get_retrieval_specs
-        from moyo.llm.vertex import is_vertex_openai_url
-
-        for spec_llm in get_retrieval_specs():
-            dest = spec_llm.base_url or spec_llm.provider
-            via = "vertex" if is_vertex_openai_url(spec_llm.base_url) else spec_llm.provider
-            _progress(f"retrieval LLM {spec_llm.label}: {spec_llm.model} via {via} ({dest})")
-    except Exception as exc:
-        logger.warning("Could not list retrieval LLMs: %s", exc)
-
     explore_kwargs: dict[str, Any] = {
         "num_seeds": spec.seeds,
         "progress": _progress,
         **scan_fuzz_options(spec),
     }
     from moyo.llm.registry import get_retrieval_llms
+    from moyo.llm.vertex import is_vertex_openai_url
 
     explore_kwargs["retrieval_llms"] = get_retrieval_llms(
         spec.retrieval_models or None,
         web_search_model_ids=set(spec.retrieval_web_search_models or []),
         **snapshot_scan_deadlines(spec.product),
     )
+    scan_llms = explore_kwargs["retrieval_llms"]
+    _progress(
+        f"this scan will query {len(scan_llms)} retrieval LLM(s)"
+        + (
+            f" (order selected {len(spec.retrieval_models)} id(s))"
+            if spec.retrieval_models
+            else " (configured default set)"
+        )
+    )
+    for llm in scan_llms:
+        dest = llm.spec.base_url or llm.spec.provider
+        via = "vertex" if is_vertex_openai_url(llm.spec.base_url) else llm.spec.provider
+        _progress(f"scan retrieval LLM {llm.label}: {llm.spec.model} via {via} ({dest})")
     if spec.strategies:
         explore_kwargs["strategies"] = spec.strategies
     if spec.workers is not None:

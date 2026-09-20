@@ -85,11 +85,13 @@ def models_with_results(
     models_probed=None,
     aliases: dict[str, str] | None = None,
 ) -> list[str]:
-    """Full labels of models that produced at least one finding.
+    """Full labels of models to chart, in roster order.
 
-    ``models_probed`` is a whitelist in roster order. Models that were queried
-    but returned no findings are omitted. Labels that only appear on findings
-    and were never probed are also omitted when the whitelist is set.
+    When ``models_probed`` is set it is the whitelist (the scan roster).
+    Silent probed models are kept so charts reflect the full response corpus
+    rather than only models that produced extracted claims. Labels that only
+    appear on findings and were never probed are omitted when the whitelist
+    is set.
     """
     aliases = aliases or {}
     present: set[str] = set()
@@ -108,6 +110,10 @@ def models_with_results(
     for raw in source:
         key = short_model_name(raw, aliases)
         if not key or key == "unknown" or key in seen:
+            continue
+        if probed:
+            seen.add(key)
+            ordered.append(raw)
             continue
         if key not in present:
             continue

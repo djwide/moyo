@@ -80,6 +80,8 @@ def build_alert_email(
     n_findings = counts.get("findings", len(findings))
     n_high = counts.get("high_sensitivity", 0)
     n_models = counts.get("llms_tested", 0)
+    n_attempted = counts.get("llms_attempted") or n_models
+    n_substantive = counts.get("llms_substantive") or n_models
 
     subject = f"MOYO alert: high-impact exposure on {topic}"
 
@@ -116,7 +118,8 @@ def build_alert_email(
             "",
             headline,
             "",
-            f"We assessed {n_models} models and retained {n_findings} findings "
+            f"We received substantive answers from {n_substantive} of {n_attempted} models "
+            f"and retained {n_findings} findings "
             f"({n_high} high-sensitivity).",
             "",
             "Highest-impact claims from this run:",
@@ -202,7 +205,8 @@ def build_alert_email(
                        letter-spacing:-0.02em;">{headline}</h1>
             <p style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;
                       font-size:15px;color:#1d2228;line-height:1.45;">
-              We assessed <strong>{n_models}</strong> models and retained
+              We received substantive answers from <strong>{n_substantive}</strong> of
+              <strong>{n_attempted}</strong> models and retained
               <strong>{n_findings}</strong> findings
               (<strong>{n_high}</strong> high-sensitivity). Below are the
               highest-impact claims from this run.

@@ -231,6 +231,13 @@ code, .mono {
   font-size: 0.68rem;
   color: var(--moyo-muted);
 }
+.cover-meta__coverage {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: var(--moyo-muted);
+}
 
 .cover-footer {
   margin-top: var(--space-5);
@@ -608,6 +615,41 @@ code, .mono {
   font-family: var(--font-mono);
   font-size: 0.55rem;
   color: var(--moyo-muted);
+}
+
+.corpus-item {
+  margin: var(--space-4) 0;
+  break-inside: avoid;
+}
+.corpus-item h3 {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+  border: 0;
+  padding: 0;
+}
+.corpus-query {
+  margin: 0 0 var(--space-2);
+  font-size: 0.78rem;
+  color: var(--moyo-muted);
+}
+.corpus-failed {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--moyo-muted);
+}
+.corpus-body {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  margin: 0;
+  padding: var(--space-2);
+  background: #f7f5ee;
+  border: 0.4pt solid var(--moyo-border);
 }
 
 .glossary-group { margin-bottom: var(--space-3); break-inside: avoid; }

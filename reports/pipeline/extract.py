@@ -13,6 +13,7 @@ from typing import Any
 from .citations import attach_chunk_citations, resolve_claim_citations
 from .parse import Chunk
 from .textclean import plain_text
+from moyo.llm.content_filter import strip_reasoning_spill
 
 
 def _done_path_for(claims_path: Path) -> Path:
@@ -95,7 +96,7 @@ def _strip_for_extract_prompt(text: str) -> str:
 
 def _load_prompt(prompt_path: Path, chunk: Chunk) -> str:
     tmpl = prompt_path.read_text(encoding="utf-8")
-    chunk_text = _strip_for_extract_prompt(chunk.text)
+    chunk_text = strip_reasoning_spill(_strip_for_extract_prompt(chunk.text))
     return (
         tmpl.replace("{{ query_id }}", chunk.query_id)
         .replace("{{ query_text }}", chunk.query_text or "")
@@ -108,7 +109,7 @@ def _load_prompt(prompt_path: Path, chunk: Chunk) -> str:
 
 def _looks_like_refusal(chunk: Chunk) -> bool:
     # Check body without the model header
-    body = _strip_for_extract_prompt(chunk.text)
+    body = strip_reasoning_spill(_strip_for_extract_prompt(chunk.text))
     if len(body) < 40:
         return True
     head = body[:800]

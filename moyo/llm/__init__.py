@@ -16,6 +16,7 @@ runtime with :func:`~moyo.llm.registry.set_default_llm`.
 """
 
 from moyo.llm.client import (
+    CompletionResult,
     LLMClient,
     LLMSpec,
     classify_provider,
@@ -35,6 +36,7 @@ from moyo.llm.testing import (
 )
 
 __all__ = [
+    "CompletionResult",
     "LLMClient",
     "LLMSpec",
     "FakeDeterministicLLM",

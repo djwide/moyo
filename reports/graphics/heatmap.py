@@ -95,9 +95,9 @@ def model_heatmap_svg(
 ) -> str:
     """Heatmap with clusters across the top and models down the left.
 
-    When ``models_probed`` is provided, rows are the probed models that
-    produced at least one finding. Empty rows for failed or silent models are
-    omitted, and labels that were never probed never appear.
+    When ``models_probed`` is provided, rows are the full probed roster so
+    silent or failed models still appear (zero cells). Labels that were
+    never probed never appear.
 
     When ``full`` is true, every cluster is kept and the SVG grows as wide as
     needed (companion asset for operators; not sized for the A4 graphic box).

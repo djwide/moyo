@@ -568,7 +568,7 @@ def build_content_doc(
             models_tested.append(name)
     strategies = list(explore_meta.get("strategies") or [])
     if not strategies:
-        strategies = ["original", "paraphrase", "abstract"]
+        strategies = ["original", "paraphrase"]
 
     collection_issues = list(report_data.get("collection_issues") or [])
     if not collection_issues:
@@ -612,7 +612,18 @@ def build_content_doc(
 
     n_findings = int(counts.get("findings", len(findings)) or 0)
     n_high = int(counts.get("high_sensitivity", 0) or 0)
-    n_models = len(models_tested) if models_tested else int(counts.get("llms_tested", 0) or 0)
+    n_models = int(counts.get("llms_tested") or len(models_tested) or 0)
+    coverage = dict(explore_meta.get("coverage") or {})
+    n_attempted = int(coverage.get("attempted") or counts.get("llms_attempted") or n_models or 0)
+    n_received = int(coverage.get("response_received") or counts.get("llms_response_received") or 0)
+    n_substantive = int(
+        coverage.get("substantive_response") or counts.get("llms_substantive") or 0
+    )
+    n_contributed = int(
+        coverage.get("claims_contributed") or counts.get("llms_claims_contributed") or 0
+    )
+    if n_substantive:
+        n_models = n_substantive
     n_abridged = len(abridged)
     if n_high:
         exec_page["title"] = (
@@ -638,9 +649,19 @@ def build_content_doc(
             "languages": prompt_languages,
             "include_remediation": bool(include_remediation),
             "collection_issues": collection_issues,
+            "coverage": {
+                "attempted": n_attempted,
+                "response_received": n_received,
+                "substantive_response": n_substantive,
+                "claims_contributed": n_contributed,
+            },
             "counts": {
                 "findings": counts.get("findings", len(findings)),
                 "llms_tested": n_models,
+                "llms_attempted": n_attempted,
+                "llms_response_received": n_received,
+                "llms_substantive": n_substantive,
+                "llms_claims_contributed": n_contributed,
                 "high_sensitivity": counts.get("high_sensitivity", 0),
                 "contested": counts.get("contested", 0),
                 "outliers": counts.get("outliers", 0),
@@ -654,9 +675,12 @@ def build_content_doc(
             "risk_overview": {
                 "title": "Which models disclosed the most",
                 "body": (
-                    f"{n_findings} findings from {n_models} models; "
-                    f"{n_high} scored high-sensitivity. Bar height is the sum "
-                    "of finding sensitivities."
+                    f"{n_findings} findings from {n_substantive or n_models} models "
+                    f"with a substantive answer "
+                    f"({n_attempted} attempted, {n_received} responded, "
+                    f"{n_contributed} contributed claims). "
+                    "Bar height is the sum of finding sensitivities across the "
+                    "full response corpus."
                 ),
                 "chart_captions": {
                     "findings_by_llm": (
@@ -689,6 +713,12 @@ def build_content_doc(
             "appendix": {
                 "claims_title": "Cluster index",
                 "claims_body": "",
+                "corpus_title": "Normalized responses (every model × probe)",
+                "corpus_lede": (
+                    "Verbatim normalized answers after localization and after "
+                    "stripping hidden reasoning. Provider payloads are in "
+                    "provider_responses.jsonl (auth headers removed)."
+                ),
             },
             "inventory": {
                 "title": "Every cluster, ranked",
@@ -728,6 +758,7 @@ def build_content_doc(
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],
         "model_exposure": report_data.get("model_exposure") or [],
         "findings_by_llm": report_data.get("findings_by_llm") or [],
+        "response_corpus": report_data.get("response_corpus") or [],
         "model_contrast": contrast,
         "chains": report_data.get("chains") or [],
         "followups": followups,
@@ -865,6 +896,30 @@ def render_report_md(content: dict[str, Any]) -> str:
         for item in snap_ns["items"]:
             lines.append(f"- **{item.get('title')}** — {item.get('body')}")
         lines.append("")
+
+    corpus = content.get("response_corpus") or []
+    if corpus:
+        pages_app = (content.get("pages") or {}).get("appendix") or {}
+        lines += [
+            f"## {pages_app.get('corpus_title') or 'Normalized responses (every model × probe)'}",
+            "",
+            pages_app.get("corpus_lede") or "",
+            "",
+        ]
+        for row in corpus:
+            qid = row.get("query_id") or ""
+            strat = f" [{row.get('strategy')}]" if row.get("strategy") else ""
+            lang = f" ({row.get('language')})" if row.get("language") else ""
+            lines.append(f"### {row.get('model')}{lang} — {qid}{strat}")
+            lines.append("")
+            lines.append(f"_{row.get('query') or ''}_")
+            lines.append("")
+            if row.get("failed"):
+                lines.append("> Retrieval failed or returned no usable content.")
+            else:
+                body = (row.get("text") or "").strip() or "> (no content returned)"
+                lines.append(body)
+            lines.append("")
 
     return "\n".join(lines)
 

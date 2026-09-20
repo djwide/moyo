@@ -1234,7 +1234,6 @@ class GatherPublicSourcesTab(QWidget):
         for name in (
             "original",
             "paraphrase",
-            "abstract",
             "translate",
             "summarize",
             "typo",
@@ -4049,7 +4048,6 @@ class MoyoScanTab(QWidget):
         for name in (
             "original",
             "paraphrase",
-            "abstract",
             "translate",
             "summarize",
             "typo",

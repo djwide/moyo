@@ -34,7 +34,21 @@
 
     <div class="cover-meta">
       <section class="cover-meta__block">
-        <h2 class="cover-meta__title">{{ content.meta.counts.llms_tested | format_int }} models on this run</h2>
+        {% set cov = content.meta.coverage or {} %}
+        {% set c = content.meta.counts %}
+        {% set attempted = cov.attempted if cov.attempted is number else (c.llms_attempted if c.llms_attempted is number else c.llms_tested) %}
+        {% set received = cov.response_received if cov.response_received is number else c.llms_response_received %}
+        {% set substantive = cov.substantive_response if cov.substantive_response is number else (c.llms_substantive if c.llms_substantive is number else c.llms_tested) %}
+        {% set contributed = cov.claims_contributed if cov.claims_contributed is number else c.llms_claims_contributed %}
+        <h2 class="cover-meta__title">
+          {{ substantive | format_int }} of {{ attempted | format_int }} models answered
+        </h2>
+        <p class="cover-meta__coverage">
+          Attempted {{ attempted | format_int }}
+          · received {{ received | format_int }}
+          · substantive {{ substantive | format_int }}
+          · claims {{ contributed | format_int }}
+        </p>
         <ul class="cover-meta__list">
           {% for m in content.meta.models_tested %}
           <li>{{ m }}</li>
@@ -60,7 +74,7 @@
   <footer class="cover-footer">
     <div class="cover-footer__stats">
       <span><strong>{{ content.meta.counts.findings | format_int }}</strong> findings</span>
-      <span><strong>{{ content.meta.counts.llms_tested | format_int }}</strong> models</span>
+      <span><strong>{{ (content.meta.coverage.substantive_response if content.meta.coverage.substantive_response is number else content.meta.counts.llms_tested) | format_int }}</strong> substantive</span>
       {% if content.meta.counts.high_sensitivity %}
       <span><strong>{{ content.meta.counts.high_sensitivity | format_int }}</strong> high-sensitivity</span>
       {% endif %}

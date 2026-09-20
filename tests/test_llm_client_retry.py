@@ -83,12 +83,84 @@ def test_claude_opus_5_omits_temperature():
     assert _omit_temperature_for_model("claude-opus-5") is True
 
 
-def test_openai_message_text_falls_back_to_reasoning_content():
+def test_openai_message_text_ignores_reasoning_content():
     class Msg:
         content = ""
-        reasoning_content = "OK"
+        reasoning_content = "secret scratchpad"
 
-    assert _openai_message_text(Msg()) == "OK"
+    assert _openai_message_text(Msg()) == ""
+
+
+def test_complete_result_keeps_raw_when_visible_text_empty(monkeypatch):
+    client = LLMClient(LLMSpec(provider="openai", model="gpt-4o", api_key="sk-test"))
+
+    class Msg:
+        content = ""
+        reasoning_content = "hidden scratchpad"
+
+    class Choice:
+        message = Msg()
+        finish_reason = "stop"
+
+    class Resp:
+        choices = [Choice()]
+        usage = None
+
+        def model_dump(self, **kwargs):
+            return {
+                "id": "chatcmpl-keep",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": "",
+                            "reasoning_content": "hidden scratchpad",
+                        },
+                    }
+                ],
+            }
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return Resp()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(client, "_client", FakeClient())
+    out = client.complete_result("hi", retries=0)
+    assert out.text == ""
+    assert out.provider_record["raw"]["id"] == "chatcmpl-keep"
+    assert client.complete("hi", retries=0) == ""
+
+
+def test_complete_result_keeps_raw_when_parse_raises(monkeypatch):
+    client = LLMClient(LLMSpec(provider="openai", model="gpt-4o", api_key="sk-test"))
+
+    class Resp:
+        choices = object()
+
+        def model_dump(self, **kwargs):
+            return {"id": "chatcmpl-odd", "output": [{"type": "unknown"}]}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return Resp()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(client, "_client", FakeClient())
+    out = client.complete_result("hi", retries=0)
+    assert out.text == ""
+    assert out.provider_record["raw"]["id"] == "chatcmpl-odd"
+    assert out.parse_error
 
 
 def test_anthropic_message_text_skips_thinking_blocks():

@@ -155,9 +155,10 @@ def aggregate_findings_by_llm(
     ``bands`` splits that score (and the raw counts) into high / medium / low /
     informational so the chart can stack by sensitivity.
 
-    When ``models_probed`` is set, the result includes those models that
-    produced at least one finding (roster order, then score) and drops empty
-    rows plus any labels that were never probed.
+    When ``models_probed`` is set, the result includes every probed model
+    (roster order, then models with scores). Silent models get a zero row so
+    charts match the full response corpus. Labels that were never probed are
+    dropped.
     """
     aliases = aliases or {}
     band_keys = ("high", "medium", "low", "informational")
@@ -188,9 +189,8 @@ def aggregate_findings_by_llm(
             if not key or key == "unknown" or key in seen:
                 continue
             seen.add(key)
-            row = rows.get(key)
-            if row:
-                ranked_src.append(row)
+            row = rows.get(key) or _empty_llm_row(key)
+            ranked_src.append(row)
     else:
         ranked_src = list(rows.values())
 

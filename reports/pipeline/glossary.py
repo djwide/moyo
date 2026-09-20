@@ -201,8 +201,17 @@ _GROUPS: list[dict[str, Any]] = [
                 "Technique",
                 "How a prompt was reworded before retrieval: original, paraphrase, "
                 "abstract, summarize, translate, typo, or shuffle. Basic scans "
-                "stay in English (original / paraphrase / abstract). Translate "
-                "runs only when an extra language is selected (multilingual scan).",
+                "stay in English (original / paraphrase). Abstract and the other "
+                "techniques are a la carte. Translate runs only when an extra "
+                "language is selected (multilingual scan).",
+            ),
+            (
+                "Attempted / received / substantive / claims",
+                "Coverage of the retrieval roster: models the scan tried, models "
+                "that returned any body, models whose visible answer was usable "
+                "evidence, and models that contributed at least one extracted "
+                "claim. llms_tested is the substantive count, not the configured "
+                "roster.",
             ),
             (
                 "Remediation / follow-up",

@@ -22,7 +22,7 @@ def test_exploration_run_meta_reads_retrieval_sources(tmp_path: Path):
         """# Topic exploration: Test
 
 _Fuzz mode: `basic`_
-_Techniques (basic): `original`, `paraphrase`, `abstract`_
+        _Techniques (basic): `original`, `paraphrase`_
 
 ## Retrieval sources
 
@@ -59,10 +59,14 @@ _Fuzz mode: `basic`_
     report_data = {"counts": {"findings": 1, "llms_tested": 0}}
     attach_explore_meta(report_data, path, aliases=ALIASES)
     assert report_data["explore_meta"]["models_tested"][0].startswith("ChatGPT")
-    assert report_data["counts"]["llms_tested"] == 2
+    assert report_data["counts"]["llms_tested"] == 0
+    assert report_data["counts"]["llms_attempted"] == 2
+    assert report_data["counts"]["llms_substantive"] == 0
+    assert report_data["explore_meta"]["coverage"]["attempted"] == 2
+    assert report_data["explore_meta"]["coverage"]["substantive_response"] == 0
 
 
-def test_aggregate_findings_by_llm_omits_silent_probed_models():
+def test_aggregate_findings_by_llm_keeps_silent_probed_models():
     claims = [
         {
             "sensitivity": 5,
@@ -81,10 +85,10 @@ def test_aggregate_findings_by_llm_omits_silent_probed_models():
     ]
     rows = aggregate_findings_by_llm(claims, ALIASES, models_probed=probed)
     names = [r["model"] for r in rows]
-    assert names == ["GPT"]
-    assert "Claude" not in names
+    assert names == ["GPT", "Claude"]
     assert "MysteryBot" not in names
     assert rows[0]["count"] == 1
+    assert rows[1]["count"] == 0
 
 
 def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
@@ -133,12 +137,12 @@ def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
     heat = graphics["model_heatmap"]
     graph = graphics["evidence_graph"]
     assert "GPT" in bars
-    assert "Claude" not in bars
+    assert "Claude" in bars
     assert "MysteryBot" not in bars
     assert "MysteryBot" not in heat
-    assert "Claude" not in heat
+    assert "Claude" in heat
     assert "MysteryBot" not in graph
-    assert "Claude" not in graph
+    assert "Claude" in graph
     assert short_model_name("ChatGPT (OpenAI gpt-4o)", ALIASES) == "GPT"
 
 
@@ -156,3 +160,63 @@ def test_resolve_exploration_path_uses_run_dir_copy(tmp_path: Path):
         repo_root=tmp_path,
     )
     assert found == expl
+
+
+SAMPLE_COVERAGE_EXPLORATION = """# Topic exploration: Enron?
+
+_Fuzz mode: `basic`_
+        _Techniques (basic): `original`, `paraphrase`_
+
+## Retrieval sources
+
+- **Closed API:** `ChatGPT (OpenAI gpt-4o)`, `Claude (Anthropic Sonnet)`, `Grok (xAI grok-4.5)`
+
+## Detailed findings by language, query, and source
+
+### English
+
+#### Query 1 [paraphrase]: What did Enron hide?
+
+##### ChatGPT (OpenAI gpt-4o)  _(Closed API)_
+
+Enron used special purpose entities named Raptor and JEDI to hide billions of
+dollars of debt from investors and ratings agencies during 2000 and 2001.
+
+##### Claude (Anthropic Sonnet)  _(Closed API)_
+
+I cannot assist with that request.
+
+##### Grok (xAI grok-4.5)  _(Closed API)_
+
+> Retrieval failed: Connection error.
+"""
+
+
+def test_attach_explore_meta_coverage_metrics(tmp_path: Path):
+    path = tmp_path / "exploration.md"
+    path.write_text(SAMPLE_COVERAGE_EXPLORATION, encoding="utf-8")
+    report_data = {
+        "counts": {"findings": 1, "llms_tested": 7},
+        "findings": [
+            {
+                "claim": "Enron hid debt via SPEs.",
+                "source_model": "ChatGPT (OpenAI gpt-4o)",
+                "source_models": ["ChatGPT (OpenAI gpt-4o)"],
+            }
+        ],
+    }
+    attach_explore_meta(report_data, path, aliases=ALIASES)
+    coverage = report_data["explore_meta"]["coverage"]
+    assert coverage["attempted"] == 3
+    assert coverage["response_received"] == 2
+    assert coverage["substantive_response"] == 1
+    assert coverage["claims_contributed"] == 1
+    assert report_data["counts"]["llms_tested"] == 1
+    assert report_data["counts"]["llms_attempted"] == 3
+    corpus = report_data["response_corpus"]
+    assert len(corpus) == 3
+    assert {row["model"] for row in corpus} >= {
+        "ChatGPT (OpenAI gpt-4o)",
+        "Claude (Anthropic Sonnet)",
+        "Grok (xAI grok-4.5)",
+    }

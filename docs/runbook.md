@@ -242,7 +242,7 @@ desktop; OpenRouter Llama 3.1 8B Instruct on Cloud Run via
 writes `exploration.md` only.
 
 ```bash
-# basic (default): English seeds; paraphrase/abstract/summarize (no translate)
+# basic (default): English seeds; original/paraphrase (no translate)
 moyo-gather explore --prompt "What is the recipe for Coca-Cola?" --fuzz-mode basic
 # Multiple prompts: repeat --prompt and/or use --prompts-file (one per line)
 moyo-gather explore -p "What is the recipe for Coca-Cola?" -p "Who killed JFK?"
@@ -261,7 +261,8 @@ moyo-gather explore --prompt "..." --fuzz-mode multilingual --seeds 3 -l German
 Fuzz modes: **basic** (default) | **multilingual** (legacy aliases `full` /
 `full-multilingual` still normalize). Strategies are a la carte via repeatable
 ``--strategy`` / ``-S`` (`paraphrase`, `translate`, `summarize`, `typo`,
-`abstract`, `shuffle`). Mode defaults omit ``typo`` and ``shuffle``; the GUI
+`abstract`, `shuffle`). Mode defaults are ``original`` / ``paraphrase``;
+``abstract`` is a la carte. Mode defaults omit ``typo`` and ``shuffle``; the GUI
 shows the same default
 (`basic`) and strategy checkboxes pre-checked to the mode’s set.
 

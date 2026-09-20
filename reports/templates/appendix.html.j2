@@ -6,4 +6,12 @@
     clustering, and scored reporting. Contested, outlier, sensitive, and
     single-source findings are retained and classified — not dropped.
   </p>
+  {% if data.response_corpus %}
+  <h3>Normalized responses</h3>
+  <p>Every model × probe after localization. Hidden reasoning is omitted.</p>
+  {% for row in data.response_corpus %}
+  <h4>{{ row.model }} — {{ row.query_id }}</h4>
+  <pre>{{ row.text or "" }}</pre>
+  {% endfor %}
+  {% endif %}
 </section>

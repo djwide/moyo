@@ -14,6 +14,7 @@ import os
 import random
 import re
 import textwrap
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -464,36 +465,39 @@ def _responses_output_text(response: Any) -> str:
 
 
 def _openai_message_text(message: Any) -> str:
-    """Visible assistant text from an OpenAI-compatible chat message."""
+    """Visible assistant text only — never fall back to reasoning/scratchpad."""
     if message is None:
         return ""
+    from moyo.llm.content_filter import strip_reasoning_spill
+
     content = getattr(message, "content", None)
+    visible = ""
     if isinstance(content, str) and content.strip():
-        return content.strip()
-    if isinstance(content, list):
+        visible = content.strip()
+    elif isinstance(content, list):
         parts: list[str] = []
         for part in content:
             if isinstance(part, str) and part.strip():
                 parts.append(part.strip())
             elif isinstance(part, dict):
+                part_type = str(part.get("type") or "").lower()
+                if part_type in {"reasoning", "thinking", "thought"}:
+                    continue
                 text = str(part.get("text") or "").strip()
                 if text:
                     parts.append(text)
             else:
+                part_type = str(getattr(part, "type", "") or "").lower()
+                if part_type in {"reasoning", "thinking", "thought"}:
+                    continue
                 text = str(getattr(part, "text", "") or "").strip()
                 if text:
                     parts.append(text)
         if parts:
-            return "\n".join(parts)
-    reasoning = getattr(message, "reasoning_content", None)
-    if isinstance(reasoning, str) and reasoning.strip():
-        return reasoning.strip()
-    extra = getattr(message, "model_extra", None) or {}
-    if isinstance(extra, dict):
-        reasoning = extra.get("reasoning_content") or extra.get("reasoning")
-        if isinstance(reasoning, str) and reasoning.strip():
-            return reasoning.strip()
-    return (content or "").strip() if isinstance(content, str) else ""
+            visible = "\n".join(parts)
+    elif isinstance(content, str):
+        visible = content.strip()
+    return strip_reasoning_spill(visible)
 
 
 def _anthropic_message_text(response: Any) -> str:
@@ -585,6 +589,20 @@ def classify_provider(provider: str) -> str:
     if p in OPEN_API_PROVIDERS:
         return "open"
     return "local"
+
+
+@dataclass
+class CompletionResult:
+    """Normalized visible text plus the sanitized provider payload.
+
+    ``text`` is what scans extract and chart. ``provider_record`` is the
+    redacted HTTP/SDK body, kept even when parsing yields empty text so a
+    200 with an unexpected shape is not lost at the adapter boundary.
+    """
+
+    text: str
+    provider_record: Optional[Dict[str, Any]] = None
+    parse_error: Optional[str] = None
 
 
 @dataclass
@@ -702,6 +720,56 @@ class LLMClient:
         self.spec = spec
         self._init_error: Optional[str] = None
         self._client = self._init_client()
+        self._tls = threading.local()
+
+    def last_provider_record(self) -> Optional[Dict[str, Any]]:
+        """Thread-local redacted provider payload from the most recent complete()."""
+        record = getattr(self._tls, "last_record", None)
+        return record if isinstance(record, dict) else None
+
+    def _store_provider_record(self, **fields: Any) -> None:
+        from moyo.llm.content_filter import provider_payload, redact_secrets
+
+        record = {
+            "provider": self.spec.provider,
+            "model": self.spec.model,
+            "label": self.label,
+            **fields,
+        }
+        raw = record.get("raw")
+        if raw is not None:
+            record["raw"] = provider_payload(raw)
+        record = redact_secrets(record)
+        self._tls.last_record = record
+
+    def _text_from_stored_response(
+        self,
+        response: Any,
+        parse: Any,
+        **meta: Any,
+    ) -> str:
+        """Persist ``response`` first, then parse. Empty parse does not drop raw."""
+        from moyo.llm.content_filter import strip_reasoning_spill
+
+        self._store_provider_record(raw=response, content="", **meta)
+        try:
+            content = strip_reasoning_spill(parse() or "")
+        except Exception as exc:
+            err = format_llm_error(exc)
+            logger.warning(
+                "%s accepted the request but the response body could not be parsed: %s",
+                self.label,
+                err,
+            )
+            self._store_provider_record(
+                raw=response,
+                content="",
+                parse_error=err,
+                **meta,
+            )
+            return ""
+        self._store_provider_record(raw=response, content=content, **meta)
+        return content
 
     # -- introspection ------------------------------------------------------
     @property
@@ -833,17 +901,26 @@ class LLMClient:
     ) -> str:
         """Generate a completion for ``prompt``.
 
-        Transient rate-limit / overload / network errors are retried with
-        backoff (honouring provider "retry in Ns" hints when present). Hard
-        failures such as exhausted credits or invalid API keys are not retried.
-
-        ``retries`` overrides ``spec.max_retries`` for this call (use ``0`` for
-        a single-shot preflight probe).
-
-        Raises ``RuntimeError`` if the client could not be initialized (e.g. a
-        missing API key or unreachable endpoint) so callers can record the
-        failure per source instead of crashing the whole run.
+        Prefer :meth:`complete_result` at retrieval boundaries so the sanitized
+        provider body is retained even when parsed text is empty.
         """
+        return self.complete_result(
+            prompt,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            retries=retries,
+        ).text
+
+    def complete_result(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        retries: Optional[int] = None,
+    ) -> CompletionResult:
+        """Return normalized text and the sanitized provider payload together."""
         temperature = self.spec.temperature if temperature is None else temperature
         omit_temperature = _omit_temperature_for_model(self.spec.model)
         fixed = _fixed_temperature_for_model(self.spec.model)
@@ -853,21 +930,21 @@ class LLMClient:
             temperature = fixed
         max_tokens = self.spec.max_tokens if max_tokens is None else max_tokens
         max_tokens = max(MIN_COMPLETION_TOKENS, int(max_tokens))
-        # Reasoning models share the completion budget with hidden thinking tokens;
-        # tiny caps often return empty content with finish_reason=length.
         if _is_reasoning_budget_model(self.spec.model, self.spec.base_url):
             max_tokens = max(max_tokens, MIN_REASONING_COMPLETION_TOKENS)
         provider = self.spec.provider
 
-        # ``--test`` / MOYO_TEST_MODE always stays offline, even if this client
-        # was constructed against a live provider before test mode was enabled.
         try:
             from moyo.llm.testing import is_test_mode
             if provider == "echo" or is_test_mode():
-                return self._echo(prompt, system)
+                text = self._echo(prompt, system)
+                self._store_provider_record(content=text, raw={"echo": True})
+                return CompletionResult(text=text, provider_record=self.last_provider_record())
         except Exception:
             if provider == "echo":
-                return self._echo(prompt, system)
+                text = self._echo(prompt, system)
+                self._store_provider_record(content=text, raw={"echo": True})
+                return CompletionResult(text=text, provider_record=self.last_provider_record())
 
         if self._client is None:
             raise RuntimeError(self._init_error or f"LLM provider '{provider}' unavailable")
@@ -876,14 +953,26 @@ class LLMClient:
         attempts = max(1, int(max_retries) + 1)
         last_exc: Optional[BaseException] = None
         use_max_completion_tokens = _is_openai_max_completion_tokens_model(self.spec.model)
+        self._tls.last_record = None
         for attempt in range(attempts):
             try:
-                return self._complete_once(
+                text = self._complete_once(
                     prompt,
                     system=system,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     use_max_completion_tokens=use_max_completion_tokens,
+                )
+                record = self.last_provider_record()
+                parse_error = None
+                if isinstance(record, dict):
+                    parse_error = record.get("parse_error")
+                    if parse_error is not None:
+                        parse_error = str(parse_error)
+                return CompletionResult(
+                    text=text or "",
+                    provider_record=record,
+                    parse_error=parse_error,
                 )
             except Exception as exc:
                 last_exc = exc
@@ -898,7 +987,6 @@ class LLMClient:
                     )
                     use_max_completion_tokens = True
                     continue
-                # Some providers reject temperature without it being known from the model id.
                 if temperature is not None and _is_fixed_temperature_error(exc):
                     logger.warning(
                         "%s rejected temperature=%s; retrying without temperature",
@@ -924,6 +1012,13 @@ class LLMClient:
                     temperature = forced
                     continue
                 if attempt + 1 >= attempts or not is_retryable_llm_error(exc):
+                    record = self.last_provider_record()
+                    if record:
+                        return CompletionResult(
+                            text="",
+                            provider_record=record,
+                            parse_error=format_llm_error(exc),
+                        )
                     raise
                 delay = retry_delay_seconds(exc, attempt)
                 logger.warning(
@@ -936,6 +1031,13 @@ class LLMClient:
                 )
                 time.sleep(delay)
         assert last_exc is not None
+        record = self.last_provider_record()
+        if record:
+            return CompletionResult(
+                text="",
+                provider_record=record,
+                parse_error=format_llm_error(last_exc),
+            )
         raise last_exc
 
     def _complete_once(
@@ -950,12 +1052,19 @@ class LLMClient:
         provider = self.spec.provider
 
         if provider == "ollama":
-            return self._client.generate(
+            raw_out = self._client.generate(
                 prompt,
                 system=system,
                 temperature=0.7 if temperature is None else temperature,
                 max_tokens=max_tokens,
                 num_ctx=self.spec.num_ctx,
+            )
+            raw_payload: Any = (
+                {"text": raw_out} if isinstance(raw_out, str) else raw_out
+            )
+            return self._text_from_stored_response(
+                raw_payload,
+                lambda: raw_out if isinstance(raw_out, str) else str(raw_out or ""),
             )
 
         web_search = bool(self.spec.web_search)
@@ -1003,9 +1112,15 @@ class LLMClient:
                 )
             )
             response = self._client.chat.completions.create(**create_kwargs)
-            message = response.choices[0].message if response.choices else None
-            content = _openai_message_text(message)
-            return _with_provider_citations(content, response)
+
+            def _parse_openai() -> str:
+                from moyo.llm.content_filter import strip_reasoning_spill
+
+                message = response.choices[0].message if response.choices else None
+                content = strip_reasoning_spill(_openai_message_text(message))
+                return _with_provider_citations(content, response)
+
+            return self._text_from_stored_response(response, _parse_openai)
 
         if provider == "anthropic":
             kwargs: Dict[str, Any] = {}
@@ -1022,7 +1137,10 @@ class LLMClient:
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
                 create_kwargs["temperature"] = temperature
             response = self._client.messages.create(**create_kwargs)
-            return _anthropic_message_text(response)
+            return self._text_from_stored_response(
+                response,
+                lambda: _anthropic_message_text(response),
+            )
 
         raise RuntimeError(f"unsupported LLM provider: {provider}")
 
@@ -1054,7 +1172,10 @@ class LLMClient:
                 "SDK client has no responses.create"
             )
         response = responses.create(**create_kwargs)
-        return _responses_output_text(response)
+        return self._text_from_stored_response(
+            response,
+            lambda: _responses_output_text(response),
+        )
 
     def _complete_moonshot_with_web_search(
         self,
@@ -1081,6 +1202,8 @@ class LLMClient:
             }
         ]
         last_content = ""
+        response = None
+        message = None
         for _ in range(4):
             create_kwargs: Dict[str, Any] = {
                 "model": self.spec.model,
@@ -1101,13 +1224,18 @@ class LLMClient:
                 )
             )
             response = self._client.chat.completions.create(**create_kwargs)
+            self._store_provider_record(raw=response, content="")
             message = response.choices[0].message if response.choices else None
             if message is None:
                 break
             last_content = _openai_message_text(message)
             tool_calls = getattr(message, "tool_calls", None) or []
             if not tool_calls:
-                return _with_provider_citations(last_content, response)
+                return self._finish_moonshot_response(
+                    _with_provider_citations(last_content, response),
+                    response,
+                    message,
+                )
             assistant_msg: Dict[str, Any] = {
                 "role": "assistant",
                 "content": getattr(message, "content", None) or "",
@@ -1136,7 +1264,23 @@ class LLMClient:
                         "content": call["function"]["arguments"],
                     }
                 )
-        return last_content
+        return self._finish_moonshot_response(last_content, response, message)
+
+    def _finish_moonshot_response(
+        self,
+        text: str,
+        response: Any,
+        message: Any,
+    ) -> str:
+        from moyo.llm.content_filter import openai_reasoning_text, strip_reasoning_spill
+
+        content = strip_reasoning_spill(text)
+        self._store_provider_record(
+            content=content,
+            reasoning=openai_reasoning_text(message) or None,
+            raw=response,
+        )
+        return content
 
     # -- offline stub -------------------------------------------------------
     def _echo(self, prompt: str, system: Optional[str]) -> str:

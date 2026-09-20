@@ -11,7 +11,7 @@ from .citations import extract_citations, extract_reference_map
 
 
 QUERY_HEADING_RE = re.compile(
-    r"^####\s+Query\s+(\d+)\s*(?:\[[^\]]*\])?:\s*(.+?)\s*$"
+    r"^####\s+Query\s+(\d+)\s*(?:\[([^\]]*)\])?:\s*(.+?)\s*$"
 )
 MODEL_HEADING_RE = re.compile(r"^#####\s+(.+?)\s*$")
 LANG_HEADING_RE = re.compile(r"^###\s+(.+?)\s*$")
@@ -37,6 +37,7 @@ class Chunk:
     # Numbered reference markers ("[9]") mapped to their source string, so a
     # claim can inherit only the citations its own excerpt points at.
     citation_refs: dict[str, str] = field(default_factory=dict)
+    strategy: str | None = None
 
 
 def _approx_tokens(text: str) -> int:
@@ -100,27 +101,29 @@ def parse_exploration(
                 continue
         qm = QUERY_HEADING_RE.match(line)
         if qm:
-            markers.append((i, "query", (qm.group(1), qm.group(2).strip())))
+            markers.append(
+                (i, "query", (qm.group(1), qm.group(3).strip(), (qm.group(2) or "").strip() or None))
+            )
             continue
         mm = MODEL_HEADING_RE.match(line)
         if mm:
             markers.append((i, "model", _clean_model_label(mm.group(1))))
 
     # Build query ranges with language context
-    query_events: list[tuple[int, str, str, str | None]] = []
+    query_events: list[tuple[int, str, str, str | None, str | None]] = []
     current_lang: str | None = None
     for idx, kind, payload in markers:
         if kind == "lang":
             current_lang = str(payload)
         elif kind == "query":
-            qnum, qtext = payload  # type: ignore[misc]
-            query_events.append((idx, f"Q{int(qnum)}", qtext, current_lang))
+            qnum, qtext, qstrat = payload  # type: ignore[misc]
+            query_events.append((idx, f"Q{int(qnum)}", qtext, current_lang, qstrat))
 
     chunks: list[Chunk] = []
     chunk_n = 0
     global_q = 0
 
-    for qi, (q_start, q_id_local, q_text, lang) in enumerate(query_events):
+    for qi, (q_start, q_id_local, q_text, lang, qstrat) in enumerate(query_events):
         q_end = query_events[qi + 1][0] if qi + 1 < len(query_events) else len(lines)
         global_q += 1
         # Prefer sequential global ids for schema uniqueness across languages
@@ -151,6 +154,7 @@ def parse_exploration(
                     failed=failed,
                     citations=extract_citations(text),
                     citation_refs=extract_reference_map(text),
+                    strategy=qstrat,
                 )
             )
             continue
@@ -184,6 +188,7 @@ def parse_exploration(
                         failed=failed,
                         citations=extract_citations(part) or extract_citations(text),
                         citation_refs=reference_map,
+                        strategy=qstrat,
                     )
                 )
     return chunks
@@ -249,6 +254,7 @@ def load_chunks_manifest(path: Path) -> list[Chunk]:
                     failed=bool(row.get("failed")),
                     citations=[str(c) for c in citations if str(c).strip()],
                     citation_refs={str(k): str(v) for k, v in refs.items() if v},
+                    strategy=(str(row["strategy"]).strip() if row.get("strategy") else None),
                 )
             )
     return chunks
@@ -302,7 +308,7 @@ def exploration_run_meta(path: Path) -> dict:
             dict.fromkeys(s.lower() for s in _STRATEGY_RE.findall(seed_section))
         )
     if not strategies:
-        strategies = ["original", "paraphrase", "abstract"]
+        strategies = ["original", "paraphrase"]
 
     languages = parse_languages_line(text)
 
@@ -332,6 +338,70 @@ def exploration_run_meta(path: Path) -> dict:
         "languages": languages,
         "models_tested": models,
         "collection_issues": issues,
+        "coverage": {
+            "attempted": len(models),
+            "response_received": max(0, len(models) - len({i.get("source") for i in issues})),
+            "substantive_response": 0,
+            "claims_contributed": 0,
+        },
+    }
+
+
+def coverage_from_chunks(
+    chunks: list[Chunk],
+    *,
+    attempted_models: list[str],
+    claims: list[dict] | None = None,
+    aliases: dict[str, str] | None = None,
+) -> dict:
+    """Count attempted / received / substantive / claims-contributing models."""
+    from moyo.llm.content_filter import is_substantive_answer, visible_answer_body
+
+    aliases = aliases or {}
+    attempted = [m for m in attempted_models if str(m).strip()]
+    received: set[str] = set()
+    substantive: set[str] = set()
+    for chunk in chunks or []:
+        model = (chunk.source_model or "").strip()
+        if not model or model == "unknown":
+            continue
+        body = visible_answer_body(chunk.text)
+        if not chunk.failed and body:
+            received.add(model)
+        if is_substantive_answer(chunk.text, error="fail" if chunk.failed else None):
+            substantive.add(model)
+
+    contributed: set[str] = set()
+    if aliases:
+        from graphics.style import short_model_name as _short
+    else:
+        def _short(raw: str, _aliases: dict | None = None) -> str:
+            return (raw or "").strip()
+
+    for claim in claims or []:
+        models = claim.get("source_models") or []
+        if not models and claim.get("source_model"):
+            models = [claim.get("source_model")]
+        for raw in models:
+            name = str(raw or "").strip()
+            if name:
+                contributed.add(name)
+
+    def _count(labels: set[str]) -> int:
+        if not attempted:
+            return len({_short(x, aliases) for x in labels if x})
+        keys = {_short(x, aliases) for x in attempted if x}
+        hit = {_short(x, aliases) for x in labels if x}
+        return len(keys & hit) if keys else len(hit)
+
+    attempted_n = len({_short(x, aliases) for x in attempted if x}) if attempted else len(
+        {c.source_model for c in chunks if (c.source_model or "").strip() not in {"", "unknown"}}
+    )
+    return {
+        "attempted": attempted_n,
+        "response_received": _count(received) if attempted else len({_short(x, aliases) for x in received}),
+        "substantive_response": _count(substantive) if attempted else len({_short(x, aliases) for x in substantive}),
+        "claims_contributed": _count(contributed) if attempted else len({_short(x, aliases) for x in contributed}),
     }
 
 
@@ -341,10 +411,10 @@ def attach_explore_meta(
     *,
     aliases: dict[str, str] | None = None,
 ) -> dict:
-    """Parse exploration.md into ``explore_meta`` and sync ``counts.llms_tested``.
+    """Parse exploration.md into ``explore_meta`` and sync coverage counts.
 
-    Local rebuilds (including ``--graphics-only``) should discover the scanned
-    model set from the exploration file rather than only from finding sources.
+    ``counts.llms_tested`` is the number of models with a substantive answer,
+    not the configured roster (which overstated coverage when models failed).
     """
     if exploration is None:
         return report_data
@@ -352,11 +422,32 @@ def attach_explore_meta(
     if not path.exists():
         return report_data
 
-    meta = exploration_run_meta(path)
-    report_data["explore_meta"] = meta
+    from moyo.llm.content_filter import visible_answer_body
 
+    meta = exploration_run_meta(path)
+    chunks = parse_exploration(path, include_failed=True)
+    claims = list(report_data.get("findings_all") or report_data.get("findings") or [])
     models = [str(m).strip() for m in (meta.get("models_tested") or []) if str(m).strip()]
-    if not models:
+    coverage = coverage_from_chunks(
+        chunks, attempted_models=models, claims=claims, aliases=aliases
+    )
+    meta["coverage"] = coverage
+    report_data["explore_meta"] = meta
+    report_data["response_corpus"] = [
+        {
+            "query_id": c.query_id,
+            "query": c.query_text,
+            "strategy": c.strategy,
+            "model": c.source_model,
+            "language": c.language,
+            "failed": c.failed,
+            "text": visible_answer_body(c.text),
+        }
+        for c in chunks
+        if (c.source_model or "").strip() not in {"", "unknown"}
+    ]
+
+    if not models and not chunks:
         return report_data
 
     # Prefer short display labels when aliases are available (cover + counts).
@@ -371,12 +462,16 @@ def attach_explore_meta(
                 continue
             seen.add(key)
             short.append(key)
-        n = len(short) or len(models)
+        roster_n = len(short) or len(models)
     else:
-        n = len(models)
+        roster_n = len(models)
 
     counts = dict(report_data.get("counts") or {})
-    counts["llms_tested"] = n
+    counts["llms_attempted"] = coverage["attempted"] or roster_n
+    counts["llms_response_received"] = coverage["response_received"]
+    counts["llms_substantive"] = coverage["substantive_response"]
+    counts["llms_claims_contributed"] = coverage["claims_contributed"]
+    counts["llms_tested"] = coverage["substantive_response"] or coverage["response_received"]
     report_data["counts"] = counts
     return report_data
 
@@ -389,7 +484,7 @@ def collection_issues_from_exploration(text: str) -> list[dict]:
     for line in (text or "").splitlines():
         qm = QUERY_HEADING_RE.match(line)
         if qm:
-            current_query = (qm.group(2) or "").strip()
+            current_query = (qm.group(3) or "").strip()
             continue
         mm = MODEL_HEADING_RE.match(line)
         if mm:

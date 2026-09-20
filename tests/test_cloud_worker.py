@@ -508,6 +508,70 @@ def test_serialize_raw_responses_uses_source_label_property():
     )
     assert rows[0]["source_label"] == "Kimi (Moonshot kimi-k3) (French)"
     assert rows[0]["llm_label"] == "Kimi (Moonshot kimi-k3)"
+    assert "provider_record" not in rows[0]
+
+
+def test_serialize_normalized_drops_provider_record():
+    @dataclass
+    class Row:
+        seed: str
+        text: str
+        llm_label: str = "GPT"
+        provider_record: dict | None = None
+
+    @dataclass
+    class Result:
+        prompt: str
+        results: list
+
+    rows = cw.serialize_normalized_responses(
+        [
+            Result(
+                prompt="q",
+                results=[
+                    Row(
+                        seed="s",
+                        text="hello",
+                        provider_record={"headers": {"Authorization": "Bearer secret"}},
+                    )
+                ],
+            )
+        ]
+    )
+    assert "provider_record" not in rows[0]
+    assert rows[0]["text"] == "hello"
+
+
+def test_serialize_provider_responses_redacts_headers():
+    from types import SimpleNamespace
+
+    item = SimpleNamespace(
+        seed="s",
+        seed_index=0,
+        llm_index=0,
+        strategy="paraphrase",
+        language=None,
+        llm_label="GPT",
+        provider="openai",
+        model="gpt-4o",
+        error=None,
+        original_text="visible answer",
+        text="visible answer",
+        provider_record={
+            "provider": "openai",
+            "model": "gpt-4o",
+            "content": "visible answer",
+            "reasoning": "hidden scratchpad",
+            "headers": {"Authorization": "Bearer sk-secret", "Content-Type": "application/json"},
+            "api_key": "sk-secret",
+        },
+    )
+    rows = cw.serialize_provider_responses([SimpleNamespace(prompt="q", results=[item])])
+    assert rows[0]["headers"]["Authorization"] == "[redacted]"
+    assert rows[0]["api_key"] == "[redacted]"
+    assert rows[0]["reasoning"] == "hidden scratchpad"
+    assert rows[0]["content"] == "visible answer"
+    assert rows[0]["prompt"] == "q"
 
 
 def test_collect_artifacts_and_evidence(tmp_path: Path):
@@ -538,7 +602,8 @@ def test_collect_artifacts_and_evidence(tmp_path: Path):
         ),
         encoding="utf-8",
     )
-    (tmp_path / "raw_responses.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "normalized_responses.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "provider_responses.jsonl").write_text("", encoding="utf-8")
     evidence = cw.build_evidence(run_dir, prompt="Who killed JFK?")
     (tmp_path / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
     (tmp_path / "llm-retrieval-check.md").write_text("# LLM Retrieval Check\n", encoding="utf-8")
@@ -580,7 +645,8 @@ def test_collect_artifacts_basis_falls_back(tmp_path: Path):
     (run_dir / "report.md").write_text("md", encoding="utf-8")
     (output / "basis-report.pdf").write_bytes(b"%PDF")
     (output / "basis-report.html").write_text("<html/>", encoding="utf-8")
-    (tmp_path / "raw_responses.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "normalized_responses.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "provider_responses.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "evidence.json").write_text("{}", encoding="utf-8")
     found = cw.collect_artifacts(tmp_path, run_dir, "basis")
     assert found["report.pdf"].name == "basis-report.pdf"
@@ -684,7 +750,7 @@ def test_note_explore_gaps_uses_llm_label_when_source_label_missing(tmp_path: Pa
 
 
 def test_note_explore_gaps_ok(tmp_path: Path):
-    (tmp_path / "raw_responses.json").write_text(
+    (tmp_path / "normalized_responses.json").write_text(
         json.dumps([{"source_label": "GPT", "text": "Enron hid debt via SPEs."}]),
         encoding="utf-8",
     )

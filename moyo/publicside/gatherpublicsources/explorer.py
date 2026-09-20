@@ -204,10 +204,12 @@ class RetrievalResult:
     # English / never translated. Non-English implies the response was translated
     # back to English for the report.
     language: Optional[str] = None
-    # Fuzz strategy that produced the seed (original / paraphrase / abstract / typo / shuffle).
+    # Fuzz strategy that produced the seed (original / paraphrase / typo / shuffle).
     strategy: Optional[str] = None
     # Original (untranslated) response body, kept when ``text`` was translated.
     original_text: Optional[str] = None
+    # Redacted provider payload (no auth headers); written to provider_responses.jsonl.
+    provider_record: Optional[Dict[str, Any]] = None
     # Stable indices from the job grid — used to compile the report in a
     # deterministic order regardless of parallel completion order.
     seed_index: int = 0
@@ -348,10 +350,10 @@ def reword_prompt(
     supplied — explore only diversifies the user's request for retrieval.
 
     ``fuzz_mode`` ``basic`` emits ``n`` English seeds rotating original /
-    paraphrase / abstract (no translate); ``multilingual`` emits ``n`` seeds
+    paraphrase (no translate); ``multilingual`` emits ``n`` seeds
     per language (English plus each extra language in ``languages``) rotating
-    original / paraphrase / abstract. Pass ``strategies`` to override the mode default rotation
-    a la carte (include ``typo`` or ``shuffle`` explicitly). ``llm`` is ignored (kept for
+    original / paraphrase. Pass ``strategies`` to override the mode default rotation
+    a la carte (include ``abstract``, ``typo`` or ``shuffle`` explicitly). ``llm`` is ignored (kept for
     call-site compatibility).
     Pass ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer`.
     """
@@ -654,6 +656,38 @@ def compile_raw_responses(
 
 
 # --- Retrieval fan-out ------------------------------------------------------
+def _provider_record_for_result(
+    result: RetrievalResult,
+    llm: LLMClient,
+    prompt: str,
+    record: Optional[Dict[str, Any]],
+    *,
+    error: Optional[str],
+) -> Dict[str, Any]:
+    """Attach scan metadata to a redacted provider payload (no auth headers)."""
+    from moyo.llm.content_filter import redact_secrets
+
+    row: Dict[str, Any] = dict(record or {})
+    row.update(
+        {
+            "seed": result.seed,
+            "seed_index": result.seed_index,
+            "llm_index": result.llm_index,
+            "strategy": result.strategy,
+            "language": result.language,
+            "llm_label": result.llm_label,
+            "provider": result.provider or row.get("provider") or llm.spec.provider,
+            "model": result.model or row.get("model") or llm.spec.model,
+            "error": error,
+            "content": result.text or row.get("content") or "",
+        }
+    )
+    # Never persist the retrieval prompt's system key or Authorization-like fields.
+    row.pop("prompt", None)
+    row.pop("messages", None)
+    return redact_secrets(row)
+
+
 def retrieve(
     seed: str,
     llm: LLMClient,
@@ -696,11 +730,31 @@ def retrieve(
         llm_index=llm_index,
     )
     try:
-        result.text = llm.complete(prompt, system=RETRIEVAL_SYSTEM, max_tokens=max_tokens) or ""
+        from moyo.llm.content_filter import strip_reasoning_spill
+
+        if hasattr(llm, "complete_result"):
+            outcome = llm.complete_result(
+                prompt, system=RETRIEVAL_SYSTEM, max_tokens=max_tokens
+            )
+            raw_text = outcome.text or ""
+            record = outcome.provider_record
+        else:
+            raw_text = llm.complete(prompt, system=RETRIEVAL_SYSTEM, max_tokens=max_tokens) or ""
+            record = llm.last_provider_record() if hasattr(llm, "last_provider_record") else None
+        result.text = strip_reasoning_spill(raw_text)
+        result.provider_record = _provider_record_for_result(
+            result, llm, prompt, record, error=None
+        )
     except Exception as exc:
         from moyo.llm.client import format_llm_error
 
         result.error = format_llm_error(exc)
+        record = None
+        if hasattr(llm, "last_provider_record"):
+            record = llm.last_provider_record()
+        result.provider_record = _provider_record_for_result(
+            result, llm, prompt, record, error=result.error
+        )
         logger.warning("Retrieval failed for %s via %s: %s", seed[:60], llm.label, result.error)
     return result
 
@@ -1941,9 +1995,9 @@ def explore_topic(
     use the per-provider cap because they hit a single utility LLM.
 
     ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` English seeds
-    rotating original / paraphrase / abstract (no translate);
-    ``multilingual`` emits ``num_seeds`` of original / paraphrase /
-    abstract per extra language (English plus each selected language).
+    rotating original / paraphrase (no translate);
+    ``multilingual`` emits ``num_seeds`` of original / paraphrase
+    per extra language (English plus each selected language).
     Pass ``strategies`` to override that rotation a la carte (include
     ``translate``, ``summarize``, ``typo`` or ``shuffle`` explicitly);
     mode still controls language fan-out.
