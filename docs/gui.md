@@ -126,7 +126,7 @@ Two modes:
      the current project's `public_sources/<slug>/`. Uses local Ollama for
      rewording and `config/retrieval_llms.json` for fan-out.
    - **Cloud** — writes a Firestore order and executes the Cloud Run job
-     `moyo-report-worker` (explore → extract → cluster → PDFs). Rewording,
+     `moyo-report-worker-no-vpc` (explore → extract → cluster → PDFs). Rewording,
      translation, clustering, and summaries use OpenRouter Llama 3.1 8B
      Instruct (`OPENROUTER_API_KEY`), not local Ollama. Artifacts land in
      `gs://senteguard-website-moyo-reports/reports/<storageFolder>/`.

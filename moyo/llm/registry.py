@@ -185,8 +185,8 @@ def get_retrieval_llms(
     default (non-optional) configured set.
 
     ``web_search_model_ids`` lists retrieval ids that should use hosted web
-    search (300s timeout). Reasoning-budget models use 240s. Others use the
-    default 120s cap unless ``timeout`` is set (snapshot hard deadlines).
+    search (300s timeout). Reasoning-budget models use 240s. Others use 120s.
+    The same per-model caps apply to Exposure Data, Snapshot, and Basis.
     ``max_retries`` overrides each spec.
     """
     wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}

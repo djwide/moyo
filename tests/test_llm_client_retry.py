@@ -69,6 +69,8 @@ def test_kimi_k26_disables_thinking_and_uses_non_thinking_temperature():
     assert _omit_temperature_for_model("kimi-k3") is True
     assert _fixed_temperature_for_model("kimi-k3") is None
     assert _openai_extra_body_for_model("kimi-k3") == {}
+    assert _openai_extra_body_for_model("qwen3.8-max") == {"enable_thinking": False}
+    assert _openai_extra_body_for_model("qwen-plus") == {}
 
 
 def test_gpt5_uses_max_completion_tokens_and_omits_temperature():
@@ -249,6 +251,14 @@ def test_web_search_extras_for_qwen_gemini_openrouter():
     )
     assert qwen["extra_body"]["enable_search"] is True
 
+    qwen_max = _openai_create_extras(
+        "qwen3.8-max",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        web_search=True,
+    )
+    assert qwen_max["extra_body"]["enable_thinking"] is False
+    assert qwen_max["extra_body"]["enable_search"] is True
+
     gemini = _openai_create_extras(
         "gemini-3.1-pro-preview",
         "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -267,6 +277,9 @@ def test_web_search_extras_for_qwen_gemini_openrouter():
     assert "enable_search" not in _openai_create_extras(
         "qwen-plus", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     ).get("extra_body", {})
+    assert _openai_create_extras(
+        "qwen3.8-max", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    )["extra_body"]["enable_thinking"] is False
 
 
 def test_complete_retries_then_succeeds(monkeypatch):
@@ -463,9 +476,13 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
     )
 
 
-def test_get_retrieval_llms_applies_per_spec_snapshot_timeouts(monkeypatch):
+def test_get_retrieval_llms_uses_shared_timeouts_not_product(monkeypatch):
     from moyo.llm import registry as reg
-    from moyo.llm.client import RETRIEVAL_TIMEOUT_WEB_SEARCH, SNAPSHOT_TIMEOUT
+    from moyo.llm.client import (
+        RETRIEVAL_TIMEOUT_DEFAULT,
+        RETRIEVAL_TIMEOUT_REASONING,
+        RETRIEVAL_TIMEOUT_WEB_SEARCH,
+    )
     from moyo.llm.registry import retrieval_model_id
 
     specs = [
@@ -476,21 +493,22 @@ def test_get_retrieval_llms_applies_per_spec_snapshot_timeouts(monkeypatch):
             api_key="x",
             base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
             timeout=120,
+            max_tokens=8192,
         ),
     ]
     monkeypatch.setattr(reg, "get_retrieval_specs", lambda include_optional=False: list(specs))
     qwen_id = retrieval_model_id(specs[1])
-    clients = reg.get_retrieval_llms(
-        timeout=SNAPSHOT_TIMEOUT,
-        max_retries=0,
-        web_search_model_ids={qwen_id},
-    )
+    clients = reg.get_retrieval_llms(web_search_model_ids={qwen_id})
     by_model = {c.spec.model: c for c in clients}
-    assert by_model["gpt-4o"].spec.timeout == SNAPSHOT_TIMEOUT
+    assert by_model["gpt-4o"].spec.timeout == RETRIEVAL_TIMEOUT_DEFAULT
     assert not by_model["gpt-4o"].spec.web_search
     assert by_model["qwen3.8-max"].spec.timeout == RETRIEVAL_TIMEOUT_WEB_SEARCH
     assert by_model["qwen3.8-max"].spec.web_search
-    assert all(c.spec.max_retries == 0 for c in clients)
+    assert by_model["qwen3.8-max"].spec.max_tokens == 8192
+
+    plain = {c.spec.model: c for c in reg.get_retrieval_llms()}
+    assert plain["qwen3.8-max"].spec.timeout == RETRIEVAL_TIMEOUT_REASONING
+    assert not plain["qwen3.8-max"].spec.web_search
 
 
 def test_complete_openai_skips_web_search_by_default(monkeypatch):

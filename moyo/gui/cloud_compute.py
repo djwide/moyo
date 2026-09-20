@@ -1,7 +1,7 @@
 """Submit a GUI explore/report run to the Cloud Run worker.
 
 The desktop app does not run the LLM fan-out itself. It writes a Firestore
-order (same shape the storefront uses) and executes ``moyo-report-worker``.
+order (same shape the storefront uses) and executes ``moyo-report-worker-no-vpc``.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ ProgressFn = Callable[[str], None]
 
 DEFAULT_PROJECT = "senteguard-website"
 DEFAULT_REGION = "us-central1"
-DEFAULT_JOB = "moyo-report-worker"
+DEFAULT_JOB = "moyo-report-worker-no-vpc"
 DEFAULT_COLLECTION = "reports"
 
 

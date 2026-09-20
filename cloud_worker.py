@@ -72,8 +72,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from moyo.llm.client import (
-    SNAPSHOT_MAX_ATTEMPTS,
-    SNAPSHOT_TIMEOUT,
     ensure_env_loaded,
 )
 from moyo.order_storage import (
@@ -234,17 +232,14 @@ class OrderSpec:
 
 
 def snapshot_scan_deadlines(product: str) -> dict[str, int]:
-    """Hard per-call timeout and single attempt for Exposure Snapshot models.
+    """No product-specific retrieval deadlines.
 
-    Models with admin-enabled web search still get 300s inside
-    ``get_retrieval_llms``.
+    Exposure Data, Snapshot, and Basis share the same per-model timeouts and
+    ``max_tokens`` from ``retrieval_llms.json`` / :func:`apply_retrieval_timeout`.
+    Admin web search still gets 300s inside :func:`get_retrieval_llms`.
     """
-    if normalize_product(product) != "snapshot":
-        return {}
-    return {
-        "timeout": SNAPSHOT_TIMEOUT,
-        "max_retries": max(0, SNAPSHOT_MAX_ATTEMPTS - 1),
-    }
+    del product
+    return {}
 
 
 def scan_fuzz_options(spec: OrderSpec) -> dict[str, Any]:
@@ -1882,7 +1877,7 @@ def env_key_checks(presence: dict[str, bool] | None = None) -> list[dict[str, An
                     key,
                     ok=False,
                     level="warn",
-                    detail=f"Missing on moyo-report-worker. Set {key} as a Cloud Run job secret/env var.",
+                    detail=f"Missing on moyo-report-worker-no-vpc. Set {key} as a Cloud Run job secret/env var.",
                 )
             )
     return checks
@@ -2133,7 +2128,7 @@ def run_container_health_check() -> dict[str, Any]:
         "checks": checks,
         "startedAt": started,
         "finishedAt": utc_now(),
-        "job": os.environ.get("CLOUD_RUN_JOB") or os.environ.get("K_SERVICE") or "moyo-report-worker",
+        "job": os.environ.get("CLOUD_RUN_JOB") or os.environ.get("K_SERVICE") or "moyo-report-worker-no-vpc",
     }
 
 

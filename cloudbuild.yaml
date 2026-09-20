@@ -1,9 +1,9 @@
-# Build + push the Cloud Run worker, then update job moyo-report-worker.
+# Build + push the Cloud Run worker, then update job moyo-report-worker-no-vpc.
 # This file is NOT run on GitHub push. CI (.github/workflows/ci.yml) only
 # runs tests. Deploy with:
 #   gcloud builds submit --config=cloudbuild.yaml --project=senteguard-website
 # Console: https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
-#          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker?project=senteguard-website
+#          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker-no-vpc?project=senteguard-website
 #
 # Tag with $BUILD_ID (always set). $COMMIT_SHA is empty on a local
 # `gcloud builds submit` and produced worker: which Cloud Build rejects.
@@ -38,7 +38,7 @@ steps:
       - run
       - jobs
       - update
-      - moyo-report-worker
+      - moyo-report-worker-no-vpc
       - --image
       - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
       - --region

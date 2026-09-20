@@ -955,7 +955,7 @@ def _make_compute_location_box(*, include_product: bool = True) -> tuple:
         "to turn that file into PDFs."
     )
     cloud_radio.setToolTip(
-        "Create a Firestore order and execute moyo-report-worker. "
+        "Create a Firestore order and execute moyo-report-worker-no-vpc. "
         "One Cloud Run job does explore and report PDFs — do not use "
         "the Build Report tab for cloud runs."
     )
@@ -1029,7 +1029,7 @@ def _cloud_cfg_from_widgets(widgets: dict):
     return CloudComputeConfig(
         project=widgets["project"].text().strip() or CloudComputeConfig.from_env().project,
         region=widgets["region"].text().strip() or "us-central1",
-        job=widgets["job"].text().strip() or "moyo-report-worker",
+        job=widgets["job"].text().strip() or "moyo-report-worker-no-vpc",
         wait=bool(widgets["wait_cb"].isChecked()),
     )
 

@@ -1153,14 +1153,8 @@ def test_scan_fuzz_options_gui_multilingual_without_extras():
 
 
 def test_snapshot_scan_deadlines():
-    from moyo.llm.client import SNAPSHOT_MAX_ATTEMPTS, SNAPSHOT_TIMEOUT
-
-    assert cw.snapshot_scan_deadlines("snapshot") == {
-        "timeout": SNAPSHOT_TIMEOUT,
-        "max_retries": SNAPSHOT_MAX_ATTEMPTS - 1,
-    }
-    assert SNAPSHOT_TIMEOUT == 120
-    assert SNAPSHOT_MAX_ATTEMPTS == 1
+    assert cw.snapshot_scan_deadlines("snapshot") == {}
+    assert cw.snapshot_scan_deadlines("exposure_data") == {}
     assert cw.snapshot_scan_deadlines("basis") == {}
     assert cw.snapshot_scan_deadlines("both") == {}
 

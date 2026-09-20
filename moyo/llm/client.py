@@ -388,6 +388,9 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
         return {"thinking": {"type": "disabled"}}
     if _is_kimi_k3(model):
         return {}
+    if _is_qwen_reasoning_model(model):
+        # qwen3.8-max thinks by default; non-streaming thinking times out on DashScope.
+        return {"enable_thinking": False}
     if _is_deepseek_v4(model):
         return {"reasoning": {"effort": "low"}}
     return {}
