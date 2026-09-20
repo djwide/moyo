@@ -25,15 +25,18 @@ Public entry points:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from moyo.llm.client import LLMClient
 from moyo.llm.registry import get_default_llm, get_retrieval_llms
@@ -173,7 +176,7 @@ class RetrievalResult:
     # English / never translated. Non-English implies the response was translated
     # back to English for the report.
     language: Optional[str] = None
-    # Fuzz strategy that produced the seed (paraphrase / abstract / summarize / typo / shuffle).
+    # Fuzz strategy that produced the seed (original / paraphrase / abstract / typo / shuffle).
     strategy: Optional[str] = None
     # Original (untranslated) response body, kept when ``text`` was translated.
     original_text: Optional[str] = None
@@ -316,10 +319,10 @@ def reword_prompt(
     Vertex Gemini Flash on Cloud Run). No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
-    ``fuzz_mode`` ``basic`` emits ``n`` English seeds rotating paraphrase /
-    abstract / summarize (no translate); ``multilingual`` emits ``n`` seeds
-    per language (English plus each language in ``languages``) rotating
-    paraphrase / abstract / summarize. Pass ``strategies`` to override the mode default rotation
+    ``fuzz_mode`` ``basic`` emits ``n`` English seeds rotating original /
+    paraphrase / abstract (no translate); ``multilingual`` emits ``n`` seeds
+    per language (English plus each extra language in ``languages``) rotating
+    original / paraphrase / abstract. Pass ``strategies`` to override the mode default rotation
     a la carte (include ``typo`` or ``shuffle`` explicitly). ``llm`` is ignored (kept for
     call-site compatibility).
     Pass ``fuzzer`` to inject a preconfigured :class:`LLMFuzzer`.
@@ -1106,6 +1109,77 @@ class LLMStatus:
     reason: str = ""
 
 
+# Process-wide provider health. Cloud report builds skip the connectivity
+# probe and reuse whatever was last recorded here.
+_PROVIDER_HEALTH: Dict[str, LLMStatus] = {}
+_PROVIDER_HEALTH_LOCK = threading.Lock()
+
+
+def _provider_health_key(llm: LLMClient) -> str:
+    spec = llm.spec
+    return f"{spec.provider}|{spec.model}|{spec.base_url or ''}"
+
+
+def get_cached_provider_health(llm: LLMClient) -> Optional[LLMStatus]:
+    with _PROVIDER_HEALTH_LOCK:
+        cached = _PROVIDER_HEALTH.get(_provider_health_key(llm))
+    if cached is None:
+        return None
+    return LLMStatus(name=llm.label, status=cached.status, reason=cached.reason)
+
+
+def set_cached_provider_health(llm: LLMClient, status: LLMStatus) -> LLMStatus:
+    stored = LLMStatus(name=llm.label, status=status.status, reason=status.reason)
+    with _PROVIDER_HEALTH_LOCK:
+        _PROVIDER_HEALTH[_provider_health_key(llm)] = stored
+    return stored
+
+
+def clear_provider_health_cache() -> None:
+    with _PROVIDER_HEALTH_LOCK:
+        _PROVIDER_HEALTH.clear()
+
+
+def record_retrieval_health(
+    llms: Sequence[LLMClient],
+    results: Sequence[RetrievalResult],
+) -> None:
+    """Update the global health cache from actual retrieval outcomes."""
+    by_label: Dict[str, List[RetrievalResult]] = {}
+    for result in results:
+        by_label.setdefault(result.llm_label, []).append(result)
+    for llm in llms:
+        items = by_label.get(llm.label) or []
+        if not items:
+            continue
+        n_ok = sum(1 for row in items if row.ok)
+        if n_ok:
+            status = LLMStatus(name=llm.label, status="ok")
+        else:
+            sample = next((row for row in items if row.error), None)
+            status = LLMStatus(
+                name=llm.label,
+                status="fail",
+                reason=_short_error(sample.error if sample else "") or "retrieval failed",
+            )
+        set_cached_provider_health(llm, status)
+
+
+def skip_llm_preflight() -> bool:
+    """Cloud report builds must not spend a round-trip probing every model."""
+    flag = os.environ.get("MOYO_SKIP_LLM_PREFLIGHT", "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return True
+    if flag in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from moyo.llm.utility import running_in_cloud
+
+        return running_in_cloud()
+    except Exception:
+        return False
+
+
 def _short_error(error: Optional[str], empty: bool = False) -> str:
     """Compress a provider exception into one CLI-friendly reason line."""
     if empty:
@@ -1146,8 +1220,12 @@ def _short_error(error: Optional[str], empty: bool = False) -> str:
 PROBE_MAX_TOKENS = 256
 
 
-def probe_llm(llm: LLMClient) -> LLMStatus:
+def probe_llm(llm: LLMClient, *, use_cache: bool = True) -> LLMStatus:
     """Send a tiny completion to see whether ``llm`` is reachable and authorized."""
+    if use_cache:
+        cached = get_cached_provider_health(llm)
+        if cached is not None:
+            return cached
     try:
         text = llm.complete(
             "Reply with the single word: ok",
@@ -1156,18 +1234,22 @@ def probe_llm(llm: LLMClient) -> LLMStatus:
             retries=0,  # preflight should fail fast
         )
         if text and str(text).strip():
-            return LLMStatus(name=llm.label, status="ok")
-        return LLMStatus(name=llm.label, status="fail", reason="no content returned")
+            status = LLMStatus(name=llm.label, status="ok")
+        else:
+            status = LLMStatus(name=llm.label, status="fail", reason="no content returned")
     except Exception as exc:
-        return LLMStatus(
+        status = LLMStatus(
             name=llm.label, status="fail", reason=_short_error(str(exc))
         )
+    return set_cached_provider_health(llm, status)
 
 
 def check_retrieval_llms(
     llms: List[LLMClient],
     progress: Optional[ProgressFn] = None,
     workers: Optional[int] = None,
+    *,
+    use_cache: bool = True,
 ) -> List[LLMStatus]:
     """Probe each retrieval LLM and return name/status/reason rows."""
     if not llms:
@@ -1183,7 +1265,7 @@ def check_retrieval_llms(
     max_workers = min(max_workers, len(llms))
 
     def _run(index: int, llm: LLMClient) -> None:
-        statuses[index] = probe_llm(llm)
+        statuses[index] = probe_llm(llm, use_cache=use_cache)
 
     if max_workers == 1:
         for i, llm in enumerate(llms):
@@ -1475,6 +1557,160 @@ def _ordered_language_groups(
     return [name for name in ordered if name in present]
 
 
+def _run_coro(coro):
+    """Run ``coro`` from sync explore code, even if a loop is already running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: Dict[str, Any] = {}
+    error: Dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - defensive
+            error["exc"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "exc" in error:
+        raise error["exc"]
+    return result.get("value")
+
+
+def _call_timeout_seconds(llm: LLMClient) -> float:
+    return max(1.0, float(getattr(llm.spec, "timeout", None) or 120))
+
+
+def _timeout_retrieval_result(
+    seed: str,
+    llm: LLMClient,
+    *,
+    language: Optional[str],
+    strategy: Optional[str],
+    seed_index: int,
+    llm_index: int,
+    timeout: float,
+    exc: BaseException,
+) -> RetrievalResult:
+    from moyo.llm.client import format_llm_error
+
+    result = RetrievalResult(
+        seed=seed,
+        llm_label=llm.label,
+        provider=llm.spec.provider,
+        model=llm.spec.model,
+        kind=llm.kind,
+        language=language,
+        strategy=strategy,
+        seed_index=seed_index,
+        llm_index=llm_index,
+    )
+    if isinstance(exc, asyncio.TimeoutError):
+        result.error = f"timed out after {int(timeout)}s"
+    else:
+        result.error = format_llm_error(exc)
+    return result
+
+
+async def _retrieve_jobs_async(
+    jobs: Sequence[Tuple[int, Any, int, LLMClient]],
+    *,
+    max_tokens: Optional[int],
+    max_workers: int,
+    progress: Optional[ProgressFn],
+) -> List[RetrievalResult]:
+    """One bounded concurrent batch: semaphore + wait_for + gather."""
+    total = len(jobs)
+    if not total:
+        return []
+    workers = max(1, int(max_workers))
+    sem = asyncio.Semaphore(workers)
+    done = 0
+    lock = threading.Lock()
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(max_workers=workers)
+
+    async def _one(
+        job_index: int,
+        seed_index: int,
+        qs: Any,
+        llm_index: int,
+        llm: LLMClient,
+    ) -> Tuple[int, RetrievalResult]:
+        nonlocal done
+        timeout = _call_timeout_seconds(llm)
+        async with sem:
+            fut = loop.run_in_executor(
+                executor,
+                partial(
+                    retrieve,
+                    qs.text,
+                    llm,
+                    max_tokens,
+                    qs.language,
+                    qs.strategy,
+                    seed_index,
+                    llm_index,
+                ),
+            )
+            try:
+                # Shield so the deadline can fire without waiting for the
+                # worker thread. Hung HTTP calls are abandoned after gather.
+                result = await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
+            except Exception as exc:
+                result = _timeout_retrieval_result(
+                    qs.text,
+                    llm,
+                    language=qs.language,
+                    strategy=qs.strategy,
+                    seed_index=seed_index,
+                    llm_index=llm_index,
+                    timeout=timeout,
+                    exc=exc,
+                )
+                logger.warning(
+                    "Retrieval failed for %s via %s: %s",
+                    qs.text[:60],
+                    llm.label,
+                    result.error,
+                )
+        with lock:
+            done += 1
+            n = done
+        lang_tag = f" [{qs.language}]" if _is_foreign_language(qs.language) else ""
+        strat_tag = f"/{qs.strategy}" if qs.strategy else ""
+        if progress:
+            progress(
+                f"[{n}/{total}] {llm.label}{lang_tag}{strat_tag}: {qs.text[:70]}"
+            )
+        return job_index, result
+
+    gathered: List[Any] = []
+    try:
+        gathered = await asyncio.gather(
+            *[
+                _one(job_index, seed_index, qs, llm_index, llm)
+                for job_index, (seed_index, qs, llm_index, llm) in enumerate(jobs)
+            ],
+            return_exceptions=True,
+        )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    ordered: List[Optional[RetrievalResult]] = [None] * total
+    for item in gathered:
+        if isinstance(item, BaseException):
+            logger.warning("Retrieval batch item failed: %s", item)
+            continue
+        job_index, result = item
+        ordered[job_index] = result
+    return [row for row in ordered if row is not None]
+
+
 # --- Orchestration ----------------------------------------------------------
 def explore_topic(
     prompt: str,
@@ -1494,20 +1730,20 @@ def explore_topic(
 ) -> ExploreResult:
     """Run the full naive-prompt exploration and return an :class:`ExploreResult`.
 
-    Retrieval calls (seed × LLM) and foreign-response translations are
-    independent and run concurrently. ``workers`` caps how many run at once for
-    both phases (default: one per configured retrieval LLM for retrieval; the
-    same cap for translation). Pass ``workers=1`` to force sequential behaviour.
-    Rewording stays on the runtime utility fuzzer; summary synthesis stays
-    serial on :func:`get_summary_llm` (Ollama locally, Vertex Flash in cloud).
+    Retrieval calls (seed × LLM) run in one bounded concurrent batch
+    (``asyncio.gather`` + semaphore + per-call ``wait_for``). ``workers``
+    caps how many run at once (default: one per configured retrieval LLM).
+    Foreign-response translations use the same cap. Pass ``workers=1`` for
+    sequential behaviour. Rewording stays on the runtime utility fuzzer;
+    summary synthesis stays serial on :func:`get_summary_llm`.
 
     ``fuzz_mode`` ``basic`` (default) emits ``num_seeds`` English seeds
-    rotating paraphrase / abstract / summarize (no translate);
-    ``multilingual`` emits ``num_seeds`` of paraphrase / abstract /
-    summarize per language (English plus Spanish / French / Mandarin
-    Chinese and any ``extra_languages``). Pass ``strategies`` to override
-    that rotation a la carte (include ``translate``, ``typo`` or ``shuffle``
-    explicitly); mode still controls language fan-out.
+    rotating original / paraphrase / abstract (no translate);
+    ``multilingual`` emits ``num_seeds`` of original / paraphrase /
+    abstract per extra language (English plus each selected language).
+    Pass ``strategies`` to override that rotation a la carte (include
+    ``translate``, ``summarize``, ``typo`` or ``shuffle`` explicitly);
+    mode still controls language fan-out.
     Every seed is sent to every retrieval LLM.
 
     ``impact_definition`` / ``impact_definition_files`` add user-specific
@@ -1524,13 +1760,27 @@ def explore_topic(
     if not retrieval_llms:
         retrieval_llms = [default_llm]
 
-    # Preflight: show which retrieval LLMs are working before the scan starts.
-    llm_statuses = check_retrieval_llms(
-        retrieval_llms, progress=_report, workers=workers
-    )
-    _report(format_llm_status_table(llm_statuses))
-    n_ok = sum(1 for s in llm_statuses if s.status == "ok")
-    _report(f"LLM preflight: {n_ok}/{len(llm_statuses)} working")
+    # Cloud report builds skip connectivity probes; provider health is cached
+    # globally from probes (local/CLI) and from actual retrieval outcomes.
+    if skip_llm_preflight():
+        llm_statuses = [
+            status
+            for status in (get_cached_provider_health(llm) for llm in retrieval_llms)
+            if status is not None
+        ]
+        _report(
+            "Skipping LLM preflight (cloud report build); "
+            f"{len(llm_statuses)} cached provider health row(s)"
+        )
+        if llm_statuses:
+            _report(format_llm_status_table(llm_statuses))
+    else:
+        llm_statuses = check_retrieval_llms(
+            retrieval_llms, progress=_report, workers=workers
+        )
+        _report(format_llm_status_table(llm_statuses))
+        n_ok = sum(1 for s in llm_statuses if s.status == "ok")
+        _report(f"LLM preflight: {n_ok}/{len(llm_statuses)} working")
 
     resolved_impact = build_impact_definition(
         extra=impact_definition, extra_files=impact_definition_files
@@ -1542,10 +1792,13 @@ def explore_topic(
     )
 
     mode = normalize_fuzz_mode(fuzz_mode)
+    extras = [str(x).strip() for x in (extra_languages or []) if str(x).strip()]
+    if mode == "multilingual" and language_selection_explicit and not extras:
+        mode = "basic"
     strat = normalize_fuzz_strategies(strategies, fuzz_mode=mode)
     languages = (
         resolve_explore_languages(
-            extra_languages,
+            extras,
             language_selection_explicit=language_selection_explicit,
         )
         if mode == "multilingual"
@@ -1581,7 +1834,7 @@ def explore_topic(
         )
     )
 
-    # --- Phase 1: parallel raw retrieval only (no analysis, no translate) ---
+    # --- Phase 1: one bounded concurrent retrieval batch ---
     jobs = [
         (seed_index, qs, llm_index, llm)
         for seed_index, qs in enumerate(query_seeds)
@@ -1594,50 +1847,15 @@ def explore_topic(
         f"Retrieving raw answers with {max_workers} worker(s) across {total} queries "
         f"({len(query_seeds)} seeds × {len(retrieval_llms)} LLMs) ..."
     )
-
-    ordered: List[Optional[RetrievalResult]] = [None] * total
-    done = 0
-    lock = threading.Lock()
-
-    def _run(
-        job_index: int,
-        seed_index: int,
-        qs: Any,
-        llm_index: int,
-        llm: LLMClient,
-    ) -> None:
-        nonlocal done
-        result = retrieve(
-            qs.text,
-            llm,
+    raw_results = _run_coro(
+        _retrieve_jobs_async(
+            jobs,
             max_tokens=max_tokens,
-            language=qs.language,
-            strategy=qs.strategy,
-            seed_index=seed_index,
-            llm_index=llm_index,
+            max_workers=max_workers,
+            progress=_report,
         )
-        with lock:
-            ordered[job_index] = result
-            done += 1
-            lang_tag = f" [{qs.language}]" if _is_foreign_language(qs.language) else ""
-            strat_tag = f"/{qs.strategy}" if qs.strategy else ""
-            _report(
-                f"[{done}/{total}] {llm.label}{lang_tag}{strat_tag}: {qs.text[:70]}"
-            )
-
-    if max_workers == 1:
-        for job_index, (seed_index, qs, llm_index, llm) in enumerate(jobs):
-            _run(job_index, seed_index, qs, llm_index, llm)
-    else:
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [
-                pool.submit(_run, job_index, seed_index, qs, llm_index, llm)
-                for job_index, (seed_index, qs, llm_index, llm) in enumerate(jobs)
-            ]
-            for fut in as_completed(futures):
-                fut.result()
-
-    raw_results: List[RetrievalResult] = [r for r in ordered if r is not None]
+    )
+    record_retrieval_health(retrieval_llms, raw_results)
 
     # --- Phase 2: compile / organise / label / translate (before analysis) ---
     _report("Compiling, organising, and labeling raw LLM responses ...")

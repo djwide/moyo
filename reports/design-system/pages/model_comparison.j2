@@ -1,7 +1,7 @@
 {% from "components/macros.j2" import svg_asset, severity_badge %}
 {% set contrast = content.model_contrast or {} %}
 <section class="page page--model-comparison">
-  <h2>{{ content.pages.model_comparison.title or "Where the models agree, and where they don't" }}</h2>
+  <h2>{{ content.pages.model_comparison.title or "Where the models validate and surface the same information, and where they don't" }}</h2>
   {% if content.pages.model_comparison.body or contrast.lede %}
   <p class="section-lede">{{ content.pages.model_comparison.body or contrast.lede }}</p>
   {% endif %}
@@ -25,7 +25,7 @@
           </li>
           {% endfor %}
         {% else %}
-          <li class="empty">No cross-model agreement in this run.</li>
+          <li class="empty">No models validated and surfaced the same information in this run.</li>
         {% endif %}
       </ul>
     </div>

@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Snapshot retrieval: one hard per-call deadline, no client-side retries.
+# SDK retries are also disabled in LLMClient so this is the only retry layer.
+SNAPSHOT_TIMEOUT = 45
+SNAPSHOT_MAX_ATTEMPTS = 1
+
 
 # --- Rate-limit / transient retry -------------------------------------------
 # Hard billing/auth failures sometimes arrive as HTTP 429; do not retry those.
@@ -704,7 +709,11 @@ class LLMClient:
             if provider in ("openai", "custom"):
                 from openai import OpenAI
 
-                kwargs: Dict[str, Any] = {"timeout": self._http_timeout()}
+                kwargs: Dict[str, Any] = {
+                    "timeout": self._http_timeout(),
+                    # LLMClient.complete implements backoff; do not stack SDK retries.
+                    "max_retries": 0,
+                }
                 vertex = False
                 try:
                     from moyo.llm.vertex import (
@@ -746,7 +755,10 @@ class LLMClient:
                 # Let Anthropic construct the timeout using its own HTTP
                 # transport. Newer SDK builds use ``httpx2`` and reject an
                 # ``httpx.Timeout`` instance created for the OpenAI client.
-                kwargs = {"timeout": float(self.spec.timeout or 120)}
+                kwargs = {
+                    "timeout": float(self.spec.timeout or 120),
+                    "max_retries": 0,
+                }
                 if self.spec.api_key:
                     kwargs["api_key"] = self.spec.api_key
                 return Anthropic(**kwargs)

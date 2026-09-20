@@ -568,7 +568,7 @@ def build_content_doc(
             models_tested.append(name)
     strategies = list(explore_meta.get("strategies") or [])
     if not strategies:
-        strategies = ["paraphrase", "abstract", "summarize"]
+        strategies = ["original", "paraphrase", "abstract"]
 
     collection_issues = list(report_data.get("collection_issues") or [])
     if not collection_issues:
@@ -682,7 +682,7 @@ def build_content_doc(
                 "body": "",
             },
             "model_comparison": {
-                "title": "Where the models agree, and where they don't",
+                "title": "Where the models validate and surface the same information, and where they don't",
                 "body": contrast.get("lede") or "",
                 "heatmap_title": "Sensitivity by model and claim",
             },
@@ -793,7 +793,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         f"- Contested: {meta['counts'].get('contested', 0)}",
         f"- Outliers: {meta['counts'].get('outliers', 0)}",
         "",
-        "## Where the models agree, and where they don't",
+        "## Where the models validate and surface the same information, and where they don't",
         "",
         (pages.get("model_comparison") or {}).get("body")
         or (content.get("model_contrast") or {}).get("lede")

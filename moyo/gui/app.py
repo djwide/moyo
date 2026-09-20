@@ -1232,11 +1232,12 @@ class GatherPublicSourcesTab(QWidget):
         strategy_layout = QHBoxLayout(strategy_row)
         strategy_layout.setContentsMargins(0, 0, 0, 0)
         for name in (
+            "original",
             "paraphrase",
+            "abstract",
             "translate",
             "summarize",
             "typo",
-            "abstract",
             "shuffle",
         ):
             cb = QCheckBox(name)
@@ -4046,11 +4047,12 @@ class MoyoScanTab(QWidget):
         strategy_layout = QHBoxLayout(strategy_row)
         strategy_layout.setContentsMargins(0, 0, 0, 0)
         for name in (
+            "original",
             "paraphrase",
+            "abstract",
             "translate",
             "summarize",
             "typo",
-            "abstract",
             "shuffle",
         ):
             cb = QCheckBox(name)

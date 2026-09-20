@@ -6,7 +6,7 @@ public web. Numbers are deterministic for a topic so the storefront and
 the Docker image stay aligned.
 
 Black-box estimates are grounded in ``moyo-gather explore`` (basic fuzz:
-paraphrase / abstract / summarize, 3 seeds, ``config/retrieval_llms.json``)
+original / paraphrase / abstract, 3 seeds, ``config/retrieval_llms.json``)
 and in what Snapshot vs Basis PDFs actually print. Red-teaming estimates
 are grounded in ``moyo-probe analyze`` (barrier probe) report fields.
 

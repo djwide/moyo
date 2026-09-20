@@ -25,7 +25,7 @@ Using `report_data` JSON, return **only** a JSON object (no markdown fences, no 
   "exposure_chain": ["optional longer step 1", "step 2", "step 3"],
   "what_else": ["specific leftover finding", "specific leftover finding"],
   "model_commonality": [
-    "One point several models agreed on, naming the models and a claim ID",
+    "One point several models validated and surfaced, naming the models and a claim ID",
     "Second shared disclosure"
   ],
   "model_differences": [

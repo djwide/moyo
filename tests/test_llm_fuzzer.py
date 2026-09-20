@@ -22,3 +22,21 @@ def test_modify_text_does_not_search(monkeypatch):
     assert "summarize" in prompt.lower()
     assert response == "rewritten phrase"
     assert raw == "rewritten phrase"
+
+
+def test_original_strategy_does_not_call_llm(monkeypatch):
+    fuzzer = LLMFuzzer(LLMFuzzerConfig(llm_provider="test"))
+
+    def boom(*_a, **_k):
+        raise AssertionError("LLM should not run for original")
+
+    monkeypatch.setattr(fuzzer, "query_llm", boom)
+    text = fuzzer._apply_blackbox_strategy("What happened at Enron?", "original")
+    assert text == "What happened at Enron?"
+
+    seeds = fuzzer._reword_with_strategies_seeds(
+        "What happened at Enron?", 1, ["original"]
+    )
+    assert len(seeds) == 1
+    assert seeds[0].strategy == "original"
+    assert seeds[0].text == "What happened at Enron?"

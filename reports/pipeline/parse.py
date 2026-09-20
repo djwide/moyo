@@ -265,7 +265,7 @@ def topic_from_exploration(path: Path) -> str:
 
 
 _STRATEGY_RE = re.compile(
-    r"`(paraphrase|translate|summarize|typo|abstract|shuffle)`",
+    r"`(original|paraphrase|translate|summarize|typo|abstract|shuffle)`",
     re.I,
 )
 _FUZZ_MODE_RE = re.compile(r"_Fuzz mode:\s*`([^`]+)`_", re.I)
@@ -302,10 +302,7 @@ def exploration_run_meta(path: Path) -> dict:
             dict.fromkeys(s.lower() for s in _STRATEGY_RE.findall(seed_section))
         )
     if not strategies:
-        if fuzz_mode == "multilingual":
-            strategies = ["paraphrase", "abstract", "summarize"]
-        else:
-            strategies = ["paraphrase", "abstract", "summarize"]
+        strategies = ["original", "paraphrase", "abstract"]
 
     languages = parse_languages_line(text)
 

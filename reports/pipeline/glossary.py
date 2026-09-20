@@ -53,7 +53,7 @@ _GROUPS: list[dict[str, Any]] = [
         "terms": [
             (
                 "Corroborated",
-                "At least two distinct models agree on the same atomic fact.",
+                "At least two distinct models validated and surfaced the same atomic fact.",
             ),
             (
                 "Contested",
@@ -159,7 +159,7 @@ _GROUPS: list[dict[str, Any]] = [
             ),
             (
                 "Model comparison",
-                "Where tested models agreed on the same fact, and where one "
+                "Where tested models validated and surfaced the same information, and where one "
                 "model diverged (model-specific, contested, or outlier).",
             ),
             (
@@ -199,10 +199,10 @@ _GROUPS: list[dict[str, Any]] = [
             ),
             (
                 "Technique",
-                "How a prompt was reworded before retrieval: paraphrase, "
+                "How a prompt was reworded before retrieval: original, paraphrase, "
                 "abstract, summarize, translate, typo, or shuffle. Basic scans "
-                "stay in English (paraphrase / abstract / summarize). Translate "
-                "runs only in a multilingual scan.",
+                "stay in English (original / paraphrase / abstract). Translate "
+                "runs only when an extra language is selected (multilingual scan).",
             ),
             (
                 "Remediation / follow-up",

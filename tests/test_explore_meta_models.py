@@ -22,7 +22,7 @@ def test_exploration_run_meta_reads_retrieval_sources(tmp_path: Path):
         """# Topic exploration: Test
 
 _Fuzz mode: `basic`_
-_Techniques (basic): `paraphrase`, `abstract`, `summarize`_
+_Techniques (basic): `original`, `paraphrase`, `abstract`_
 
 ## Retrieval sources
 

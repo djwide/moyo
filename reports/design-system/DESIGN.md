@@ -61,7 +61,7 @@ WeasyPrint embeds the WOFF files in `design-system/fonts/`. Do not fall back to 
 | Which models disclosed the most | Findings-by-LLM bars + exposure radar |
 | Findings that carry this exposure | Lead finding + compact / band variants |
 | Verbatim excerpts | Evidence boxes + graph |
-| Where the models agree, and where they don't | Commonality vs differences, then heatmap |
+| Where the models validate and surface the same information, and where they don't | Commonality vs differences, then heatmap |
 | Cluster index | Compact findings table keyed by cluster |
 | What the models cited | Source table with repeating headers |
 | How to read the scores | Glossary |

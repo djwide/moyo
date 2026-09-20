@@ -29,19 +29,20 @@ DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Scan modes:
-#   basic        — English-only paraphrase / abstract / summarize
+#   basic        — English-only original / paraphrase / abstract
 #                  (n=3 => each once; n=6 => each twice, …). No translate.
-#   multilingual — paraphrase / abstract / summarize, applied once in
-#                  English and once per target language (responses translated
-#                  back to English after retrieval).
-# ``translate``, ``typo`` and ``shuffle`` are optional a la carte
-# (CLI ``-S`` / GUI checkbox), not part of the default basic rotation.
-BASIC_FUZZ_STRATEGIES = ("paraphrase", "abstract", "summarize")
-MULTILINGUAL_LANGUAGE_STRATEGIES = ("paraphrase", "abstract", "summarize")
+#   multilingual — original / paraphrase / abstract, applied once in
+#                  English and once per extra language (responses translated
+#                  back to English after retrieval). Used only when the
+#                  caller selected additional languages.
+# ``translate``, ``summarize``, ``typo`` and ``shuffle`` are optional a la
+# carte (CLI ``-S`` / GUI checkbox), not part of the default rotation.
+BASIC_FUZZ_STRATEGIES = ("original", "paraphrase", "abstract")
+MULTILINGUAL_LANGUAGE_STRATEGIES = ("original", "paraphrase", "abstract")
 # Back-compat aliases used by older call sites / white-box fuzz paths.
 FULL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
 MULTILINGUAL_FUZZ_STRATEGIES = MULTILINGUAL_LANGUAGE_STRATEGIES
-OPTIONAL_FUZZ_STRATEGIES = ("typo", "shuffle")
+OPTIONAL_FUZZ_STRATEGIES = ("translate", "summarize", "typo", "shuffle")
 FUZZ_STRATEGIES = tuple(
     dict.fromkeys(
         BASIC_FUZZ_STRATEGIES
@@ -78,9 +79,9 @@ def normalize_fuzz_mode(mode: Optional[str]) -> str:
 def strategies_for_fuzz_mode(mode: str) -> List[str]:
     """Resolve fuzz strategies for a fuzz mode.
 
-    - ``basic`` -> paraphrase / abstract / summarize (English only)
-    - ``multilingual`` -> paraphrase / abstract / summarize
-      (explore applies these per language; answers are translated)
+    - ``basic`` -> original / paraphrase / abstract (English only)
+    - ``multilingual`` -> original / paraphrase / abstract
+      (explore applies these per extra language; answers are translated)
     White-box fuzz uses ``WHITEBOX_FUZZ_STRATEGIES`` (paraphrase / translate).
     ``typo`` and ``shuffle`` remain available a la carte via
     :func:`normalize_fuzz_strategies`.
@@ -630,10 +631,10 @@ class LLMFuzzerConfig:
     # Similarity / FAISS neighbour lookup. Overridden by the index's
     # embedding_model when present so query dim matches the corpus.
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    # ``basic`` = paraphrase / abstract / summarize (English, no translate);
-    # ``multilingual`` = paraphrase / abstract / summarize per language
-    # in ``multilingual_languages`` (plus English). ``translate``, ``typo``
-    # and ``shuffle`` are a la carte.
+    # ``basic`` = original / paraphrase / abstract (English, no translate);
+    # ``multilingual`` = original / paraphrase / abstract per extra language
+    # in ``multilingual_languages`` (plus English). ``translate``, ``summarize``,
+    # ``typo`` and ``shuffle`` are a la carte.
     # Explore seed generation still fans these out (n=3 => each once).
     # White-box search uses ``whitebox_strategies`` / ``translate_languages``.
     fuzz_mode: str = "basic"
@@ -694,6 +695,10 @@ Transformed phrase:"""
 
 
 STRATEGY_INSTRUCTIONS = {
+    "original": (
+        "Keep the user's request unchanged. Return the original phrasing as "
+        "the retrieval query."
+    ),
     "paraphrase": (
         "Reword the phrase with different wording and syntax while preserving meaning. "
         "Keep the result in English."
@@ -823,7 +828,7 @@ class LLMFuzzer:
 
     def _openai_sdk_kwargs(self, *, require_base_url: bool) -> dict:
         """OpenAI SDK kwargs; Vertex OpenAI-compat uses ADC + HTTP/1.1."""
-        kwargs: dict = {}
+        kwargs: dict = {"max_retries": 0}
         try:
             from moyo.llm.vertex import (
                 is_vertex_openai_url,
@@ -915,7 +920,7 @@ class LLMFuzzer:
         elif self.config.llm_provider == "anthropic":
             try:
                 from anthropic import Anthropic
-                kwargs = {}
+                kwargs = {"max_retries": 0}
                 if self.config.api_key:
                     kwargs["api_key"] = self.config.api_key
                 return Anthropic(**kwargs)
@@ -1116,10 +1121,10 @@ class LLMFuzzer:
         and only needs diverse retrieval phrasings of the user's request.
 
         ``fuzz_mode``:
-        - ``basic`` — ``n`` English seeds rotating paraphrase / abstract /
-          summarize (``n=3`` => each once; ``n=6`` => each twice). No translate.
-        - ``multilingual`` — ``n`` seeds per language (English plus each target
-          language) rotating paraphrase / abstract / summarize
+        - ``basic`` — ``n`` English seeds rotating original / paraphrase /
+          abstract (``n=3`` => each once; ``n=6`` => each twice). No translate.
+        - ``multilingual`` — ``n`` seeds per language (English plus each extra
+          language) rotating original / paraphrase / abstract
 
         Pass ``strategies`` to override the mode's default strategy rotation
         (a la carte; include ``typo`` or ``shuffle`` explicitly). Mode still
@@ -1173,12 +1178,25 @@ class LLMFuzzer:
         mode = normalize_fuzz_mode(fuzz_mode or self.config.fuzz_mode)
         strat = normalize_fuzz_strategies(strategies, fuzz_mode=mode)
         if mode == "multilingual":
-            langs = [
-                l.strip()
-                for l in (languages or self.config.multilingual_languages
-                          or DEFAULT_MULTILINGUAL_LANGUAGES)
-                if l and l.strip()
-            ]
+            if languages is not None:
+                langs = [
+                    l.strip()
+                    for l in languages
+                    if l and str(l).strip()
+                ]
+            else:
+                langs = [
+                    l.strip()
+                    for l in (
+                        self.config.multilingual_languages
+                        or DEFAULT_MULTILINGUAL_LANGUAGES
+                    )
+                    if l and str(l).strip()
+                ]
+            if not langs:
+                return self._reword_with_strategies_seeds(
+                    prompt, n, strat, language=None
+                )
             return self._reword_multilingual_seeds(
                 prompt, n, langs, strategies=strat
             )
@@ -1196,8 +1214,8 @@ class LLMFuzzer:
         """``multilingual``: strategy set in English and each target language.
 
         For every language group (English first, then each target language) emit
-        ``n`` seeds rotating the strategy list (default paraphrase / abstract /
-        summarize). Foreign groups translate the base prompt first, then
+        ``n`` seeds rotating the strategy list (default original / paraphrase /
+        abstract). Foreign groups translate the base prompt first, then
         apply strategies in-language so each LLM is queried in that language.
         """
         langs = languages or list(DEFAULT_MULTILINGUAL_LANGUAGES)
@@ -1397,6 +1415,10 @@ class LLMFuzzer:
         foreign = bool(language) and language.strip().lower() not in {
             "english", "en", "eng",
         }
+
+        if strategy_key == "original":
+            text = (phrase or "").strip()
+            return text or None
 
         if strategy_key == "typo" and not foreign:
             # Prefer a light deterministic typo pass; fall back to LLM if empty.

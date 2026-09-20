@@ -107,7 +107,9 @@ def test_content_doc_exposes_model_contrast_page():
         },
         report_date="20 Sep 2026",
     )
-    assert doc["pages"]["model_comparison"]["title"].startswith("Where the models agree")
+    assert doc["pages"]["model_comparison"]["title"].startswith(
+        "Where the models validate and surface the same information"
+    )
     assert doc["model_contrast"]["shared_count"] == 1
     assert doc["model_contrast"]["unique_count"] == 1
     assert doc["pages"]["model_comparison"]["body"]

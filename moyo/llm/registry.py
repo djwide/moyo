@@ -171,6 +171,9 @@ def retrieval_model_id(spec: LLMSpec) -> str:
 
 def get_retrieval_llms(
     model_ids: Optional[List[str]] = None,
+    *,
+    timeout: Optional[int] = None,
+    max_retries: Optional[int] = None,
 ) -> List[LLMClient]:
     """Return an :class:`LLMClient` for each configured retrieval LLM.
 
@@ -178,16 +181,26 @@ def get_retrieval_llms(
     appears in that list are included (order preserved), including optional
     extras. Unknown ids are ignored. If nothing matches, falls back to the
     default (non-optional) configured set.
+
+    ``timeout`` / ``max_retries`` override each spec before the client is
+    constructed (used for snapshot hard deadlines).
     """
     wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}
     specs = get_retrieval_specs(include_optional=bool(wanted))
-    if not wanted:
-        return [LLMClient(spec) for spec in specs]
-    filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
-    if not filtered:
-        logger.warning(
-            "No retrieval LLMs matched model_ids=%s; using default configured set",
-            sorted(wanted),
-        )
-        filtered = get_retrieval_specs(include_optional=False)
-    return [LLMClient(spec) for spec in filtered]
+    if wanted:
+        filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
+        if not filtered:
+            logger.warning(
+                "No retrieval LLMs matched model_ids=%s; using default configured set",
+                sorted(wanted),
+            )
+            filtered = get_retrieval_specs(include_optional=False)
+        specs = filtered
+    clients: List[LLMClient] = []
+    for spec in specs:
+        if timeout is not None:
+            spec.timeout = int(timeout)
+        if max_retries is not None:
+            spec.max_retries = max(0, int(max_retries))
+        clients.append(LLMClient(spec))
+    return clients

@@ -19,13 +19,17 @@ from moyo.publicside.barrierprobe.type_shuffle import (
 def test_shuffle_is_not_a_default_strategy():
     assert "shuffle" not in strategies_for_fuzz_mode("basic")
     assert "shuffle" not in strategies_for_fuzz_mode("multilingual")
+    assert "summarize" not in strategies_for_fuzz_mode("basic")
+    assert "summarize" not in strategies_for_fuzz_mode("multilingual")
     assert "translate" not in strategies_for_fuzz_mode("basic")
     assert "translate" not in strategies_for_fuzz_mode("multilingual")
     assert "shuffle" not in WHITEBOX_FUZZ_STRATEGIES
     assert "shuffle" in OPTIONAL_FUZZ_STRATEGIES
+    assert "summarize" in OPTIONAL_FUZZ_STRATEGIES
     assert "shuffle" not in normalize_fuzz_strategies(None, fuzz_mode="basic")
     assert normalize_fuzz_strategies(["shuffle"]) == ["shuffle"]
-    assert strategies_for_fuzz_mode("basic") == ["paraphrase", "abstract", "summarize"]
+    assert strategies_for_fuzz_mode("basic") == ["original", "paraphrase", "abstract"]
+    assert strategies_for_fuzz_mode("multilingual") == ["original", "paraphrase", "abstract"]
 
 
 def test_call_plan_omits_shuffle_unless_requested():

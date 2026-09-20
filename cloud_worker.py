@@ -71,7 +71,11 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from moyo.llm.client import ensure_env_loaded
+from moyo.llm.client import (
+    SNAPSHOT_MAX_ATTEMPTS,
+    SNAPSHOT_TIMEOUT,
+    ensure_env_loaded,
+)
 from moyo.order_storage import order_storage_folder
 from moyo.report_storage import (
     DEFAULT_MOYO_REPORTS_BUCKET,
@@ -220,6 +224,33 @@ class OrderSpec:
 
     def reports_prefix(self) -> str:
         return f"reports/{self.storage_folder}"
+
+
+def snapshot_scan_deadlines(product: str) -> dict[str, int]:
+    """Hard per-call timeout and single attempt for Exposure Snapshot models."""
+    if normalize_product(product) != "snapshot":
+        return {}
+    return {
+        "timeout": SNAPSHOT_TIMEOUT,
+        "max_retries": max(0, SNAPSHOT_MAX_ATTEMPTS - 1),
+    }
+
+
+def scan_fuzz_options(spec: OrderSpec) -> dict[str, Any]:
+    """Multilingual / translations only when extra languages are selected."""
+    languages = [str(x).strip() for x in (spec.languages or []) if str(x).strip()]
+    if languages:
+        return {
+            "fuzz_mode": "multilingual",
+            "extra_languages": languages,
+            "language_selection_explicit": True,
+        }
+    # Storefront English-only (including leftover scanLanguageSelection=true
+    # without extras) stays basic. GUI multilingual without extras still uses
+    # the default language set.
+    if spec.scan_language_selection or spec.fuzz_mode != "multilingual":
+        return {"fuzz_mode": "basic"}
+    return {"fuzz_mode": "multilingual"}
 
 
 @dataclass(frozen=True)
@@ -1453,18 +1484,16 @@ def run_moyo(
         logger.warning("Could not list retrieval LLMs: %s", exc)
 
     explore_kwargs: dict[str, Any] = {
-        "fuzz_mode": spec.fuzz_mode,
         "num_seeds": spec.seeds,
         "progress": _progress,
+        **scan_fuzz_options(spec),
     }
-    if spec.languages:
-        explore_kwargs["fuzz_mode"] = "multilingual"
-        explore_kwargs["extra_languages"] = spec.languages
-        explore_kwargs["language_selection_explicit"] = True
-    if spec.retrieval_models:
-        from moyo.llm.registry import get_retrieval_llms
+    from moyo.llm.registry import get_retrieval_llms
 
-        explore_kwargs["retrieval_llms"] = get_retrieval_llms(spec.retrieval_models)
+    explore_kwargs["retrieval_llms"] = get_retrieval_llms(
+        spec.retrieval_models or None,
+        **snapshot_scan_deadlines(spec.product),
+    )
     if spec.strategies:
         explore_kwargs["strategies"] = spec.strategies
     if spec.workers is not None:
@@ -1472,7 +1501,8 @@ def run_moyo(
 
     _progress(
         f"explore {len(spec.prompts)} prompt(s) separately "
-        f"fuzz_mode={spec.fuzz_mode} seeds={spec.seeds} product={spec.product}"
+        f"fuzz_mode={explore_kwargs.get('fuzz_mode')} seeds={spec.seeds} "
+        f"product={spec.product}"
     )
     runs: list[PromptRun] = []
     for i, prompt in enumerate(spec.prompts, start=1):

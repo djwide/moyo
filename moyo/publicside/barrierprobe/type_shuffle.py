@@ -6,7 +6,7 @@ No domain dictionaries — spices, names, vault paths, and IDs are all the
 same operator.
 
 This is an a-la-carte strategy (``shuffle``), not part of the default
-paraphrase / abstract / summarize rotation.
+original / paraphrase / abstract rotation.
 """
 
 from __future__ import annotations

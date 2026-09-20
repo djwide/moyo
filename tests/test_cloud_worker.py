@@ -975,3 +975,58 @@ def test_canonical_report_json_aggregates_prompts(tmp_path: Path):
     assert payload["citations"] == ["s1", "s2"]
     assert len(payload["reports"]) == 2
 
+
+def test_scan_fuzz_options_basic_without_extra_languages():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "fuzzMode": "multilingual",
+            "scanLanguageSelection": True,
+        },
+    )
+    assert spec.languages == []
+    assert cw.scan_fuzz_options(spec) == {"fuzz_mode": "basic"}
+
+
+def test_scan_fuzz_options_multilingual_only_with_languages():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "languages": ["Spanish"],
+        },
+    )
+    opts = cw.scan_fuzz_options(spec)
+    assert opts["fuzz_mode"] == "multilingual"
+    assert opts["extra_languages"] == ["Spanish"]
+    assert opts["language_selection_explicit"] is True
+
+
+def test_scan_fuzz_options_gui_multilingual_without_extras():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "fuzzMode": "multilingual",
+            "source": "gui",
+        },
+    )
+    assert cw.scan_fuzz_options(spec) == {"fuzz_mode": "multilingual"}
+
+
+def test_snapshot_scan_deadlines():
+    from moyo.llm.client import SNAPSHOT_MAX_ATTEMPTS, SNAPSHOT_TIMEOUT
+
+    assert cw.snapshot_scan_deadlines("snapshot") == {
+        "timeout": SNAPSHOT_TIMEOUT,
+        "max_retries": SNAPSHOT_MAX_ATTEMPTS - 1,
+    }
+    assert SNAPSHOT_TIMEOUT == 45
+    assert SNAPSHOT_MAX_ATTEMPTS == 1
+    assert cw.snapshot_scan_deadlines("basis") == {}
+    assert cw.snapshot_scan_deadlines("both") == {}
+

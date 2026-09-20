@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from moyo.llm.client import (
     LLMClient,
     LLMSpec,
@@ -228,6 +230,39 @@ def test_sanitize_secret_environ_strips_newlines(monkeypatch):
     assert spec.api_key == "sk-dash"
     spec2 = LLMSpec(provider="openai", model="gpt-4o")
     assert spec2.api_key == "sk-openai"
+
+
+def test_complete_honours_zero_retries(monkeypatch):
+    client = LLMClient(LLMSpec(provider="echo", model="echo", max_retries=0))
+    calls = {"n": 0}
+
+    def always_transient(*_args, **_kwargs):
+        calls["n"] += 1
+        raise _FakeStatusError("Rate limit reached. Please retry in 0.01s.")
+
+    monkeypatch.setattr(client, "_complete_once", always_transient)
+    monkeypatch.setattr(client, "_client", object())
+    client.spec.provider = "openai"
+    try:
+        client.complete("hi")
+        assert False, "expected raise"
+    except Exception as exc:
+        assert "Rate limit" in str(exc)
+    assert calls["n"] == 1
+
+
+def test_openai_sdk_disables_retries(monkeypatch):
+    openai = pytest.importorskip("openai")
+    seen = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+    client = LLMClient(LLMSpec(provider="openai", model="gpt-4o", api_key="sk-test"))
+    assert client._client is not None
+    assert seen.get("max_retries") == 0
 
 
 def test_format_llm_error_includes_connection_cause():

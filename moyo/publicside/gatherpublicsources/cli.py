@@ -205,10 +205,10 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
     show_default=True,
     help="Language fan-out: basic = English seeds; multilingual = English + "
          "Spanish / French / Mandarin Chinese (extend with --language). "
-         "Default strategy sets: basic = paraphrase/abstract/summarize "
-         "(English, no translate); multilingual = paraphrase/abstract/"
-         "summarize per language. Override with -S (translate, typo, and "
-         "shuffle available a la carte).",
+         "Default strategy sets: basic = original/paraphrase/abstract "
+         "(English, no translate); multilingual = original/paraphrase/"
+         "abstract per extra language. Override with -S (translate, "
+         "summarize, typo, and shuffle available a la carte).",
 )
 @click.option(
     "--strategy",
@@ -216,7 +216,7 @@ def extract_cmd(project, sources_dir, direction, direction_file, output):
     "strategies",
     multiple=True,
     type=click.Choice(
-        ["paraphrase", "translate", "summarize", "typo", "abstract", "shuffle"],
+        ["original", "paraphrase", "abstract", "translate", "summarize", "typo", "shuffle"],
         case_sensitive=False,
     ),
     help="A la carte fuzz strategy (repeatable). Overrides the mode's default "
@@ -558,6 +558,7 @@ def check_llms(workers, as_json):
         llms,
         progress=None if as_json else (lambda msg: click.echo(msg, err=True)),
         workers=workers,
+        use_cache=False,
     )
     n_ok = sum(1 for s in statuses if s.status == "ok")
     n_fail = sum(1 for s in statuses if s.status != "ok")
