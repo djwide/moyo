@@ -20,6 +20,12 @@ VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
 # Gemini stays on VERTEX_DEFAULT_GEMINI_MODEL unless MOYO_VERTEX_GEMINI_MODEL.
 VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-2.5-flash"
 
+# Sized for a full retrieval fan-out (e.g. 7 models × 3 seeds = 21 POSTs)
+# plus paraphraser / utility calls on the same process. Too-low caps make
+# extra requests wait on local sockets and burn the per-call timeout.
+HTTPX_MAX_CONNECTIONS = 100
+HTTPX_MAX_KEEPALIVE_CONNECTIONS = 50
+
 
 def vertex_enabled() -> bool:
     flag = os.environ.get("MOYO_VERTEX_GEMINI", "1").strip().lower()
@@ -142,16 +148,46 @@ def vertex_openai_headers() -> dict[str, str]:
     return {"x-goog-user-project": vertex_project()}
 
 
+def httpx_connection_limits() -> Any:
+    """Pool large enough that concurrent retrieval POSTs are not socket-blocked."""
+    import httpx
+
+    return httpx.Limits(
+        max_connections=HTTPX_MAX_CONNECTIONS,
+        max_keepalive_connections=HTTPX_MAX_KEEPALIVE_CONNECTIONS,
+    )
+
+
 def openai_compatible_http_client(timeout: Any, *, vertex: bool = False) -> Any:
-    """httpx client matching working curl (HTTP/1.1) from the NAT VM."""
+    """httpx client matching working curl (HTTP/1.1) from the NAT VM.
+
+    Retrieval uses the sync OpenAI SDK via a thread pool, so this is
+    ``httpx.Client`` (not ``AsyncClient``) with the same high connection
+    limits you would set on an async client sending ~21 concurrent POSTs.
+    """
     import httpx
 
     kwargs: dict[str, Any] = {
         "timeout": timeout,
         "http2": False,
         "follow_redirects": True,
-        "limits": httpx.Limits(max_keepalive_connections=8, max_connections=20),
+        "limits": httpx_connection_limits(),
     }
     if vertex:
         kwargs["headers"] = vertex_openai_headers()
     return httpx.Client(**kwargs)
+
+
+def openai_compatible_async_http_client(timeout: Any, *, vertex: bool = False) -> Any:
+    """Async counterpart with the same pool limits as the sync retrieval client."""
+    import httpx
+
+    kwargs: dict[str, Any] = {
+        "timeout": timeout,
+        "http2": False,
+        "follow_redirects": True,
+        "limits": httpx_connection_limits(),
+    }
+    if vertex:
+        kwargs["headers"] = vertex_openai_headers()
+    return httpx.AsyncClient(**kwargs)

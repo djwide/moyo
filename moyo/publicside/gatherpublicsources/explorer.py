@@ -1806,7 +1806,6 @@ async def _retrieve_jobs_async(
         llm: LLMClient,
     ) -> Tuple[int, RetrievalResult]:
         nonlocal done
-        timeout = _call_timeout_seconds(llm)
         key = scheduler_provider_key(llm)
         skip = breaker.skip_reason(key)
         if skip:
@@ -1834,6 +1833,9 @@ async def _retrieve_jobs_async(
                             reason=skip,
                         )
                     else:
+                        # Start the per-call clock only when this POST actually
+                        # runs — after paraphrasing and after a worker slot.
+                        timeout = _call_timeout_seconds(llm)
                         fut = loop.run_in_executor(
                             executor,
                             partial(
@@ -2020,6 +2022,8 @@ def explore_topic(
         f"Rewording prompt into {seed_note} via LLMFuzzer "
         f"(runtime utility LLM, black-box, fuzz_mode={mode}{lang_note}) ..."
     )
+    # Sequential paraphraser: finish all rewording before any retrieval
+    # wait_for deadline is calculated or started.
     query_seeds = reword_prompt_seeds(
         prompt,
         n=num_seeds,
@@ -2036,6 +2040,8 @@ def explore_topic(
     )
 
     # --- Phase 1: one bounded concurrent retrieval batch ---
+    # Per-call timers start inside _retrieve_jobs_async only after a worker
+    # slot is acquired — never during rewording.
     jobs = [
         (seed_index, qs, llm_index, llm)
         for seed_index, qs in enumerate(query_seeds)

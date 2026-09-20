@@ -23,10 +23,13 @@ logger = logging.getLogger(__name__)
 
 # Snapshot retrieval: one hard per-call deadline, no client-side retries.
 # SDK retries are also disabled in LLMClient so this is the only retry layer.
-SNAPSHOT_TIMEOUT = 20
+# Prompt rewording uses PARAPHRASER_TIMEOUT on the utility LLM and finishes
+# before any of these retrieval deadlines are calculated or started.
+SNAPSHOT_TIMEOUT = 120
 SNAPSHOT_MAX_ATTEMPTS = 1
-RETRIEVAL_TIMEOUT_DEFAULT = 20
+RETRIEVAL_TIMEOUT_DEFAULT = 120
 RETRIEVAL_TIMEOUT_WEB_SEARCH = 300
+PARAPHRASER_TIMEOUT = 120
 
 
 # --- Rate-limit / transient retry -------------------------------------------
@@ -656,7 +659,7 @@ class LLMSpec:
 
 
 def is_slow_search_retrieval(spec: LLMSpec) -> bool:
-    """True for hosted search models that often miss the 45s snapshot cap."""
+    """True for hosted search models that often miss the snapshot cap."""
     if _is_dashscope_url(spec.base_url) or _is_xai_url(spec.base_url):
         return True
     url = (spec.base_url or "").lower()

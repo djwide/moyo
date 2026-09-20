@@ -234,3 +234,57 @@ def test_provider_circuit_breaker_skips_remaining(monkeypatch):
     skipped = [row for row in results if "circuit open" in (row.error or "")]
     assert len(skipped) == 2
     assert breaker.skip_reason("openai")
+
+
+def test_explore_topic_rewords_before_starting_retrieval(monkeypatch):
+    from moyo.publicside.gatherpublicsources import explorer as ex
+
+    order: list[str] = []
+    echo = _echo_llm("Echo")
+    qs = QuerySeed(text="seed-a", language=None, strategy="original")
+    raw = _ok_result(echo, "seed-a")
+    raw.strategy = "original"
+
+    def fake_reword(*_a, **_k):
+        order.append("reword")
+        return [qs]
+
+    async def fake_retrieve(*_a, **_k):
+        order.append("retrieve")
+        return [raw]
+
+    def fake_compile(prompt, query_seeds, raw_results, retrieval_llms, **_k):
+        return ex.CompiledCorpus(
+            prompt=prompt,
+            fuzz_mode="basic",
+            languages=None,
+            queries=[
+                ex.CompiledQuery(
+                    seed_index=0,
+                    text=qs.text,
+                    language=None,
+                    strategy="original",
+                    language_group="English",
+                    results=list(raw_results),
+                )
+            ],
+            llm_labels=[echo.label],
+        )
+
+    monkeypatch.setattr(ex, "skip_llm_preflight", lambda: True)
+    monkeypatch.setattr(ex, "get_cached_provider_health", lambda _llm: None)
+    monkeypatch.setattr(ex, "reword_prompt_seeds", fake_reword)
+    monkeypatch.setattr(ex, "_retrieve_jobs_async", fake_retrieve)
+    monkeypatch.setattr(ex, "compile_raw_responses", fake_compile)
+    monkeypatch.setattr(ex, "render_markdown", lambda *_a, **_k: "# ok")
+    monkeypatch.setattr(ex, "record_retrieval_health", lambda *_a, **_k: None)
+
+    result = ex.explore_topic(
+        "topic",
+        default_llm=echo,
+        retrieval_llms=[echo],
+        num_seeds=1,
+        summarize=False,
+    )
+    assert order[:2] == ["reword", "retrieve"]
+    assert result.seeds == ["seed-a"]

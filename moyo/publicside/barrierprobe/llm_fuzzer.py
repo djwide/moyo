@@ -622,6 +622,8 @@ class LLMFuzzerConfig:
     base_url: Optional[str] = DEFAULT_OLLAMA_BASE_URL
     max_tokens: int = 500
     temperature: float = 0.7
+    # Isolated from retrieval SNAPSHOT_TIMEOUT; paraphrasing finishes first.
+    timeout: int = 120
     
     # Semantic Search Configuration
     search_k: int = 10  # Number of closest phrases to retrieve
@@ -815,6 +817,8 @@ class LLMFuzzer:
         from moyo.llm.utility import utility_llm_spec
 
         spec = utility_llm_spec()
+        from moyo.llm.client import PARAPHRASER_TIMEOUT
+
         return cls(
             LLMFuzzerConfig(
                 llm_provider=spec.provider,
@@ -823,6 +827,7 @@ class LLMFuzzer:
                 base_url=spec.base_url,
                 max_tokens=int(kwargs.get("max_tokens", 800)),
                 temperature=float(kwargs.get("temperature", 0.7)),
+                timeout=int(spec.timeout or PARAPHRASER_TIMEOUT),
                 fuzz_mode=str(kwargs.get("fuzz_mode") or "basic"),
                 multilingual_languages=list(
                     kwargs.get("multilingual_languages") or []
@@ -832,7 +837,10 @@ class LLMFuzzer:
 
     def _openai_sdk_kwargs(self, *, require_base_url: bool) -> dict:
         """OpenAI SDK kwargs; Vertex OpenAI-compat uses ADC + HTTP/1.1."""
-        kwargs: dict = {"max_retries": 0}
+        from moyo.llm.client import PARAPHRASER_TIMEOUT
+
+        timeout = int(self.config.timeout or PARAPHRASER_TIMEOUT)
+        kwargs: dict = {"max_retries": 0, "timeout": timeout}
         try:
             from moyo.llm.vertex import (
                 is_vertex_openai_url,
@@ -841,13 +849,14 @@ class LLMFuzzer:
                 vertex_openai_headers,
             )
 
-            if is_vertex_openai_url(self.config.base_url):
+            vertex = is_vertex_openai_url(self.config.base_url)
+            kwargs["http_client"] = openai_compatible_http_client(
+                timeout, vertex=vertex
+            )
+            if vertex:
                 kwargs["api_key"] = vertex_api_key
                 kwargs["base_url"] = self.config.base_url
                 kwargs["default_headers"] = vertex_openai_headers()
-                kwargs["http_client"] = openai_compatible_http_client(
-                    120, vertex=True
-                )
                 return kwargs
         except Exception as exc:
             logger.warning("Could not build Vertex OpenAI client for fuzzer: %s", exc)
@@ -880,7 +889,11 @@ class LLMFuzzer:
                 getattr(self.config, "embedding_model", DEFAULT_EMBEDDING_MODEL)
             )
         elif self.config.llm_provider == "ollama":
-            client = OllamaClient(self.config.model_name, base_url=self.config.base_url)
+            client = OllamaClient(
+                self.config.model_name,
+                base_url=self.config.base_url,
+                timeout=int(self.config.timeout or 180),
+            )
             if not client.is_available():
                 logger.error(
                     f"Ollama server not reachable at {client.base_url}. "

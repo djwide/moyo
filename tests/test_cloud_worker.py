@@ -1093,7 +1093,7 @@ def test_snapshot_scan_deadlines():
         "timeout": SNAPSHOT_TIMEOUT,
         "max_retries": SNAPSHOT_MAX_ATTEMPTS - 1,
     }
-    assert SNAPSHOT_TIMEOUT == 20
+    assert SNAPSHOT_TIMEOUT == 120
     assert SNAPSHOT_MAX_ATTEMPTS == 1
     assert cw.snapshot_scan_deadlines("basis") == {}
     assert cw.snapshot_scan_deadlines("both") == {}

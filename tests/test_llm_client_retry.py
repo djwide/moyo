@@ -364,6 +364,7 @@ def test_complete_kimi_k26_keeps_web_search_tools(monkeypatch):
 
 def test_apply_retrieval_timeout_web_search_and_defaults():
     from moyo.llm.client import (
+        PARAPHRASER_TIMEOUT,
         RETRIEVAL_TIMEOUT_DEFAULT,
         RETRIEVAL_TIMEOUT_WEB_SEARCH,
         SNAPSHOT_TIMEOUT,
@@ -371,6 +372,10 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
     )
 
     gpt = LLMSpec(provider="openai", model="gpt-4o", api_key="x")
+    assert RETRIEVAL_TIMEOUT_DEFAULT == 120
+    assert SNAPSHOT_TIMEOUT == 120
+    assert PARAPHRASER_TIMEOUT == 120
+    assert RETRIEVAL_TIMEOUT_WEB_SEARCH == 300
     assert apply_retrieval_timeout(gpt, None) == RETRIEVAL_TIMEOUT_DEFAULT
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT) == SNAPSHOT_TIMEOUT
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT, web_search=True) == (

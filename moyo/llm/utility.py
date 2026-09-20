@@ -11,7 +11,7 @@ import logging
 import os
 from typing import Optional
 
-from moyo.llm.client import LLMClient, LLMSpec, ensure_env_loaded
+from moyo.llm.client import LLMClient, LLMSpec, PARAPHRASER_TIMEOUT, ensure_env_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def utility_llm_spec() -> LLMSpec:
             label=f"Llama 3.1 8B (local utility)",
             temperature=0.3,
             max_tokens=800,
-            timeout=120,
+            timeout=PARAPHRASER_TIMEOUT,
         )
 
     from moyo.llm.client import _is_gemini_model
@@ -119,7 +119,7 @@ def utility_llm_spec() -> LLMSpec:
         label=f"Cloud utility ({model})",
         temperature=0.3,
         max_tokens=800,
-        timeout=120,
+        timeout=PARAPHRASER_TIMEOUT,
     )
     logger.info(
         "Cloud utility LLM: %s/%s @ %s (api_key=%s)",

@@ -1,3 +1,5 @@
+import pytest
+
 from moyo.llm.client import LLMSpec, ensure_env_loaded, llm_spec_has_auth
 from moyo.llm.utility import (
     cloud_paid_llm_config,
@@ -244,3 +246,43 @@ def test_llm_spec_has_auth_vertex_without_key():
     )
     assert llm_spec_has_auth(spec)
     assert not llm_spec_has_auth(LLMSpec(provider="custom", model="kimi-k2.6"))
+
+
+def test_http_client_connection_pool_limits():
+    import asyncio
+
+    httpx = pytest.importorskip("httpx")
+    from moyo.llm.vertex import (
+        HTTPX_MAX_CONNECTIONS,
+        HTTPX_MAX_KEEPALIVE_CONNECTIONS,
+        httpx_connection_limits,
+        openai_compatible_async_http_client,
+        openai_compatible_http_client,
+    )
+
+    limits = httpx_connection_limits()
+    assert limits.max_connections == 100
+    assert limits.max_keepalive_connections == 50
+    assert HTTPX_MAX_CONNECTIONS == 100
+    assert HTTPX_MAX_KEEPALIVE_CONNECTIONS == 50
+    sync_client = openai_compatible_http_client(120)
+    async_client = openai_compatible_async_http_client(120)
+    try:
+        assert isinstance(sync_client, httpx.Client)
+        assert isinstance(async_client, httpx.AsyncClient)
+        assert sync_client._transport._pool._max_connections == 100
+        assert sync_client._transport._pool._max_keepalive_connections == 50
+        assert async_client._transport._pool._max_connections == 100
+        assert async_client._transport._pool._max_keepalive_connections == 50
+    finally:
+        sync_client.close()
+        asyncio.run(async_client.aclose())
+
+
+def test_utility_llm_uses_isolated_paraphraser_timeout(monkeypatch):
+    from moyo.llm.client import PARAPHRASER_TIMEOUT
+
+    _clear_runtime(monkeypatch)
+    spec = utility_llm_spec()
+    assert spec.timeout == PARAPHRASER_TIMEOUT
+    assert PARAPHRASER_TIMEOUT == 120
