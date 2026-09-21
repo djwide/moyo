@@ -2423,6 +2423,192 @@ def parse_exploration_markdown(markdown: str) -> CompiledCorpus:
     )
 
 
+@dataclass
+class _RenderLlm:
+    """Minimal LLM stand-in for :func:`render_markdown` source grouping."""
+
+    label: str
+    kind: str = "closed"
+
+
+@dataclass
+class ModelRerunResult:
+    """Outcome of overwriting selected models in an existing exploration."""
+
+    explore: ExploreResult
+    overwritten_labels: List[str]
+    failures: List[str]
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures
+
+
+def _corpus_query_seeds(corpus: CompiledCorpus) -> List[Any]:
+    from moyo.publicside.barrierprobe.llm_fuzzer import QuerySeed
+
+    return [
+        QuerySeed(text=query.text, language=query.language, strategy=query.strategy)
+        for query in corpus.queries
+    ]
+
+
+def _render_llms_for_corpus(
+    corpus: CompiledCorpus, live: Sequence[LLMClient]
+) -> List[Any]:
+    by_label = {llm.label: llm for llm in live}
+    kinds = {row.llm_label: row.kind for row in corpus.results if row.llm_label}
+    ordered: List[Any] = []
+    seen: set[str] = set()
+    for label in list(corpus.llm_labels) + [llm.label for llm in live]:
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        if label in by_label:
+            ordered.append(by_label[label])
+        else:
+            ordered.append(_RenderLlm(label=label, kind=kinds.get(label) or "closed"))
+    return ordered
+
+
+def merge_model_results(
+    corpus: CompiledCorpus,
+    new_results: Sequence[RetrievalResult],
+    labels: Sequence[str],
+) -> CompiledCorpus:
+    """Replace per-query answers for ``labels`` with ``new_results``."""
+    wanted = {str(label).strip() for label in labels if str(label).strip()}
+    by_seed: Dict[int, List[RetrievalResult]] = {}
+    for row in new_results:
+        by_seed.setdefault(int(row.seed_index), []).append(row)
+    for query in corpus.queries:
+        kept = [row for row in query.results if row.llm_label not in wanted]
+        incoming = list(by_seed.get(int(query.seed_index), []))
+        combined = kept + incoming
+        combined.sort(key=lambda row: (row.llm_index, row.llm_label or ""))
+        query.results = combined
+    for label in labels:
+        text = str(label).strip()
+        if text and text not in corpus.llm_labels:
+            corpus.llm_labels.append(text)
+    return corpus
+
+
+def selected_model_failures(
+    results: Sequence[RetrievalResult], labels: Sequence[str]
+) -> List[str]:
+    wanted = {str(label).strip() for label in labels if str(label).strip()}
+    failures: List[str] = []
+    seen: set[str] = set()
+    for row in results:
+        if row.llm_label not in wanted:
+            continue
+        seen.add(row.llm_label)
+        if row.ok:
+            continue
+        reason = (row.error or "no content returned").strip() or "no content returned"
+        failures.append(
+            f"{row.llm_label} [seed {row.seed_index}]: {reason[:160]}"
+        )
+    for label in labels:
+        text = str(label).strip()
+        if text and text not in seen:
+            failures.append(f"{text}: no retrieval rows returned")
+    return failures
+
+
+def rerun_exploration_models(
+    markdown: str,
+    retrieval_llms: Sequence[LLMClient],
+    *,
+    progress: Optional[ProgressFn] = None,
+    workers: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+) -> ModelRerunResult:
+    """Re-query selected LLMs against existing seeds and overwrite their answers.
+
+    Other models' bodies are kept. Summary synthesis is skipped; the report
+    rebuild from parse regenerates claims from the updated markdown.
+    """
+
+    def _report(msg: str) -> None:
+        logger.info(msg)
+        if progress:
+            progress(msg)
+
+    llms = [llm for llm in retrieval_llms if llm is not None]
+    if not llms:
+        raise ValueError("rerun_exploration_models requires at least one retrieval LLM")
+    corpus = parse_exploration_markdown(markdown)
+    labels = [llm.label for llm in llms]
+    label_index = {label: i for i, label in enumerate(corpus.llm_labels)}
+    for llm in llms:
+        if llm.label not in label_index:
+            label_index[llm.label] = len(label_index)
+
+    query_seeds = _corpus_query_seeds(corpus)
+    if not query_seeds:
+        raise ValueError("exploration.md has no query seeds to rerun")
+
+    jobs = [
+        (query.seed_index, seed, label_index[llm.label], llm)
+        for query, seed in zip(corpus.queries, query_seeds)
+        for llm in llms
+    ]
+    total = len(jobs)
+    global_workers = retrieval_global_concurrency(workers)
+    global_workers = min(global_workers, total) if total else 1
+    per_provider = min(retrieval_per_provider_concurrency(), global_workers)
+    _report(
+        f"Rerunning {len(llms)} model(s) across {len(query_seeds)} seed(s) "
+        f"({total} retrievals): {', '.join(labels)}"
+    )
+    raw_results = _run_coro(
+        _retrieve_jobs_async(
+            jobs,
+            max_tokens=max_tokens,
+            max_workers=global_workers,
+            per_provider_concurrency=per_provider,
+            progress=_report,
+        )
+    )
+    record_retrieval_health(llms, raw_results)
+
+    foreign = [row for row in raw_results if row.ok and _is_foreign_language(row.language)]
+    if foreign:
+        from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer
+
+        fuzzer = LLMFuzzer.for_runtime()
+        _report(f"Translating {len(foreign)} foreign-language rerun answer(s)")
+        _parallel_localize_results(foreign, fuzzer, workers=workers, progress=_report)
+
+    merge_model_results(corpus, raw_results, labels)
+    markdown_out = render_markdown(
+        corpus, None, _render_llms_for_corpus(corpus, llms)
+    )
+    explore = ExploreResult(
+        prompt=corpus.prompt,
+        seeds=corpus.seeds,
+        results=list(corpus.results),
+        markdown=markdown_out,
+        llm_labels=list(corpus.llm_labels),
+        llm_statuses=retrieval_statuses_from_result(
+            ExploreResult(
+                prompt=corpus.prompt,
+                seeds=corpus.seeds,
+                results=list(raw_results),
+                markdown=markdown_out,
+                llm_labels=labels,
+            )
+        ),
+    )
+    return ModelRerunResult(
+        explore=explore,
+        overwritten_labels=labels,
+        failures=selected_model_failures(raw_results, labels),
+    )
+
+
 def summarize_exploration(
     exploration_path: str | Path,
     output_path: Optional[str] = None,

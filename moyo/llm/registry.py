@@ -176,25 +176,36 @@ def get_retrieval_llms(
     timeout: Optional[int] = None,
     max_retries: Optional[int] = None,
     web_search_model_ids: Optional[Set[str]] = None,
+    require_match: bool = False,
 ) -> List[LLMClient]:
     """Return an :class:`LLMClient` for each configured retrieval LLM.
 
     When ``model_ids`` is set, only specs whose :func:`retrieval_model_id`
-    appears in that list are included (order preserved), including optional
-    extras. Unknown ids are ignored. If nothing matches, falls back to the
-    default (non-optional) configured set.
+    or label appears in that list are included (order preserved), including
+    optional extras. Unknown ids are ignored. If nothing matches, falls back
+    to the default (non-optional) configured set unless ``require_match``.
 
     ``web_search_model_ids`` lists retrieval ids that should use hosted web
-    search (300s timeout). Reasoning-budget models use 240s. Others use 120s.
-    The same per-model caps apply to Exposure Data, Snapshot, and Basis.
-    ``max_retries`` overrides each spec.
+    search (300s timeout, or higher when ``timeout`` is set). Reasoning-budget
+    models use 240s. Others use 120s. Pass ``timeout`` (e.g. admin model
+    reruns at 480s) to raise the per-call floor. The same per-model caps apply
+    to Exposure Data, Snapshot, and Basis unless overridden. ``max_retries``
+    overrides each spec.
     """
     wanted = {str(x).strip() for x in (model_ids or []) if str(x).strip()}
     web_search_wanted = {str(x).strip() for x in (web_search_model_ids or set()) if str(x).strip()}
     specs = get_retrieval_specs(include_optional=bool(wanted))
     if wanted:
-        filtered = [spec for spec in specs if retrieval_model_id(spec) in wanted]
+        filtered = [
+            spec
+            for spec in specs
+            if retrieval_model_id(spec) in wanted or (spec.label or "").strip() in wanted
+        ]
         if not filtered:
+            if require_match:
+                raise ValueError(
+                    "No retrieval LLMs matched " + ", ".join(sorted(wanted))
+                )
             logger.warning(
                 "No retrieval LLMs matched model_ids=%s; using default configured set",
                 sorted(wanted),

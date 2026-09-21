@@ -31,6 +31,8 @@ SNAPSHOT_MAX_ATTEMPTS = 1
 RETRIEVAL_TIMEOUT_DEFAULT = 120
 RETRIEVAL_TIMEOUT_REASONING = 240
 RETRIEVAL_TIMEOUT_WEB_SEARCH = 300
+# Admin selected-model reruns: more room than the first-pass scan (flaky hosts).
+RETRIEVAL_TIMEOUT_RERUN = 480
 PARAPHRASER_TIMEOUT = 120
 
 
@@ -707,7 +709,10 @@ def apply_retrieval_timeout(
 ) -> int:
     """Resolve per-call timeout for retrieval fan-out."""
     if web_search:
-        return RETRIEVAL_TIMEOUT_WEB_SEARCH
+        floor = RETRIEVAL_TIMEOUT_WEB_SEARCH
+        if override is not None:
+            return max(floor, int(override))
+        return floor
     if _is_reasoning_budget_model(spec.model, spec.base_url):
         configured = int(getattr(spec, "timeout", 0) or 0)
         floor = max(RETRIEVAL_TIMEOUT_REASONING, configured)

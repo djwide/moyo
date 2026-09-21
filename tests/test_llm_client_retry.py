@@ -452,6 +452,7 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
         PARAPHRASER_TIMEOUT,
         RETRIEVAL_TIMEOUT_DEFAULT,
         RETRIEVAL_TIMEOUT_REASONING,
+        RETRIEVAL_TIMEOUT_RERUN,
         RETRIEVAL_TIMEOUT_WEB_SEARCH,
         SNAPSHOT_TIMEOUT,
         apply_retrieval_timeout,
@@ -466,6 +467,7 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
     assert PARAPHRASER_TIMEOUT == 120
     assert RETRIEVAL_TIMEOUT_REASONING == 240
     assert RETRIEVAL_TIMEOUT_WEB_SEARCH == 300
+    assert RETRIEVAL_TIMEOUT_RERUN == 480
     assert apply_retrieval_timeout(gpt, None) == RETRIEVAL_TIMEOUT_DEFAULT
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT) == SNAPSHOT_TIMEOUT
     assert apply_retrieval_timeout(kimi, None) == RETRIEVAL_TIMEOUT_REASONING
@@ -474,6 +476,11 @@ def test_apply_retrieval_timeout_web_search_and_defaults():
     assert apply_retrieval_timeout(gpt, SNAPSHOT_TIMEOUT, web_search=True) == (
         RETRIEVAL_TIMEOUT_WEB_SEARCH
     )
+    assert apply_retrieval_timeout(gpt, RETRIEVAL_TIMEOUT_RERUN) == RETRIEVAL_TIMEOUT_RERUN
+    assert apply_retrieval_timeout(kimi, RETRIEVAL_TIMEOUT_RERUN) == RETRIEVAL_TIMEOUT_RERUN
+    assert apply_retrieval_timeout(
+        gpt, RETRIEVAL_TIMEOUT_RERUN, web_search=True
+    ) == RETRIEVAL_TIMEOUT_RERUN
 
 
 def test_get_retrieval_llms_uses_shared_timeouts_not_product(monkeypatch):

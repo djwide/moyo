@@ -184,6 +184,8 @@ def test_normalize_generation_mode():
     assert cw.normalize_generation_mode("from-stage") == "from_stage"
     assert cw.normalize_generation_mode("preview") == "exposure_preview"
     assert cw.normalize_generation_mode("exposure_preview") == "exposure_preview"
+    assert cw.normalize_generation_mode("rerun_models") == "rerun_models"
+    assert cw.normalize_generation_mode("rerun-model") == "rerun_models"
 
 
 def test_parse_order_generation_mode():
@@ -215,6 +217,21 @@ def test_parse_order_from_stage():
     assert spec.from_stage == "cluster"
     assert spec.keep_graphics is False
     assert spec.keep_content is False
+
+
+def test_parse_order_rerun_models():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Coke"],
+            "generationMode": "rerun_models",
+            "rerunModels": ["openai:gpt-4o", "custom:qwen-plus"],
+        },
+    )
+    assert spec.generation_mode == "rerun_models"
+    assert spec.rerun_models == ["openai:gpt-4o", "custom:qwen-plus"]
+    assert cw.resolve_rebuild_plan(spec) is None
 
 
 def test_resolve_rebuild_plan_legacy_modes():

@@ -158,6 +158,12 @@ REBUILD_INPUT_FILES = (
 )
 
 REBUILD_MODES = frozenset({"pdf_from_markdown", "rebuild_graphics", "from_stage"})
+
+
+class ModelRerunIncomplete(RuntimeError):
+    """Selected-model retrieval did not all succeed; report rebuild was skipped."""
+
+
 GENERATION_MODE_ALIASES = {
     "full": "full",
     "explore": "full",
@@ -169,6 +175,8 @@ GENERATION_MODE_ALIASES = {
     "fromstage": "from_stage",
     "exposure_preview": "exposure_preview",
     "preview": "exposure_preview",
+    "rerun_models": "rerun_models",
+    "rerun_model": "rerun_models",
 }
 
 CANONICAL_AWAITING_QC = "awaiting_qc"
@@ -216,6 +224,7 @@ class OrderSpec:
     from_stage: str | None = None
     keep_graphics: bool | None = None
     keep_content: bool | None = None
+    rerun_models: list[str] = field(default_factory=list)
     qc_required: bool = True
     product_id: str = "moyo_snapshot"
     source: str | None = None
@@ -324,7 +333,7 @@ def default_keep_content(from_stage: str) -> bool:
 
 def resolve_rebuild_plan(spec: OrderSpec) -> RebuildPlan | None:
     """None means a full explore; otherwise rebuild from existing artifacts."""
-    if spec.generation_mode in {"full", "exposure_preview"}:
+    if spec.generation_mode in {"full", "exposure_preview", "rerun_models"}:
         return None
     from_stage = spec.from_stage
     if from_stage not in PIPELINE_STAGES:
@@ -615,6 +624,13 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if source is not None:
         source = str(source).strip() or None
 
+    rerun_models = _first(data, "rerunModels", "rerun_models", default=[]) or []
+    if isinstance(rerun_models, str):
+        rerun_models = [
+            part.strip() for part in rerun_models.split(",") if part.strip()
+        ]
+    rerun_models = [str(x).strip() for x in rerun_models if str(x).strip()]
+
     return OrderSpec(
         order_id=order_id,
         prompts=normalize_prompts(
@@ -648,6 +664,7 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         keep_content=_coerce_bool(
             _first(data, "keepContent", "keep_content", default=None)
         ),
+        rerun_models=rerun_models,
         qc_required=normalize_qc_required(
             _first(data, "qcRequired", "qcRequire", "qc_required", default=None),
             source,
@@ -1466,6 +1483,145 @@ def _missing_rebuild_files(run_dir: Path, plan: RebuildPlan) -> list[str]:
     return missing
 
 
+def _write_explore_sidecars(prompt_dir: Path, result: Any) -> None:
+    """normalized_responses / provider_responses / retrieval-check next to exploration.md."""
+    _stage_retrieval_check(prompt_dir, result)
+    (prompt_dir / "normalized_responses.json").write_text(
+        json.dumps(serialize_normalized_responses([result]), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    provider_rows = serialize_provider_responses([result])
+    (prompt_dir / "provider_responses.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in provider_rows),
+        encoding="utf-8",
+    )
+
+
+def run_rerun_models(
+    spec: OrderSpec,
+    *,
+    bucket,
+    work: Path | None = None,
+    progress: Callable[[str], None] | None = None,
+    set_stage: Callable[[str], None] | None = None,
+) -> tuple[list[PromptRun], list[str]]:
+    """Overwrite selected models in exploration.md, then rebuild from parse if they succeed."""
+    from moyo.llm.registry import get_retrieval_llms
+    from moyo.publicside.gatherpublicsources.explorer import rerun_exploration_models
+    from reports.build_report import main as build_report_main
+
+    wanted = [str(x).strip() for x in (spec.rerun_models or []) if str(x).strip()]
+    if not wanted:
+        raise ValueError("rerun_models requires rerunModels (one or more retrieval ids)")
+
+    from moyo.llm.client import RETRIEVAL_TIMEOUT_RERUN
+
+    llms = get_retrieval_llms(
+        wanted,
+        web_search_model_ids=set(spec.retrieval_web_search_models or []),
+        require_match=True,
+        timeout=RETRIEVAL_TIMEOUT_RERUN,
+    )
+    workers = spec.workers
+
+    work = work or work_dir_for(spec.order_id)
+    work.mkdir(parents=True, exist_ok=True)
+
+    def _progress(msg: str) -> None:
+        logger.info(msg)
+        if progress:
+            progress(msg)
+
+    def _stage(name: str) -> None:
+        if set_stage:
+            set_stage(name)
+        _progress(f"stage {name}")
+
+    gcs_root = download_order_prefix(bucket, spec.storage_folder, work / "gcs")
+    _progress(
+        f"rerun models={wanted} then rebuild from parse "
+        f"gs://{bucket.name}/reports/{spec.storage_folder}/"
+    )
+    plan = RebuildPlan(from_stage="parse", keep_graphics=False, keep_content=False)
+    runs: list[PromptRun] = []
+    failures: list[str] = []
+    _stage("querying_models")
+    for index, prompt, src in rebuild_topic_dirs(gcs_root, spec):
+        slug = prompt_slug(index, prompt)
+        run_id = f"{spec.order_id}__{slug}"
+        prompt_dir = work / slug
+        run_dir = prompt_dir / "report_runs" / run_id
+        copy_rebuild_sources(src, run_dir, prompt_dir)
+        exploration = run_dir / "exploration.md"
+        if not exploration.is_file():
+            alt = prompt_dir / "exploration.md"
+            exploration = alt if alt.is_file() else exploration
+        if not exploration.is_file():
+            raise RuntimeError(
+                f"Cannot rerun models for {prompt!r}; missing exploration.md."
+            )
+        _progress(f"[{index}] overwrite retrieval for {', '.join(wanted)}: {prompt}")
+        outcome = rerun_exploration_models(
+            exploration.read_text(encoding="utf-8"),
+            llms,
+            progress=_progress,
+            workers=workers,
+        )
+        exploration.write_text(outcome.explore.markdown, encoding="utf-8")
+        (prompt_dir / "exploration.md").write_text(
+            outcome.explore.markdown, encoding="utf-8"
+        )
+        _write_explore_sidecars(prompt_dir, outcome.explore)
+        if outcome.failures:
+            failures.extend(f"{prompt}: {item}" for item in outcome.failures)
+            artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
+            run = PromptRun(
+                index=index,
+                prompt=prompt,
+                slug=slug,
+                run_id=run_id,
+                artifacts=artifacts,
+            )
+            write_prompt_report_json(prompt_dir, spec, run)
+            runs.append(run)
+            continue
+        _stage("generating_report")
+        cfg_path = _write_report_config(prompt_dir, spec, run_id)
+        argv = rebuild_build_argv(
+            spec,
+            plan,
+            run_id=run_id,
+            cfg_path=cfg_path,
+            exploration=exploration,
+        )
+        _progress(f"[{index}] rebuild from parse after successful model rerun: {prompt}")
+        rc = build_report_main(argv)
+        if rc != 0:
+            raise RuntimeError(f"rebuild from parse exited {rc} for {prompt!r}")
+        artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
+        run = PromptRun(
+            index=index,
+            prompt=prompt,
+            slug=slug,
+            run_id=run_id,
+            artifacts=artifacts,
+        )
+        write_prompt_report_json(prompt_dir, spec, run)
+        missing_out = [name for name in required_artifacts(spec) if name not in run.artifacts]
+        if missing_out:
+            raise RuntimeError(
+                f"Missing after model rerun rebuild for {prompt!r}: {', '.join(missing_out)}"
+            )
+        runs.append(run)
+    if failures:
+        _progress(
+            "model rerun saved overwrites but did not rebuild: " + "; ".join(failures[:8])
+        )
+    else:
+        _progress(f"finished model rerun + parse rebuild of {len(runs)} report(s)")
+    return runs, failures
+
+
 def run_rebuild(
     spec: OrderSpec,
     *,
@@ -2266,7 +2422,21 @@ def main() -> int:
                     "or STORAGE_BUCKET on the Cloud Run job "
                     f"(default {DEFAULT_MOYO_REPORTS_BUCKET})."
                 )
-        if resolve_rebuild_plan(spec) is not None:
+        rerun_failures: list[str] = []
+        if spec.generation_mode == "rerun_models":
+            if bucket is None:
+                raise RuntimeError("Model rerun needs Storage artifacts.")
+            runs, rerun_failures = run_rerun_models(
+                spec, bucket=bucket, work=work, set_stage=_set_stage
+            )
+            uploaded = _upload_runs(bucket, spec, runs, work=work)
+            if rerun_failures:
+                raise ModelRerunIncomplete(
+                    "Selected model retrieval did not all succeed; the report "
+                    "was not rebuilt. Overwritten answers were saved. Remaining "
+                    "failures: " + "; ".join(rerun_failures[:8])
+                )
+        elif resolve_rebuild_plan(spec) is not None:
             if bucket is None:
                 raise RuntimeError("PDF/picture rebuild needs Storage artifacts.")
             _set_stage("generating_report")
@@ -2375,7 +2545,19 @@ def main() -> int:
         if order_ref is not None:
             try:
                 message = f"{type(exc).__name__}: {exc}"[:2000]
-                if (
+                if isinstance(exc, ModelRerunIncomplete):
+                    order_ref.update(
+                        {
+                            "reportStatus": (
+                                CANONICAL_AWAITING_QC if spec is None or spec.qc_required else "delivered"
+                            ),
+                            "qcStatus": "pending",
+                            "generationStartedAt": started,
+                            "generationFinishedAt": utc_now(),
+                            "error": message,
+                        }
+                    )
+                elif (
                     spec is not None
                     and spec.generation_mode in REBUILD_MODES
                     and is_raw_product(spec)
