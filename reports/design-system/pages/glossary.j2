@@ -1,6 +1,6 @@
 <section class="page page--glossary" id="glossary">
-  <h2>{{ content.pages.glossary.title or "How to read the scores" }}</h2>
-  <p class="section-lede">{{ content.pages.glossary.lede }}</p>
+  <h2>{{ content.pages.glossary.title or "Score Glossary" }}</h2>
+  <p class="section-lede">{{ content.pages.glossary.lede | link_cites }}</p>
   {% for group in content.glossary %}
   <div class="glossary-group">
     <h3 class="glossary-group__title">{{ group.title }}</h3>
@@ -8,7 +8,7 @@
       {% for entry in group.terms %}
       <div class="glossary-term">
         <dt>{{ entry.term }}</dt>
-        <dd>{{ entry.definition }}</dd>
+        <dd>{{ entry.definition | link_cites }}</dd>
       </div>
       {% endfor %}
     </dl>

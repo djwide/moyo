@@ -1,14 +1,14 @@
 <section class="page page--risk-overview" id="risk-overview">
-  <h2>{{ content.pages.risk_overview.title or "Which models disclosed the most" }}</h2>
+  <h2>{{ content.pages.risk_overview.title or "Model Exposure" }}</h2>
   {% if content.pages.risk_overview.body %}
-  <p class="section-lede">{{ content.pages.risk_overview.body }}</p>
+  <p class="section-lede">{{ content.pages.risk_overview.body | link_cites }}</p>
   {% endif %}
   {% set caps = content.pages.risk_overview.chart_captions or {} %}
   <table class="risk-pair">
     <thead>
       <tr>
-        <th>Findings by LLM</th>
-        <th>Exposure radar</th>
+        <th>Findings By LLM</th>
+        <th>Exposure Radar</th>
       </tr>
     </thead>
     <tbody>
@@ -17,14 +17,14 @@
           {% if graphics.get('findings_by_llm') %}
             {{ graphics.findings_by_llm | safe }}
           {% elif content.assets.findings_by_llm %}
-            <img src="{{ content.assets.findings_by_llm }}" alt="Findings by LLM" />
+            <img src="{{ content.assets.findings_by_llm }}" alt="Findings By LLM" />
           {% endif %}
         </td>
         <td>
           {% if graphics.get('exposure_radar') %}
             {{ graphics.exposure_radar | safe }}
           {% elif content.assets.exposure_radar %}
-            <img src="{{ content.assets.exposure_radar }}" alt="Exposure radar" />
+            <img src="{{ content.assets.exposure_radar }}" alt="Exposure Radar" />
           {% endif %}
         </td>
       </tr>

@@ -1,8 +1,8 @@
 {% from "components/macros.j2" import remediation_box, severity_badge, source_refs %}
 <section class="page page--appendix" id="appendix">
-  <h2>{{ content.pages.appendix.claims_title or "Cluster index" }}</h2>
+  <h2>{{ content.pages.appendix.claims_title or "Finding Index" }}</h2>
   {% if content.meta.include_remediation %}
-  <h3>Run-specific follow-ups</h3>
+  <h3>Run-Specific Follow-Ups</h3>
   {% for item in content.followups %}
     {{ remediation_box(item) }}
   {% endfor %}
@@ -18,7 +18,7 @@
       {% for f in content.abridged_findings %}
       <tr{% if loop.first %} class="is-priority"{% endif %}>
         <td class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}</td>
-        <td>{{ f.claim }}</td>
+        <td>{{ f.claim | link_cites }}</td>
         <td>{{ severity_badge(f.status) }}</td>
         <td class="num">{{ f.sensitivity | format_score }}</td>
         <td>
@@ -29,21 +29,4 @@
       {% endfor %}
     </tbody>
   </table>
-
-  {% set corpus = content.response_corpus or [] %}
-  {% if corpus %}
-  <h2>{{ content.pages.appendix.corpus_title or "Normalized responses (every model × probe)" }}</h2>
-  <p>{{ content.pages.appendix.corpus_lede }}</p>
-  {% for row in corpus %}
-  <article class="corpus-item">
-    <h3>{{ row.model }}{% if row.language %} ({{ row.language }}){% endif %} — {{ row.query_id }}{% if row.strategy %} [{{ row.strategy }}]{% endif %}</h3>
-    <p class="corpus-query"><em>{{ row.query }}</em></p>
-    {% if row.failed %}
-    <p class="corpus-failed">Retrieval failed or returned no usable content.</p>
-    {% else %}
-    <pre class="corpus-body">{{ row.text or "(no content returned)" }}</pre>
-    {% endif %}
-  </article>
-  {% endfor %}
-  {% endif %}
 </section>

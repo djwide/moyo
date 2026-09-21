@@ -1,6 +1,6 @@
 {% from "components/macros.j2" import source_refs %}
 <section class="page page--basis-inventory" id="inventory">
-  <h2>{{ content.pages.inventory.title | default("Every cluster, ranked") }}</h2>
+  <h2>{{ content.pages.inventory.title | default("Cluster Inventory") }}</h2>
   <p class="basis-lede">
     One row per cluster, ranked by weighted exposure. Paraphrases from
     multiple models share a cluster; corroboration counts distinct model outputs.
@@ -28,7 +28,7 @@
       {% for row in content.basis.inventory %}
       <tr{% if loop.first %} class="is-priority"{% endif %}>
         <td class="mono">{{ row.present_id or row.cluster_id or row.claim_id }}</td>
-        <td class="claim-cell">{{ row.claim }}</td>
+        <td class="claim-cell">{{ row.claim | link_cites }}</td>
         <td class="category-cell">{{ row.category | sentence_case }}</td>
         <td class="num">{{ row.corroboration | format_int }}</td>
         <td class="source-cell">

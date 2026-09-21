@@ -13,9 +13,10 @@ from typing import Any
 import yaml
 
 from graphics.graph import snapshot_graph_findings
-from graphics.style import format_source_cite, short_model_name
+from graphics.style import format_source_cite, full_model_name, short_model_name
 from .cluster import dedupe_findings_by_group, present_id
 from pipeline.graphics import ASSET_NAMES
+from pipeline.model_dossiers import build_model_dossiers
 from pipeline.synthesize import parse_executive_payload
 from pipeline.score import build_model_contrast
 from pipeline.basis import build_basis_section
@@ -40,6 +41,21 @@ def _severity_label(sensitivity: int) -> str:
     if sensitivity == 2:
         return "low"
     return "info"
+
+
+def group_response_corpus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Preserve first-seen model order while grouping probes under each model."""
+    groups: list[dict[str, Any]] = []
+    index: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        model = str(row.get("model") or "Unknown")
+        items = index.get(model)
+        if items is None:
+            items = []
+            index[model] = items
+            groups.append({"model": model, "items": items})
+        items.append(row)
+    return groups
 
 
 def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
@@ -141,11 +157,21 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
                 "Classes and permitted-join policy."
             ),
         },
+        {
+            "title": "Verify organizational policy",
+            "body": (
+                "Use the Idea Security Verification Framework as a "
+                "follow-up to verify proper organizational information "
+                "security policy: whether permitted joins, Unreachable "
+                "Statement Classes, and domain-boundary controls actually "
+                "block the conclusions recovered in this run."
+            ),
+        },
     ]
 
     return {
         "snapshot": {
-            "title": "This snapshot is scouting  for AI assertions, not a record of truths",
+            "title": "Recommended Next",
             "lede": (
                 "The abridged product stops at the top findings. Use the "
                 "Basis Report for the rest of the inventory, then re-prompt "
@@ -154,7 +180,7 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
             "items": snapshot_items,
         },
         "basis": {
-            "title": "Turn the inventory into a test plan",
+            "title": "Follow-Up Plan",
             "lede": (
                 "The exposure basis is complete for this run. Red-team the "
                 "reachable conclusions and tighten the prompts until "
@@ -339,6 +365,29 @@ def _confidence_label(score: int) -> str:
     return "Low"
 
 
+def _tested_model_labels(
+    raw_names: list[str],
+    aliases: dict[str, str] | None = None,
+) -> list[str]:
+    """Exact model labels for covers: vendor/id kept, language suffix dropped.
+
+    Dedupes by short alias so ``ChatGPT (OpenAI gpt-4o) (French)`` does not
+    appear twice, but the printed name stays ``ChatGPT (OpenAI gpt-4o)``.
+    """
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_names:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        key = short_model_name(text, aliases)
+        if not key or key == "unknown" or key in seen:
+            continue
+        seen.add(key)
+        labels.append(full_model_name(text))
+    return labels
+
+
 def _prompts_list(report_data: dict[str, Any]) -> list[str]:
     raw = report_data.get("prompts") or report_data.get("prompt")
     if isinstance(raw, list):
@@ -453,6 +502,7 @@ def _build_executive_page(
         "why_it_matters": strip_markdown(why),
         "defensive_action": strip_markdown(defensive),
         "exposure_teaser": plain_text(teaser),
+        "title": "Disclosure Summary",
         "model_commonality": [
             plain_text(x) for x in (fields.get("model_commonality") or []) if str(x).strip()
         ][:5],
@@ -557,21 +607,18 @@ def build_content_doc(
 
     explore_meta = report_data.get("explore_meta") or {}
     alias_map = aliases or {}
-    models_tested: list[str] = []
-    seen_models: set[str] = set()
-    for raw in list(explore_meta.get("models_tested") or []):
-        name = short_model_name(str(raw or ""), alias_map)
-        if not name or name == "unknown" or name in seen_models:
-            continue
-        seen_models.add(name)
-        models_tested.append(name)
+    models_tested = _tested_model_labels(
+        list(explore_meta.get("models_tested") or []),
+        alias_map,
+    )
     if not models_tested:
-        for m in report_data.get("model_exposure") or []:
-            name = (m.get("model") or "").strip()
-            if not name or name in seen_models:
-                continue
-            seen_models.add(name)
-            models_tested.append(name)
+        models_tested = _tested_model_labels(
+            [
+                str(m.get("model") or "")
+                for m in (report_data.get("model_exposure") or [])
+            ],
+            alias_map,
+        )
     strategies = list(explore_meta.get("strategies") or [])
     if not strategies:
         strategies = ["original", "paraphrase"]
@@ -630,15 +677,7 @@ def build_content_doc(
     )
     if n_substantive:
         n_models = n_substantive
-    n_abridged = len(abridged)
-    if n_high:
-        exec_page["title"] = (
-            f"{n_high} high-sensitivity disclosures across {n_models} models"
-        )
-    else:
-        exec_page["title"] = (
-            f"{n_findings} disclosures across {n_models} models"
-        )
+    exec_page["title"] = "Disclosure Summary"
 
     return {
         "meta": {
@@ -679,7 +718,7 @@ def build_content_doc(
         "pages": {
             "executive_summary": exec_page,
             "risk_overview": {
-                "title": "Which models disclosed the most",
+                "title": "Model Exposure",
                 "body": (
                     f"{n_findings} findings from {n_substantive or n_models} models "
                     f"with a substantive answer "
@@ -698,39 +737,55 @@ def build_content_doc(
                 },
             },
             "findings": {
-                "title": (
-                    "1 finding that carries this exposure"
-                    if n_abridged == 1
-                    else f"{n_abridged} findings that carry this exposure"
-                    if n_abridged
-                    else "Findings that carry this exposure"
-                ),
+                "title": "Priority Findings",
                 "body": "",
             },
             "evidence": {
-                "title": "Verbatim excerpts with line numbers",
+                "title": "Verbatim Excerpts",
                 "body": "",
             },
             "model_comparison": {
-                "title": "Where the models validate and surface the same information, and where they don't",
+                "title": "Model Comparison",
                 "body": contrast.get("lede") or "",
-                "heatmap_title": "Sensitivity by model and claim",
+                "heatmap_title": "Sensitivity By Model And Claim",
             },
             "appendix": {
-                "claims_title": "Cluster index",
+                "title": "Appendix",
+                "lede": (
+                    "Supporting material for this run: how answers were "
+                    "collected."
+                ),
+                "claims_title": "Finding Index",
                 "claims_body": "",
-                "corpus_title": "Normalized responses (every model × probe)",
+                "method_title": "Collection Method",
+                "method_body": (
+                    "Multi-LLM fan-out against the naive prompt. Responses "
+                    "are compiled from exploration.md with lossless chunking, "
+                    "per-chunk extraction, clustering, and scored reporting. "
+                    "Contested, outlier, sensitive, and single-source findings "
+                    "are retained and classified — not dropped. Hidden "
+                    "reasoning is omitted from the normalized text."
+                ),
+                "corpus_title": "Normalized Responses",
                 "corpus_lede": (
-                    "Verbatim normalized answers after localization and after "
-                    "stripping hidden reasoning. Provider payloads are in "
-                    "provider_responses.jsonl (auth headers removed)."
+                    "Every model × probe after localization. Provider payloads "
+                    "are in provider_responses.jsonl (auth headers removed)."
                 ),
             },
             "inventory": {
-                "title": "Every cluster, ranked",
+                "title": "Cluster Inventory",
+            },
+            "basis_findings": {
+                "title": "Cluster Transcripts",
+            },
+            "exposure": {
+                "title": "Exposure Chains",
+            },
+            "remediation": {
+                "title": "Matching Controls",
             },
             "sources": {
-                "title": "What the models cited",
+                "title": "Cited Sources",
                 "lede": (
                     "Sources the model answers named, numbered once for the "
                     "run. Findings point here as S1, S2, and so on. A citation "
@@ -742,14 +797,17 @@ def build_content_doc(
                 ),
             },
             "glossary": {
-                "title": "How to read the scores",
+                "title": "Score Glossary",
                 "lede": (
                     "Identifiers and score dimensions used in this report."
                 ),
             },
             "next_steps": {
-                "title": "This snapshot is scouting  for AI assertions, not a record of truths",
+                "title": "Recommended Next",
                 "body": "",
+            },
+            "model_dossiers": {
+                "title": "Model Dossiers",
             },
         },
         "top_finding": top,
@@ -766,6 +824,19 @@ def build_content_doc(
         "model_exposure": report_data.get("model_exposure") or [],
         "findings_by_llm": report_data.get("findings_by_llm") or [],
         "response_corpus": report_data.get("response_corpus") or [],
+        "corpus_groups": group_response_corpus(
+            list(report_data.get("response_corpus") or [])
+        ),
+        "model_dossiers": build_model_dossiers(
+            findings,
+            corpus=list(report_data.get("response_corpus") or []),
+            sources=sources,
+            radar_averages=report_data.get("radar_averages") or {},
+            models_probed=list(
+                explore_meta.get("models_tested") or models_tested or []
+            ),
+            aliases=aliases,
+        ),
         "model_contrast": contrast,
         "chains": report_data.get("chains") or [],
         "followups": followups,
@@ -787,7 +858,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
         f"_Run `{meta.get('run_id')}` · {meta.get('report_date')}_",
         "",
-        "## What the models disclosed",
+        f"## {pages['executive_summary'].get('title') or 'Disclosure Summary'}",
         "",
         pages["executive_summary"]["body"],
         "",
@@ -823,7 +894,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         lines += ["### Exposure chain teaser", "", exec_page["exposure_teaser"], ""]
 
     lines += [
-        "## Which models disclosed the most",
+        f"## {pages['risk_overview'].get('title') or 'Model Exposure'}",
         "",
         pages["risk_overview"]["body"],
         "",
@@ -831,7 +902,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         f"- Contested: {meta['counts'].get('contested', 0)}",
         f"- Outliers: {meta['counts'].get('outliers', 0)}",
         "",
-        "## Where the models validate and surface the same information, and where they don't",
+        f"## {(pages.get('model_comparison') or {}).get('title') or 'Model Comparison'}",
         "",
         (pages.get("model_comparison") or {}).get("body")
         or (content.get("model_contrast") or {}).get("lede")
@@ -864,7 +935,7 @@ def render_report_md(content: dict[str, Any]) -> str:
             lines.append(f"- {line}")
         lines.append("")
     lines += [
-        "## Findings that carry this exposure",
+        f"## {pages['findings'].get('title') or 'Priority Findings'}",
         "",
         pages["findings"]["body"],
         "",
@@ -895,7 +966,7 @@ def render_report_md(content: dict[str, Any]) -> str:
     snap_ns = (content.get("next_steps") or {}).get("snapshot") or {}
     if snap_ns.get("items"):
         lines += [
-            f"## {snap_ns.get('title') or 'Where this assessment should go next'}",
+            f"## {snap_ns.get('title') or 'Recommended Next'}",
             "",
             snap_ns.get("lede") or "",
             "",
@@ -903,30 +974,6 @@ def render_report_md(content: dict[str, Any]) -> str:
         for item in snap_ns["items"]:
             lines.append(f"- **{item.get('title')}** — {item.get('body')}")
         lines.append("")
-
-    corpus = content.get("response_corpus") or []
-    if corpus:
-        pages_app = (content.get("pages") or {}).get("appendix") or {}
-        lines += [
-            f"## {pages_app.get('corpus_title') or 'Normalized responses (every model × probe)'}",
-            "",
-            pages_app.get("corpus_lede") or "",
-            "",
-        ]
-        for row in corpus:
-            qid = row.get("query_id") or ""
-            strat = f" [{row.get('strategy')}]" if row.get("strategy") else ""
-            lang = f" ({row.get('language')})" if row.get("language") else ""
-            lines.append(f"### {row.get('model')}{lang} — {qid}{strat}")
-            lines.append("")
-            lines.append(f"_{row.get('query') or ''}_")
-            lines.append("")
-            if row.get("failed"):
-                lines.append("> Retrieval failed or returned no usable content.")
-            else:
-                body = (row.get("text") or "").strip() or "> (no content returned)"
-                lines.append(body)
-            lines.append("")
 
     return "\n".join(lines)
 

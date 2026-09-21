@@ -1,6 +1,6 @@
 {% from "components/macros.j2" import severity_badge, confidence, evidence_box, citation_line, language_badge %}
 <section class="page page--basis-findings" id="findings">
-  <h2>Each cluster, with the transcript that produced it</h2>
+  <h2>{{ (content.pages.basis_findings or {}).title or "Cluster Transcripts" }}</h2>
   <p class="basis-lede">
     One finding per cluster. Claim text is English; foreign-language
     prompting is annotated. Line offsets point back into the exploration transcript.
@@ -14,9 +14,9 @@
       {{ severity_badge(f.severity) }}
       {{ language_badge(f.prompt_language) }}
     </div>
-    <p class="basis-finding__claim">{{ f.claim }}</p>
+    <p class="basis-finding__claim">{{ f.claim | link_cites }}</p>
     {% if f.rationale %}
-    <p class="basis-finding__rationale">{{ f.rationale | clip(420) }}</p>
+    <p class="basis-finding__rationale">{{ f.rationale | clip(420) | link_cites }}</p>
     {% endif %}
     <div class="basis-finding__meta">
       <span>{{ f.source_cite or f.source_model }}</span>

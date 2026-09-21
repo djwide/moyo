@@ -1,9 +1,9 @@
 {% from "components/macros.j2" import svg_asset, severity_badge %}
 {% set contrast = content.model_contrast or {} %}
 <section class="page page--model-comparison" id="model-comparison">
-  <h2>{{ content.pages.model_comparison.title or "Where the models validate and surface the same information, and where they don't" }}</h2>
+  <h2>{{ content.pages.model_comparison.title or "Model Comparison" }}</h2>
   {% if content.pages.model_comparison.body or contrast.lede %}
-  <p class="section-lede">{{ content.pages.model_comparison.body or contrast.lede }}</p>
+  <p class="section-lede">{{ (content.pages.model_comparison.body or contrast.lede) | link_cites }}</p>
   {% endif %}
 
   <div class="contrast-split">
@@ -12,13 +12,13 @@
       <ul class="contrast-list">
         {% if contrast.commonality_prose %}
           {% for line in contrast.commonality_prose %}
-          <li>{{ line }}</li>
+          <li>{{ line | link_cites }}</li>
           {% endfor %}
         {% elif contrast.commonality %}
           {% for row in contrast.commonality %}
           <li>
             {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
-            {{ row.claim }}
+            {{ row.claim | link_cites }}
             {% if row.models %}
             <span class="contrast-models">{{ row.models | join(', ') }}</span>
             {% endif %}
@@ -34,14 +34,14 @@
       <ul class="contrast-list">
         {% if contrast.differences_prose %}
           {% for line in contrast.differences_prose %}
-          <li>{{ line }}</li>
+          <li>{{ line | link_cites }}</li>
           {% endfor %}
         {% elif contrast.differences %}
           {% for row in contrast.differences %}
           <li>
             {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
             {% if row.kind %}{{ severity_badge(row.kind) }}{% elif row.status %}{{ severity_badge(row.status) }}{% endif %}
-            {{ row.claim }}
+            {{ row.claim | link_cites }}
             {% if row.models %}
             <span class="contrast-models">{{ row.models | join(', ') }}</span>
             {% endif %}
@@ -54,14 +54,6 @@
     </div>
   </div>
 
-  <h3 class="contrast-heatmap-title">{{ content.pages.model_comparison.heatmap_title or "Sensitivity by model and claim" }}</h3>
+  <h3 class="contrast-heatmap-title">{{ content.pages.model_comparison.heatmap_title or "Sensitivity By Model And Claim" }}</h3>
   {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
-  <ul class="model-exposure-list">
-    {% for m in content.model_exposure %}
-    <li{% if loop.first %} class="is-lead"{% endif %}>
-      <span>{{ m.model }}</span>
-      <span class="dots">{{ m.dots }}</span>
-    </li>
-    {% endfor %}
-  </ul>
 </section>

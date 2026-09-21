@@ -24,22 +24,30 @@
 
 {% macro source_refs(refs) -%}
   {%- if refs -%}
-  <span class="source-refs">{{ refs | join(' ') }}</span>
+  <span class="source-refs">{%- for ref in refs -%}<a class="cite-ref" href="#cite-{{ ref }}">{{ ref }}</a>{% if not loop.last %} {% endif %}{%- endfor -%}</span>
   {%- endif -%}
 {%- endmacro %}
 
 {% macro citation_line(citations) -%}
-  {%- if citations -%}
+  {%- set ns = namespace(items=[]) -%}
+  {%- for c in citations or [] -%}
+    {%- if c.ref or c.label -%}
+      {%- set ns.items = ns.items + [c] -%}
+    {%- endif -%}
+  {%- endfor -%}
   <div class="citation-line">
+    {%- if ns.items -%}
     <span class="citation-line__label">Cited</span>
-    {%- for c in citations %}
+    {%- for c in ns.items %}
     <span class="citation-line__item">
-      <span class="source-refs">{{ c.ref }}</span>
+      <a class="cite-ref source-refs" href="#cite-{{ c.ref }}">{{ c.ref }}</a>
       {{ c.label }}
     </span>{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
     {%- endfor %}
+    {%- else -%}
+    <span class="citation-line__empty">The model provided no citations for this assertion.</span>
+    {%- endif -%}
   </div>
-  {%- endif -%}
 {%- endmacro %}
 
 {% macro language_badge(language) -%}
@@ -58,7 +66,7 @@
       {{ severity_badge(sev) }}
       {{ language_badge(f.prompt_language) }}
     </header>
-    <p class="finding__claim">{{ f.claim }}</p>
+    <p class="finding__claim">{{ f.claim | link_cites }}</p>
     <div class="finding__meta">
       <span>{{ source_cite(f) }}</span>
       <span>Sens {{ f.sensitivity | format_score }} · Spec {{ f.specificity | format_score }}</span>
@@ -95,7 +103,7 @@
 {%- endmacro %}
 
 {% macro quote_box(text) -%}
-  <blockquote class="quote-box">{{ text }}</blockquote>
+  <blockquote class="quote-box">{{ text | link_cites }}</blockquote>
 {%- endmacro %}
 
 {% macro remediation_box(item) -%}

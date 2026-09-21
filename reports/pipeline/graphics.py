@@ -8,7 +8,9 @@ from typing import Any
 from graphics.exposure_score import exposure_radar_svg, llm_findings_bars_svg
 from graphics.heatmap import model_heatmap_svg
 from graphics.graph import evidence_graph_svg, snapshot_graph_findings
+from graphics.model_charts import generate_dossier_graphics
 from graphics.style import normalize_svg_for_embed
+from pipeline.model_dossiers import build_model_dossiers
 from pipeline.score import aggregate_findings_by_llm
 
 # Filenames under ``<run_dir>/assets/`` (editable before PDF rebuild).
@@ -29,6 +31,35 @@ DEFAULT_EMIT = [
 ]
 
 
+def _dossier_filename(key: str) -> str | None:
+    if not str(key).startswith("d_"):
+        return None
+    rest = str(key)[2:]
+    for kind in ("fingerprint", "mix", "probes", "overlap"):
+        suffix = f"_{kind}"
+        if rest.endswith(suffix):
+            slug = rest[: -len(suffix)]
+            if slug:
+                return f"dossiers/{slug}__{kind}.svg"
+    return None
+
+
+def _load_dossier_assets(run_dir: Path) -> dict[str, str]:
+    folder = assets_dir(run_dir) / "dossiers"
+    graphics: dict[str, str] = {}
+    if not folder.is_dir():
+        return graphics
+    for path in sorted(folder.glob("*__*.svg")):
+        stem = path.stem
+        if "__" not in stem:
+            continue
+        slug, kind = stem.rsplit("__", 1)
+        graphics[f"d_{slug}_{kind}"] = normalize_svg_for_embed(
+            path.read_text(encoding="utf-8")
+        )
+    return graphics
+
+
 def assets_dir(run_dir: Path) -> Path:
     return run_dir / "assets"
 
@@ -40,10 +71,11 @@ def write_graphics_assets(run_dir: Path, graphics: dict[str, str]) -> list[Path]
     (out / "screenshots").mkdir(exist_ok=True)
     written: list[Path] = []
     for key, svg in graphics.items():
-        filename = ASSET_NAMES.get(key)
+        filename = ASSET_NAMES.get(key) or _dossier_filename(key)
         if not filename or not svg:
             continue
         path = out / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(svg, encoding="utf-8")
         written.append(path)
     return written
@@ -82,6 +114,7 @@ def load_graphics_assets(
             )
         elif "evidence_graph" in graphics:
             graphics["evidence_graph_snapshot"] = graphics["evidence_graph"]
+    graphics.update(_load_dossier_assets(run_dir))
     return graphics
 
 
@@ -168,6 +201,17 @@ def generate_graphics(
             models_probed=probed or None,
             max_claims=max(len(snap_findings), 1) if snap_findings else 10,
         )
+
+    dossiers = build_model_dossiers(
+        list(report_data.get("findings") or chart_findings),
+        corpus=list(report_data.get("response_corpus") or []),
+        sources=list(report_data.get("sources") or []),
+        radar_averages=report_data.get("radar_averages") or {},
+        models_probed=probed or None,
+        aliases=aliases,
+    )
+    report_data["model_dossiers"] = dossiers
+    graphics.update(generate_dossier_graphics(dossiers))
 
     graphics = {k: normalize_svg_for_embed(v) for k, v in graphics.items()}
 

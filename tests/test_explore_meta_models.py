@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from graphics.style import short_model_name
+from graphics.style import full_model_name, short_model_name
 from pipeline.graphics import generate_graphics
 from pipeline.parse import attach_explore_meta, exploration_run_meta
 from pipeline.score import aggregate_findings_by_llm
@@ -144,6 +144,15 @@ def test_generate_graphics_uses_explore_meta_models(tmp_path: Path):
     assert "MysteryBot" not in graph
     assert "Claude" in graph
     assert short_model_name("ChatGPT (OpenAI gpt-4o)", ALIASES) == "GPT"
+
+
+def test_full_model_name_keeps_vendor_id():
+    assert (
+        full_model_name("ChatGPT (OpenAI gpt-4o) (French)")
+        == "ChatGPT (OpenAI gpt-4o)"
+    )
+    assert full_model_name("Claude (Anthropic Sonnet)") == "Claude (Anthropic Sonnet)"
+    assert full_model_name("Llama 4 Maverick (French)") == "Llama 4 Maverick"
 
 
 def test_resolve_exploration_path_uses_run_dir_copy(tmp_path: Path):

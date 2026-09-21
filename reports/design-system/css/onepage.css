@@ -120,6 +120,13 @@ body {
   color: var(--moyo-muted);
   margin: 0;
 }
+.models-line {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: var(--moyo-ink);
+  margin: 0.08rem 0 0;
+}
 
 .metrics {
   display: flex;
@@ -187,6 +194,10 @@ body {
   border: 0;
   padding: 0;
 }
+.snap-body__lead > h2 .severity-badge {
+  letter-spacing: 0.01em;
+  margin-left: 0.35rem;
+}
 .panel-note {
   margin: 0 0 0.14rem;
   font-size: 0.74rem;
@@ -230,21 +241,25 @@ body {
 }
 .specific-list li:first-child { border-top: 0.6pt solid var(--moyo-ink); }
 .specific-list li:last-child { border-bottom: 0.6pt solid var(--moyo-ink); }
-.specific-list .mono {
+.specific-list .mono,
+.snap-more-list .mono {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--moyo-muted);
   margin-right: 0.25rem;
 }
-.specific-claim {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
-  overflow: hidden;
-  margin-top: 0.04rem;
+.snap-item__title {
+  display: block;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.specific-claim,
+.snap-more-claim {
+  display: block;
+  margin: 0.08rem 0 0;
   font-family: var(--font-serif);
   font-size: 0.84rem;
-  line-height: 1.2;
+  line-height: 1.22;
 }
 .specific-source {
   display: block;
@@ -305,15 +320,6 @@ body {
   page-break-inside: avoid;
   padding: 0.1rem 0;
   border-bottom: 0.35pt solid var(--moyo-border);
-  font-family: var(--font-serif);
-  font-size: 0.78rem;
-  line-height: 1.2;
-}
-.snap-more-list .mono {
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
-  color: var(--moyo-muted);
-  margin-right: 0.2rem;
 }
 
 .panel-sources {

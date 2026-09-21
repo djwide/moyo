@@ -1,0 +1,60 @@
+{% from "components/macros.j2" import severity_badge, svg_asset %}
+{# Expects ``dossier`` and ``depth`` = snapshot | basis #}
+<section class="page page--model-dossier{% if depth == 'basis' %} page--model-dossier-basis{% endif %}" id="{{ dossier.id }}">
+  <h2>{{ dossier.model }}</h2>
+  <p class="section-lede">{{ dossier.lede }}</p>
+
+  <dl class="stat-strip stat-strip--compact">
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.findings | format_int }}</span>
+      <span class="stat-strip__label">Findings</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.unique | format_int }}</span>
+      <span class="stat-strip__label">Exclusive</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.high | format_int }}</span>
+      <span class="stat-strip__label">High-sens</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.overlap_pct | format_number }}%</span>
+      <span class="stat-strip__label">Overlap</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.exclusive_citation_count | format_int }}</span>
+      <span class="stat-strip__label">Orig. cites</span>
+    </div>
+    <div class="stat-strip__item">
+      <span class="stat-strip__value">{{ dossier.probes.answered | format_int }}/{{ dossier.probes.attempted | format_int }}</span>
+      <span class="stat-strip__label">Probes</span>
+    </div>
+  </dl>
+
+  <div class="dossier-charts">
+    <div class="dossier-charts__item">
+      {{ svg_asset('', graphics.get(dossier.charts.fingerprint), 'compact', 'Score Fingerprint') }}
+    </div>
+    <div class="dossier-charts__stack">
+      {{ svg_asset('', graphics.get(dossier.charts.mix), 'compact', 'Sensitivity Mix') }}
+      {{ svg_asset('', graphics.get(dossier.charts.probes), 'compact', 'Probe Outcomes') }}
+    </div>
+  </div>
+
+  <h3 class="dossier-exclusive">Exclusive Disclosures</h3>
+  {% if dossier.distinctive %}
+  <ol class="dossier-list">
+    {% for f in dossier.distinctive %}
+    <li>
+      <div class="snap-item__title">
+        <span class="mono">{{ f.present_id or f.claim_id }}</span>
+        {{ severity_badge(f.status) }}
+      </div>
+      <p>{{ f.claim | link_cites }}</p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="dossier-empty">This model did not produce a disclosure that no other model also stated.</p>
+  {% endif %}
+</section>

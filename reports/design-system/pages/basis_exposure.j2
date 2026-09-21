@@ -1,17 +1,17 @@
 {% from "components/macros.j2" import svg_asset, citation_line %}
 <section class="page page--basis-exposure" id="exposure">
-  <h2>How outputs combine into exposures</h2>
+  <h2>{{ (content.pages.exposure or {}).title or "Exposure Chains" }}</h2>
   <p class="basis-lede">
     Real-world citations feed model inference; models corroborate claims that assemble
     into inferred conclusions.
   </p>
-  {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide', 'Evidence graph') }}
+  {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide', 'Evidence Graph') }}
 
   {% if content.basis.cross_chain_implication %}
-  <p class="chain-implication">{{ content.basis.cross_chain_implication }}</p>
+  <p class="chain-implication">{{ content.basis.cross_chain_implication | link_cites }}</p>
   {% endif %}
 
-  <h2>What was recovered, and how</h2>
+  <h2>What Was Recovered, And How</h2>
   {% for c in content.basis.chain_details %}
   <article class="chain-block">
     <h3 class="chain-block__title">{{ c.label }}</h3>
@@ -20,13 +20,13 @@
     </p>
 
     <div class="chain-subhead">Recovered</div>
-    <p class="chain-recovered">{{ c.recovered }}</p>
+    <p class="chain-recovered">{{ c.recovered | link_cites }}</p>
     {{ citation_line(c.citations) }}
 
     <div class="chain-subhead">Derivation</div>
     <ol class="chain-steps">
       {% for step in c.derivation.steps %}
-      <li>{{ step }}</li>
+      <li>{{ step | link_cites }}</li>
       {% endfor %}
     </ol>
 
@@ -34,7 +34,7 @@
     {% for o in c.corroborating_outputs %}
     <div class="corroboration-item">
       <div class="corroboration-item__source">{{ o.source }} · <span class="mono">{{ o.claim_id }}</span></div>
-      <p class="corroboration-item__claim">{{ o.claim }}</p>
+      <p class="corroboration-item__claim">{{ o.claim | link_cites }}</p>
       {% if o.excerpt %}
       <div class="corroboration-item__excerpt">{{ o.excerpt | md }}{% if o.start_line %}<div class="corroboration-item__lines">lines {{ o.start_line }}–{{ o.end_line or o.start_line }}</div>{% endif %}</div>
       {% endif %}
@@ -43,7 +43,7 @@
     {% endfor %}
 
     <div class="chain-subhead">Implication</div>
-    <p class="chain-implication">{{ c.implication }}</p>
+    <p class="chain-implication">{{ c.implication | link_cites }}</p>
   </article>
   {% endfor %}
 </section>

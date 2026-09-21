@@ -1,0 +1,66 @@
+{% from "components/macros.j2" import severity_badge, svg_asset %}
+<section class="page page--model-dossier-detail" id="{{ dossier.detail_id }}">
+  <h2>{{ dossier.model }} · Detail</h2>
+  <p class="section-lede">
+    Exclusive citations, remaining unique findings, and probe failures
+    for this model. Shared clusters appear only as IDs — full transcripts
+    stay in Cluster Transcripts.
+  </p>
+
+  <div class="dossier-detail-grid">
+    <div>
+      {{ svg_asset('', graphics.get(dossier.charts.overlap), 'compact', 'Exclusive vs Shared') }}
+    </div>
+    <div>
+      <h3>Citations Only This Model Named</h3>
+      {% if dossier.exclusive_citations %}
+      <ul class="dossier-cites">
+        {% for c in dossier.exclusive_citations %}
+        <li>
+          <a class="cite-ref" href="#cite-{{ c.ref }}">{{ c.ref }}</a>
+          {{ c.label }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="dossier-empty">No source was cited only by {{ dossier.model }}.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <h3>All Exclusive Findings</h3>
+  {% if dossier.unique_findings %}
+  <table class="findings-index dossier-table">
+    <thead>
+      <tr>
+        <th>ID</th><th>Claim</th><th>Status</th><th>Sens</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in dossier.unique_findings %}
+      <tr>
+        <td class="mono">{{ f.present_id or f.claim_id }}</td>
+        <td>{{ f.claim | link_cites }}</td>
+        <td>{{ severity_badge(f.status) }}</td>
+        <td class="num">{{ f.sensitivity | format_score }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="dossier-empty">No exclusive findings.</p>
+  {% endif %}
+
+  {% if dossier.failed_probes %}
+  <h3>Failed Probes</h3>
+  <ul class="dossier-failed">
+    {% for p in dossier.failed_probes %}
+    <li>
+      <span class="mono">{{ p.query_id }}</span>
+      {% if p.strategy %}[{{ p.strategy }}]{% endif %}
+      {{ p.query }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>

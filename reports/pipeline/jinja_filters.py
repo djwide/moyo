@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -74,6 +75,23 @@ def format_timestamp(value: Any) -> str:
     return d.strftime("%-d %b %Y · %H:%M UTC")
 
 
+_CITE_REF_RE = re.compile(r"\b(S\d+)\b")
+
+
+def link_cites(value: Any) -> Any:
+    """Turn compact source refs such as ``S21`` into in-document links."""
+    from markupsafe import Markup, escape
+
+    text = str(value or "")
+    if not text:
+        return ""
+    linked = _CITE_REF_RE.sub(
+        r'<a class="cite-ref" href="#cite-\1">\1</a>',
+        str(escape(text)),
+    )
+    return Markup(linked)
+
+
 def register_filters(env: Any) -> None:
     env.filters["format_int"] = format_int
     env.filters["format_number"] = format_number
@@ -82,3 +100,4 @@ def register_filters(env: Any) -> None:
     env.filters["clip"] = clip
     env.filters["sentence_case"] = sentence_case
     env.filters["format_timestamp"] = format_timestamp
+    env.filters["link_cites"] = link_cites

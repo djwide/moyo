@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOYO · {{ dossier.model }} · {{ content.meta.topic }}</title>
+  <link rel="icon" href="{{ favicon_uri }}" />
+  <link rel="stylesheet" href="{{ css_href }}" />
+</head>
+<body class="model-onepager">
+  {% with depth = "snapshot" %}
+  {% include "pages/model_dossier.j2" %}
+  {% endwith %}
+</body>
+</html>

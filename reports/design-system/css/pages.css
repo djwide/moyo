@@ -85,6 +85,13 @@ h3 { font-size: 0.95rem; margin: var(--space-3) 0 var(--space-2); }
   font-family: var(--font-mono);
   font-size: 0.8rem;
 }
+.page--contents .toc--sub {
+  margin: 0.2rem 0 0.55rem 1.1rem;
+}
+.page--contents .toc--sub li {
+  font-size: 0.82rem;
+  margin: 0 0 0.25rem;
+}
 
 p { margin: 0 0 var(--space-3); }
 code, .mono {
@@ -231,8 +238,8 @@ code, .mono {
   padding: 0;
   list-style: none;
   font-family: var(--font-sans);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.72rem;
+  line-height: 1.4;
   color: var(--moyo-ink);
   column-count: 2;
   column-gap: 5mm;
@@ -472,26 +479,6 @@ code, .mono {
   text-align: center;
   vertical-align: top;
 }
-
-.model-exposure-list {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-3) 0 0;
-}
-.model-exposure-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 0.18rem 0;
-  border-bottom: 0.35pt solid var(--moyo-border);
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-}
-.model-exposure-list li:first-child {
-  border-top: 0.6pt solid var(--moyo-ink);
-  padding-top: 0.35rem;
-}
-.dots { letter-spacing: 0.08em; color: var(--moyo-ink); font-size: 0.9rem; }
 
 .contrast-split {
   display: flex;
@@ -773,11 +760,38 @@ code, .mono {
   padding-top: 0;
 }
 
-/* Pack short trailing matter; keep argument pages on their own sheet. */
-.page--sources,
-.page--glossary,
-.page--basis-exposure {
-  break-before: auto;
+.appendix-outline {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  max-width: 42rem;
+  font-family: var(--font-sans);
+}
+.appendix-outline li {
+  margin: 0 0 0.4rem;
+}
+.appendix-outline a {
+  color: var(--moyo-ink);
+  text-decoration: none;
+}
+
+.corpus-group {
+  margin: var(--space-4) 0 0;
+}
+.corpus-group h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  margin: 0 0 var(--space-3);
+  padding: 0 0 0.25rem;
+  border-bottom: 0.4pt solid var(--moyo-border);
+}
+.corpus-item h4 {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+  border: 0;
+  padding: 0;
 }
 
 .page--evidence .graphic--wide,
@@ -792,4 +806,98 @@ code, .mono {
 .page--evidence .graphic--compact img {
   max-width: 150mm;
   max-height: 70mm;
+}
+
+body.model-onepager .page {
+  break-before: auto;
+}
+
+.stat-strip--compact {
+  margin: 0 0 var(--space-3);
+}
+.stat-strip--compact .stat-strip__value {
+  font-size: 1.05rem;
+}
+
+.dossier-charts {
+  display: flex;
+  gap: 5mm;
+  align-items: flex-start;
+  margin: 0 0 11mm;
+}
+.dossier-charts__item {
+  flex: 1.1 1 0;
+  min-width: 0;
+}
+.dossier-charts__stack {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.page--model-dossier .graphic--compact {
+  max-height: 55mm;
+  margin: 0 0 var(--space-2);
+}
+.page--model-dossier .dossier-charts__item .graphic,
+.page--model-dossier .dossier-charts__item .graphic--compact {
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+}
+.page--model-dossier .dossier-charts__item svg,
+.page--model-dossier .dossier-charts__item img {
+  max-height: 78mm;
+}
+.page--model-dossier .dossier-exclusive {
+  margin-top: 4mm;
+  clear: both;
+}
+.page--model-dossier .graphic__label {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+.dossier-list {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+}
+.dossier-list li {
+  margin: 0 0 0.45rem;
+  break-inside: avoid;
+}
+.dossier-list p {
+  margin: 0.1rem 0 0;
+}
+.dossier-empty {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--moyo-muted);
+  font-style: italic;
+}
+.dossier-detail-grid {
+  display: flex;
+  gap: 7mm;
+  align-items: flex-start;
+  margin: 0 0 var(--space-3);
+}
+.dossier-detail-grid > div {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.dossier-cites,
+.dossier-failed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+}
+.dossier-cites li,
+.dossier-failed li {
+  margin: 0 0 0.28rem;
+  break-inside: avoid;
+}
+.dossier-table {
+  font-size: 0.72rem;
 }

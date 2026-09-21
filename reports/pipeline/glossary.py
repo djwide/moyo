@@ -10,7 +10,7 @@ from typing import Any
 
 _GROUPS: list[dict[str, Any]] = [
     {
-        "title": "Findings and identifiers",
+        "title": "Findings And Identifiers",
         "terms": [
             (
                 "Finding / claim",
@@ -49,7 +49,7 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Status labels",
+        "title": "Status Labels",
         "terms": [
             (
                 "Corroborated",
@@ -74,7 +74,7 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Score dimensions (1 low – 5 high)",
+        "title": "Score Dimensions (1 Low – 5 High)",
         "terms": [
             (
                 "Sensitivity",
@@ -108,7 +108,7 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Severity bands",
+        "title": "Severity Bands",
         "terms": [
             ("High", "Sensitivity 4–5. Primary exposure concern."),
             ("Medium", "Sensitivity 3. Material detail worth review."),
@@ -117,7 +117,7 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Sources and citations",
+        "title": "Sources And Citations",
         "terms": [
             (
                 "Source model",
@@ -143,15 +143,15 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Charts and metrics",
+        "title": "Charts And Metrics",
         "terms": [
             (
-                "Finding classification profile",
+                "Finding Classification Profile",
                 "Average specificity, sensitivity, corroboration, novelty, and "
                 "confidence across all extracted claims.",
             ),
             (
-                "Findings by LLM",
+                "Findings By LLM",
                 "Each tested model scored by how many findings it produced and "
                 "how sensitive those findings are. Bar height is the sum of "
                 "finding sensitivities; color shows the high / medium / low / "
@@ -163,23 +163,23 @@ _GROUPS: list[dict[str, Any]] = [
                 "model diverged (model-specific, contested, or outlier).",
             ),
             (
-                "Sensitivity by model and claim",
+                "Sensitivity By Model And Claim",
                 "Which models supported which clusters. Cell color is the "
                 "cluster's sensitivity (1–5); empty means that model did not "
                 "support it.",
             ),
             (
-                "Claim support graph",
+                "Claim Support Graph",
                 "How model outputs connect to claims and how claims group into "
                 "higher-level exposures.",
             ),
             (
-                "Model exposure dots",
+                "Model Exposure Dots",
                 "Relative contribution of each model to overall exposure, scaled "
                 "against the highest-scoring model in the run.",
             ),
             (
-                "Findings count",
+                "Findings Count",
                 "Total claims retained after processing. Nothing is dropped for "
                 "being unusual.",
             ),

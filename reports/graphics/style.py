@@ -145,10 +145,56 @@ def short_model_name(source_model: str, aliases: dict[str, str] | None = None) -
     return raw.split("(", 1)[0].strip() or raw
 
 
+_LANGUAGE_SUFFIXES = frozenset(
+    {
+        "arabic",
+        "bengali",
+        "chinese",
+        "czech",
+        "danish",
+        "dutch",
+        "english",
+        "farsi",
+        "finnish",
+        "french",
+        "german",
+        "greek",
+        "hebrew",
+        "hindi",
+        "hungarian",
+        "indonesian",
+        "italian",
+        "japanese",
+        "korean",
+        "malay",
+        "mandarin",
+        "mandarin chinese",
+        "norwegian",
+        "persian",
+        "polish",
+        "portuguese",
+        "romanian",
+        "russian",
+        "simplified chinese",
+        "spanish",
+        "swedish",
+        "tagalog",
+        "tamil",
+        "thai",
+        "traditional chinese",
+        "turkish",
+        "ukrainian",
+        "urdu",
+        "vietnamese",
+    }
+)
+
+
 def full_model_name(source_model: str) -> str:
-    """Full model label for charts: keep vendor/model detail, drop language suffix.
+    """Full model label: keep vendor/model id, drop a trailing language suffix.
 
     ``ChatGPT (OpenAI gpt-4o) (French)`` → ``ChatGPT (OpenAI gpt-4o)``
+    ``Claude (Anthropic Sonnet)`` → ``Claude (Anthropic Sonnet)``
     ``Llama 4 Maverick (French)`` → ``Llama 4 Maverick``
     """
     raw = " ".join(str(source_model or "").split()).strip()
@@ -157,8 +203,7 @@ def full_model_name(source_model: str) -> str:
     if raw.endswith(")") and " (" in raw:
         base, last = raw.rsplit(" (", 1)
         lang = last[:-1].strip()
-        # Language tags are alphabetic / spaces (e.g. Mandarin Chinese), not model ids.
-        if lang and not any(ch.isdigit() for ch in lang) and len(lang) < 40:
+        if lang.lower() in _LANGUAGE_SUFFIXES:
             return base.strip() or raw
     return raw
 

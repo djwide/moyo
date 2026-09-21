@@ -337,6 +337,33 @@ def render_pdfs(
             outputs["onepage_html"] = onepage_html_path
             outputs["report_html"] = report_html_path
 
+            dossiers = list((content.get("model_dossiers") or []))
+            if dossiers:
+                models_dir = output_dir / "models"
+                models_dir.mkdir(parents=True, exist_ok=True)
+                for dossier in dossiers:
+                    slug = str(dossier.get("slug") or "model")
+                    model_html = env.get_template("model_onepage.html.j2").render(
+                        **common,
+                        dossier=dossier,
+                        css_href="css/report.css",
+                    )
+                    html_name = f"model-{slug}.html"
+                    (tmp_dir / html_name).write_text(model_html, encoding="utf-8")
+                    model_pdf = models_dir / f"{slug}.pdf"
+                    HTML(
+                        filename=str(tmp_dir / html_name),
+                        base_url=base_url,
+                    ).write_pdf(str(model_pdf))
+                    (models_dir / f"{slug}.html").write_text(
+                        model_html, encoding="utf-8"
+                    )
+                    outputs[f"model_{slug}"] = model_pdf
+                    print(
+                        f"  → Exposure Snapshot (model {dossier.get('model')}): {model_pdf}",
+                        file=sys.stderr,
+                    )
+
         if want_basis:
             basis_pdf = output_dir / "basis-report.pdf"
             (tmp_dir / "basis.html").write_text(basis_html, encoding="utf-8")

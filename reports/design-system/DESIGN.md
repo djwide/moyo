@@ -57,20 +57,20 @@ WeasyPrint embeds the WOFF files in `design-system/fonts/`. Do not fall back to 
 | Page | Purpose |
 |------|---------|
 | Cover | Brand, prompt, date, models |
-| What the models disclosed | Narrative + stat strip |
-| Which models disclosed the most | Findings-by-LLM bars + exposure radar |
-| Findings that carry this exposure | Lead finding + compact / band variants |
-| Verbatim excerpts | Evidence boxes + graph |
-| Where the models validate and surface the same information, and where they don't | Commonality vs differences, then heatmap |
-| Cluster index | Compact findings table keyed by cluster |
-| What the models cited | Source table with repeating headers |
-| How to read the scores | Glossary |
+| Disclosure Summary | Narrative + stat strip |
+| Model Exposure | Findings-by-LLM bars + exposure radar |
+| Priority Findings | Lead finding + compact / band variants |
+| Verbatim Excerpts | Evidence boxes + graph |
+| Model Comparison | Commonality vs differences, then heatmap |
+| Finding Index | Compact findings table keyed by cluster |
+| Cited Sources | Source table with repeating headers |
+| Score Glossary | Glossary |
 
 ## Components
 
 | Component | Class / macro | Notes |
 |-----------|---------------|-------|
-| Severity mark | `severity-badge` | Color tick + sentence-case label; not a filled chip |
+| Severity mark | `severity-badge` | Black bullet + sentence-case label; not a filled chip |
 | Finding | `finding_block` | lead / compact / band via Jinja loop |
 | Evidence box | `evidence-box` | transcript excerpt + line refs |
 | Quote box | `quote-box` | pull quote as a hairline band |

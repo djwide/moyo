@@ -1,6 +1,6 @@
 {% from "components/macros.j2" import finding_block %}
 <section class="page page--findings" id="findings">
-  <h2>{{ content.pages.findings.title or "Findings that carry this exposure" }}</h2>
+  <h2>{{ content.pages.findings.title or "Priority Findings" }}</h2>
   {% for f in content.abridged_findings %}
     {% if loop.first %}
       {{ finding_block(f, 'lead') }}

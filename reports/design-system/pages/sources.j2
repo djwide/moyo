@@ -1,7 +1,7 @@
 <section class="page page--sources" id="sources">
-  <h2>{{ content.pages.sources.title or "What the models cited" }}</h2>
+  <h2>{{ content.pages.sources.title or "Cited Sources" }}</h2>
   {% if content.sources %}
-  <p class="section-lede">{{ content.pages.sources.lede }}</p>
+  <p class="section-lede">{{ content.pages.sources.lede | link_cites }}</p>
   <table class="source-table">
     <colgroup>
       <col class="col-ref" />
@@ -17,8 +17,8 @@
     </thead>
     <tbody>
       {% for s in content.sources %}
-      <tr{% if loop.first %} class="is-priority"{% endif %}>
-        <td class="mono">{{ s.ref }}</td>
+      <tr{% if loop.first %} class="is-priority"{% endif %} id="cite-{{ s.ref }}">
+        <td class="mono"><a class="cite-ref" href="#cite-{{ s.ref }}">{{ s.ref }}</a></td>
         <td>
           <span class="source-table__label">{{ s.label }}</span>
           {% if s.url %}<span class="source-table__url">{{ s.url }}</span>{% endif %}

@@ -1,14 +1,14 @@
 {% from "components/macros.j2" import svg_asset, evidence_box %}
 <section class="page page--evidence" id="evidence">
-  <h2>{{ content.pages.evidence.title or "Verbatim excerpts with line numbers" }}</h2>
-  {{ svg_asset(content.assets.evidence_graph_snapshot or content.assets.evidence_graph, graphics.get('evidence_graph_snapshot') or graphics.get('evidence_graph'), 'compact', 'Evidence graph') }}
+  <h2>{{ content.pages.evidence.title or "Verbatim Excerpts" }}</h2>
+  {{ svg_asset(content.assets.evidence_graph_snapshot or content.assets.evidence_graph, graphics.get('evidence_graph_snapshot') or graphics.get('evidence_graph'), 'compact', 'Evidence Graph') }}
   {% set listed = content.evidence_findings if content.evidence_findings is defined else content.abridged_findings %}
   {% for f in listed %}
       <h3 class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}{% if f.raw_start_line %} · lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}{% endif %}</h3>
       {% if f.raw_excerpt %}
       {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
       {% else %}
-      <p>{{ f.claim }}</p>
+      <p>{{ f.claim | link_cites }}</p>
       {% endif %}
   {% endfor %}
 </section>

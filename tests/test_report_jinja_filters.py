@@ -5,6 +5,7 @@ from pipeline.jinja_filters import (
     format_number,
     format_score,
     format_timestamp,
+    link_cites,
 )
 from pipeline.content import build_content_doc
 
@@ -73,16 +74,29 @@ def test_build_content_doc_uses_action_titles():
             ],
             "clusters": [],
             "explore_meta": {
-                "models_tested": ["ChatGPT", "Claude"],
+                "models_tested": [
+                    "ChatGPT (OpenAI gpt-4o)",
+                    "Claude (Anthropic Sonnet)",
+                    "ChatGPT (OpenAI gpt-4o) (French)",
+                ],
                 "strategies": ["paraphrase"],
             },
         },
         report_date="18 Sep 2026",
+        aliases={
+            "ChatGPT (OpenAI gpt-4o)": "GPT",
+            "Claude (Anthropic Sonnet)": "Claude",
+        },
     )
-    assert "high-sensitivity" in doc["pages"]["executive_summary"]["title"]
-    assert doc["pages"]["findings"]["title"] == "1 finding that carries this exposure"
-    assert doc["pages"]["risk_overview"]["title"] == "Which models disclosed the most"
-    assert doc["pages"]["sources"]["title"] == "What the models cited"
+    assert doc["meta"]["models_tested"] == [
+        "ChatGPT (OpenAI gpt-4o)",
+        "Claude (Anthropic Sonnet)",
+    ]
+    assert "GPT" not in doc["meta"]["models_tested"]
+    assert doc["pages"]["executive_summary"]["title"] == "Disclosure Summary"
+    assert doc["pages"]["findings"]["title"] == "Priority Findings"
+    assert doc["pages"]["risk_overview"]["title"] == "Model Exposure"
+    assert doc["pages"]["sources"]["title"] == "Cited Sources"
     assert "Overview" not in doc["pages"]["executive_summary"]["title"]
     assert "reputational and compliance risk" not in (
         doc["pages"]["executive_summary"].get("why_it_matters") or ""
@@ -161,23 +175,43 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
                 "substantive_response": 1,
                 "claims_contributed": 1,
             },
-            "models_tested": ["GPT"],
+            "models_tested": ["ChatGPT (OpenAI gpt-4o)"],
             "strategies": ["original"],
             "include_remediation": False,
         },
         "pages": {
-            "executive_summary": {"title": "What the models disclosed"},
-            "risk_overview": {"title": "Which models disclosed the most"},
-            "findings": {"title": "Findings that carry this exposure"},
-            "evidence": {"title": "Verbatim excerpts with line numbers"},
-            "model_comparison": {"title": "Where the models validate"},
-            "appendix": {"claims_title": "Cluster index"},
-            "inventory": {"title": "Every cluster, ranked"},
-            "sources": {"title": "What the models cited"},
-            "glossary": {"title": "How to read the scores"},
+            "executive_summary": {
+                "title": "Disclosure Summary",
+                "body": "The formula appears in S21.",
+            },
+            "risk_overview": {"title": "Model Exposure"},
+            "findings": {"title": "Priority Findings"},
+            "evidence": {"title": "Verbatim Excerpts"},
+            "model_comparison": {"title": "Model Comparison"},
+            "appendix": {
+                "title": "Appendix",
+                "claims_title": "Finding Index",
+                "method_title": "Collection Method",
+                "corpus_title": "Normalized Responses",
+            },
+            "inventory": {"title": "Cluster Inventory"},
+            "sources": {"title": "Cited Sources"},
+            "glossary": {"title": "Score Glossary"},
         },
         "assets": {},
-        "abridged_findings": [],
+        "abridged_findings": [
+            {
+                "claim_id": "C0001",
+                "claim": "See S21 for the named source.",
+                "status": "UNVERIFIED",
+                    "sensitivity": 3,
+                    "specificity": 3,
+                "source_refs": ["S21"],
+                "citations_display": [
+                    {"ref": "S21", "label": "The Coca-Cola Company"}
+                ],
+            }
+        ],
         "evidence_findings": [],
         "top_finding": {"text": "x", "badges": []},
         "specific_findings": [],
@@ -185,12 +219,83 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
             "snapshot": {"title": "Next", "items": []},
             "basis": {"title": "Next", "items": []},
         },
-        "basis": {"inventory": [], "findings_full": [], "chain_details": []},
+        "basis": {
+            "inventory": [],
+            "findings_full": [],
+            "chain_details": [
+                {
+                    "label": "Empty cite chain",
+                    "chain_id": "CH1",
+                    "model_count": 1,
+                    "score": 1,
+                    "recovered": "A claim without sources.",
+                    "citations": [{"ref": "", "label": ""}],
+                    "derivation": {"steps": []},
+                    "corroborating_outputs": [],
+                    "implication": "",
+                }
+            ],
+        },
         "model_contrast": {},
-        "sources": [],
+        "sources": [
+            {
+                "ref": "S21",
+                "label": "The Coca-Cola Company",
+                "cited_by": 1,
+                "url": "https://example.test",
+            }
+        ],
         "glossary": [],
+        "model_dossiers": [
+            {
+                "slug": "gpt",
+                "model": "GPT",
+                "id": "model-gpt",
+                "detail_id": "model-gpt-detail",
+                "lede": "GPT produced 1 exclusive finding.",
+                "findings": 1,
+                "unique": 1,
+                "shared": 0,
+                "high": 1,
+                "overlap_pct": 0,
+                "exclusive_citation_count": 0,
+                "probes": {"answered": 1, "attempted": 1, "failed": 0, "empty": 0},
+                "distinctive": [],
+                "unique_findings": [],
+                "exclusive_citations": [],
+                "failed_probes": [],
+                "charts": {
+                    "fingerprint": "d_gpt_fingerprint",
+                    "mix": "d_gpt_mix",
+                    "probes": "d_gpt_probes",
+                    "overlap": "d_gpt_overlap",
+                },
+            }
+        ],
         "followups": [],
-        "response_corpus": [],
+        "response_corpus": [
+            {
+                "model": "GPT",
+                "query_id": "q1",
+                "query": "how?",
+                "text": "SNAPSHOT_MUST_OMIT_THIS_CORPUS",
+                "failed": False,
+            }
+        ],
+        "corpus_groups": [
+            {
+                "model": "GPT",
+                "items": [
+                    {
+                        "model": "GPT",
+                        "query_id": "q1",
+                        "query": "how?",
+                        "text": "SNAPSHOT_MUST_OMIT_THIS_CORPUS",
+                        "failed": False,
+                    }
+                ],
+            }
+        ],
     }
     snap = env.get_template("report.html.j2").render(
         content=content,
@@ -216,3 +321,113 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
     assert 'id="inventory"' in basis
     assert "Contents" in snap
     assert "Contents" in basis
+    assert "Disclosure Summary" in snap
+    assert "Model Exposure" in snap
+    assert "Verbatim Excerpts" in snap
+    assert "Priority Findings" in snap
+    assert "Model Comparison" in snap
+    assert "Finding Index" in snap
+    assert "Cited Sources" in snap
+    assert "Score Glossary" in snap
+    assert "Cluster Inventory" in basis
+    assert "Cluster Transcripts" in basis
+    assert "Exposure Chains" in basis
+    assert "Appendix" in basis
+    assert "Collection Method" in basis
+    assert "Normalized Responses" not in basis
+    assert 'id="appendix-method"' in basis
+    assert 'id="appendix-responses"' not in basis
+    assert "SNAPSHOT_MUST_OMIT_THIS_CORPUS" not in basis
+    assert "SNAPSHOT_MUST_OMIT_THIS_CORPUS" not in snap
+    assert "Normalized Responses" not in snap
+    assert 'id="appendix-responses"' not in snap
+    assert "The model provided no citations for this assertion." in basis
+    assert "toc--sub" in basis
+    assert 'id="model-gpt"' in snap
+    assert 'id="model-gpt"' in basis
+    assert 'id="model-gpt-detail"' in basis
+    assert 'id="model-gpt-detail"' not in snap
+    assert "Score Fingerprint" in snap
+    assert "Exclusive vs Shared" in basis
+    assert "model-exposure-list" not in snap
+    assert 'id="cite-S21"' in snap
+    assert 'href="#cite-S21"' in snap
+    assert 'id="cite-S21"' in basis
+    assert 'href="#cite-S21"' in basis
+    onepage = env.get_template("onepage.html.j2").render(
+        content=content,
+        graphics={},
+        logo_uri="",
+        partner_logo_uri="",
+        favicon_uri="",
+        css_href="css/onepage.css",
+    )
+    assert "ChatGPT (OpenAI gpt-4o)" in snap
+    assert "ChatGPT (OpenAI gpt-4o)" in basis
+    assert "ChatGPT (OpenAI gpt-4o)" in onepage
+    assert "models-line" in onepage
+
+
+def test_link_cites_wraps_source_refs_and_escapes_html():
+    html = str(link_cites('Named in S21 and S3, not <script>alert(1)</script>.'))
+    assert '<a class="cite-ref" href="#cite-S21">S21</a>' in html
+    assert '<a class="cite-ref" href="#cite-S3">S3</a>' in html
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_group_response_corpus_preserves_model_order():
+    from pipeline.content import group_response_corpus
+
+    groups = group_response_corpus(
+        [
+            {"model": "Claude", "query_id": "a"},
+            {"model": "GPT", "query_id": "b"},
+            {"model": "Claude", "query_id": "c"},
+        ]
+    )
+    assert [g["model"] for g in groups] == ["Claude", "GPT"]
+    assert [row["query_id"] for row in groups[0]["items"]] == ["a", "c"]
+
+
+def test_snapshot_markdown_omits_normalized_responses():
+    from pipeline.content import render_report_md
+
+    md = render_report_md(
+        {
+            "meta": {
+                "topic": "Vault",
+                "run_id": "t",
+                "report_date": "21 Sep 2026",
+                "counts": {},
+            },
+            "pages": {
+                "executive_summary": {"title": "Disclosure Summary", "body": "x"},
+                "risk_overview": {"title": "Model Exposure", "body": ""},
+                "model_comparison": {"title": "Model Comparison", "body": ""},
+                "findings": {"title": "Priority Findings", "body": ""},
+                "appendix": {"corpus_title": "Normalized Responses"},
+            },
+            "next_steps": {"snapshot": {"items": []}},
+            "response_corpus": [
+                {"model": "GPT", "query_id": "q1", "query": "q", "text": "secret"}
+            ],
+        }
+    )
+    assert "Normalized Responses" not in md
+    assert "secret" not in md
+
+
+def test_build_next_steps_mentions_isvf_on_basis_follow_up():
+    from pipeline.content import build_next_steps
+
+    steps = build_next_steps(include_remediation=False)
+    titles = [item["title"] for item in steps["basis"]["items"]]
+    assert "Verify organizational policy" in titles
+    isvf = next(
+        item
+        for item in steps["basis"]["items"]
+        if item["title"] == "Verify organizational policy"
+    )
+    assert "Idea Security Verification Framework" in isvf["body"]
+    assert "information security policy" in isvf["body"]

@@ -1,15 +1,15 @@
 {# Expects ``section`` = content.next_steps.snapshot | content.next_steps.basis #}
 <section class="page page--next-steps" id="next-steps">
-  <h2>{{ section.title or "Where this assessment should go next" }}</h2>
+  <h2>{{ section.title or "Recommended Next" }}</h2>
   {% if section.lede %}
-  <p class="section-lede">{{ section.lede }}</p>
+  <p class="section-lede">{{ section.lede | link_cites }}</p>
   {% endif %}
 
   <ol class="next-steps-list">
     {% for item in section['items'] or [] %}
     <li class="next-step{% if loop.first or loop.index % 3 == 0 %} next-step--spacious{% endif %}">
       <h3 class="next-step__title">{{ item.title }}</h3>
-      <p class="next-step__body">{{ item.body }}</p>
+      <p class="next-step__body">{{ item.body | link_cites }}</p>
     </li>
     {% endfor %}
   </ol>
