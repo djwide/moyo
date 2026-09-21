@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -232,6 +233,32 @@ def test_parse_order_rerun_models():
     assert spec.generation_mode == "rerun_models"
     assert spec.rerun_models == ["openai:gpt-4o", "custom:qwen-plus"]
     assert cw.resolve_rebuild_plan(spec) is None
+
+
+def test_incomplete_model_ids_from_failures():
+    llms = [
+        SimpleNamespace(
+            label="Claude (Anthropic Opus 5)",
+            spec=SimpleNamespace(provider="anthropic", model="claude-opus-5"),
+        ),
+        SimpleNamespace(
+            label="Kimi (Moonshot kimi-k3)",
+            spec=SimpleNamespace(provider="custom", model="kimi-k3"),
+        ),
+        SimpleNamespace(
+            label="Grok (xAI grok-4.6)",
+            spec=SimpleNamespace(provider="custom", model="grok-4.6"),
+        ),
+    ]
+    failures = [
+        "prompt: Claude (Anthropic Opus 5) [seed 0]: no content returned",
+        "prompt: Kimi (Moonshot kimi-k3) [seed 0]: Error code: 520",
+        "prompt: Claude (Anthropic Opus 5) [seed 2]: no content returned",
+    ]
+    assert cw.incomplete_model_ids_from_failures(failures, llms) == [
+        "anthropic:claude-opus-5",
+        "custom:kimi-k3",
+    ]
 
 
 def test_resolve_rebuild_plan_legacy_modes():

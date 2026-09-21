@@ -87,8 +87,9 @@ def is_retryable_llm_error(exc: BaseException) -> bool:
     if status is None:
         response = getattr(exc, "response", None)
         status = getattr(response, "status_code", None) if response is not None else None
-    if status in (429, 502, 503, 529):
+    if status in (429, 500, 502, 503, 520, 529):
         # 429 with a non-retryable marker already returned False above.
+        # 500/520 cover Moonshot/Cloudflare origin blips seen on kimi-k3.
         return True
 
     name = type(exc).__name__.lower()
@@ -383,13 +384,14 @@ def _openai_extra_body_for_model(model: str) -> Dict[str, Any]:
     ``max_tokens``, so short caps often return empty ``content``. Disable
     thinking so retrieval replies land in ``content``.
 
-    Kimi K3 always thinks. Do not send OpenAI ``reasoning_effort`` or K2
-    ``thinking`` toggles — Moonshot rejects them with tokenization failed.
+    Kimi K3 always thinks and defaults to ``reasoning_effort=max``, which
+    often burns the whole completion budget on ``reasoning_content`` and
+    leaves ``content`` empty. Force ``low`` for retrieval.
     """
     if _is_kimi_k25_or_k26(model):
         return {"thinking": {"type": "disabled"}}
     if _is_kimi_k3(model):
-        return {}
+        return {"reasoning_effort": "low"}
     if _is_qwen_reasoning_model(model):
         # qwen3.8-max thinks by default; non-streaming thinking times out on DashScope.
         return {"enable_thinking": False}
@@ -435,6 +437,22 @@ def _openai_create_extras(
     if _is_openai_max_completion_tokens_model(model):
         extras.setdefault("reasoning_effort", "low")
     return extras
+
+
+def _anthropic_retrieval_thinking_kwargs(model: str) -> Dict[str, Any]:
+    """Disable adaptive thinking on Opus 5+ so max_tokens yields visible text.
+
+    Opus 5 turns thinking on by default; thinking tokens share ``max_tokens``.
+    Without a text block the API still returns HTTP 200 and we record
+    ``no content returned``. Disabling is allowed only at effort ``high`` or
+    below.
+    """
+    if not _is_anthropic_no_temperature_model(model):
+        return {}
+    return {
+        "thinking": {"type": "disabled"},
+        "output_config": {"effort": "high"},
+    }
 
 
 def _anthropic_web_search_tools() -> List[Dict[str, Any]]:
@@ -1122,8 +1140,10 @@ class LLMClient:
                 "model": self.spec.model,
                 "messages": messages,
             }
-            if use_max_completion_tokens or _is_openai_max_completion_tokens_model(
-                self.spec.model
+            if (
+                use_max_completion_tokens
+                or _is_openai_max_completion_tokens_model(self.spec.model)
+                or _is_kimi_k3(self.spec.model)
             ):
                 create_kwargs["max_completion_tokens"] = max_tokens
             else:
@@ -1156,6 +1176,7 @@ class LLMClient:
                 "messages": [{"role": "user", "content": prompt}],
                 **kwargs,
             }
+            create_kwargs.update(_anthropic_retrieval_thinking_kwargs(self.spec.model))
             if web_search:
                 create_kwargs["tools"] = _anthropic_web_search_tools()
             if temperature is not None and not _omit_temperature_for_model(self.spec.model):
@@ -1234,8 +1255,10 @@ class LLMClient:
                 "messages": messages,
                 "tools": tools,
             }
-            if use_max_completion_tokens or _is_openai_max_completion_tokens_model(
-                self.spec.model
+            if (
+                use_max_completion_tokens
+                or _is_openai_max_completion_tokens_model(self.spec.model)
+                or _is_kimi_k3(self.spec.model)
             ):
                 create_kwargs["max_completion_tokens"] = max_tokens
             else:

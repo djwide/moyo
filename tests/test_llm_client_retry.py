@@ -59,6 +59,10 @@ def test_transient_rate_limit_is_retryable():
 def test_overloaded_and_503_are_retryable():
     assert is_retryable_llm_error(_FakeStatusError("overloaded_error", status_code=529))
     assert is_retryable_llm_error(_FakeStatusError("upstream", status_code=503))
+    assert is_retryable_llm_error(_FakeStatusError("origin blip", status_code=500))
+    assert is_retryable_llm_error(
+        _FakeStatusError("Error code: 520 - Cloudflare", status_code=520)
+    )
 
 
 def test_kimi_k26_disables_thinking_and_uses_non_thinking_temperature():
@@ -68,7 +72,8 @@ def test_kimi_k26_disables_thinking_and_uses_non_thinking_temperature():
     assert _openai_extra_body_for_model("gpt-4o") == {}
     assert _omit_temperature_for_model("kimi-k3") is True
     assert _fixed_temperature_for_model("kimi-k3") is None
-    assert _openai_extra_body_for_model("kimi-k3") == {}
+    assert _openai_extra_body_for_model("kimi-k3") == {"reasoning_effort": "low"}
+    assert _openai_create_extras("kimi-k3").get("reasoning_effort") == "low"
     assert _openai_extra_body_for_model("qwen3.8-max") == {"enable_thinking": False}
     assert _openai_extra_body_for_model("qwen-plus") == {}
 
@@ -208,6 +213,8 @@ def test_complete_omits_temperature_for_opus_5(monkeypatch):
     assert client.complete("hi", max_tokens=16, retries=0) == "OK"
     assert "temperature" not in captured
     assert captured["max_tokens"] >= 1024
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["output_config"] == {"effort": "high"}
     assert captured["tools"][0]["type"] == "web_search_20250305"
 
 
@@ -425,9 +432,11 @@ def test_complete_kimi_k3_skips_builtin_web_search(monkeypatch):
     monkeypatch.setattr(client, "_client", _fake_chat_client(captured))
     assert client.complete("hi", max_tokens=16, retries=0) == "OK"
     assert "tools" not in captured
-    assert "reasoning_effort" not in captured
+    assert captured.get("reasoning_effort") == "low"
     assert "extra_body" not in captured
     assert "temperature" not in captured
+    assert "max_completion_tokens" in captured
+    assert "max_tokens" not in captured
 
 
 def test_complete_kimi_k26_keeps_web_search_tools(monkeypatch):

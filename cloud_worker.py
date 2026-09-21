@@ -163,6 +163,43 @@ REBUILD_MODES = frozenset({"pdf_from_markdown", "rebuild_graphics", "from_stage"
 class ModelRerunIncomplete(RuntimeError):
     """Selected-model retrieval did not all succeed; report rebuild was skipped."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        incomplete_models: list[str] | None = None,
+        failures: list[str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.incomplete_models = [str(x).strip() for x in (incomplete_models or []) if str(x).strip()]
+        self.failures = [str(x) for x in (failures or []) if str(x).strip()]
+
+
+def incomplete_model_ids_from_failures(
+    failures: list[str],
+    llms: list[Any],
+) -> list[str]:
+    """Map failure lines back to retrieval model ids (provider:model)."""
+    from moyo.llm.registry import retrieval_model_id
+
+    by_label = {
+        str(getattr(llm, "label", "") or "").strip(): retrieval_model_id(llm.spec)
+        for llm in llms
+        if getattr(llm, "spec", None) is not None
+    }
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in failures:
+        text = str(line or "")
+        for label, model_id in by_label.items():
+            if not label or label not in text:
+                continue
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            out.append(model_id)
+    return out
+
 
 GENERATION_MODE_ALIASES = {
     "full": "full",
@@ -972,6 +1009,7 @@ def success_update_fields(
         "qcRequired": spec.qc_required,
         "reportStage": None,
         "error": None,
+        "incompleteRetrievalModels": [],
     }
     if title:
         fields["title"] = title
@@ -1504,8 +1542,11 @@ def run_rerun_models(
     work: Path | None = None,
     progress: Callable[[str], None] | None = None,
     set_stage: Callable[[str], None] | None = None,
-) -> tuple[list[PromptRun], list[str]]:
-    """Overwrite selected models in exploration.md, then rebuild from parse if they succeed."""
+) -> tuple[list[PromptRun], list[str], list[str]]:
+    """Overwrite selected models in exploration.md, then rebuild from parse if they succeed.
+
+    Returns ``(runs, failure_lines, incomplete_model_ids)``.
+    """
     from moyo.llm.registry import get_retrieval_llms
     from moyo.publicside.gatherpublicsources.explorer import rerun_exploration_models
     from reports.build_report import main as build_report_main
@@ -1619,7 +1660,7 @@ def run_rerun_models(
         )
     else:
         _progress(f"finished model rerun + parse rebuild of {len(runs)} report(s)")
-    return runs, failures
+    return runs, failures, incomplete_model_ids_from_failures(failures, llms)
 
 
 def run_rebuild(
@@ -2423,10 +2464,11 @@ def main() -> int:
                     f"(default {DEFAULT_MOYO_REPORTS_BUCKET})."
                 )
         rerun_failures: list[str] = []
+        incomplete_models: list[str] = []
         if spec.generation_mode == "rerun_models":
             if bucket is None:
                 raise RuntimeError("Model rerun needs Storage artifacts.")
-            runs, rerun_failures = run_rerun_models(
+            runs, rerun_failures, incomplete_models = run_rerun_models(
                 spec, bucket=bucket, work=work, set_stage=_set_stage
             )
             uploaded = _upload_runs(bucket, spec, runs, work=work)
@@ -2434,8 +2476,11 @@ def main() -> int:
                 raise ModelRerunIncomplete(
                     "Selected model retrieval did not all succeed; the report "
                     "was not rebuilt. Overwritten answers were saved. Remaining "
-                    "failures: " + "; ".join(rerun_failures[:8])
+                    "failures: " + "; ".join(rerun_failures[:8]),
+                    incomplete_models=incomplete_models or list(spec.rerun_models or []),
+                    failures=rerun_failures,
                 )
+            _mark({"incompleteRetrievalModels": []})
         elif resolve_rebuild_plan(spec) is not None:
             if bucket is None:
                 raise RuntimeError("PDF/picture rebuild needs Storage artifacts.")
@@ -2555,6 +2600,7 @@ def main() -> int:
                             "generationStartedAt": started,
                             "generationFinishedAt": utc_now(),
                             "error": message,
+                            "incompleteRetrievalModels": list(exc.incomplete_models or []),
                         }
                     )
                 elif (
