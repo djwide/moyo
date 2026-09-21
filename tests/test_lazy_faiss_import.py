@@ -31,6 +31,21 @@ def test_llm_fuzzer_import_does_not_load_embeddings():
     assert "shared_utils.embeddings" not in sys.modules
 
 
+def test_queryseed_import_does_not_load_numpy_analyzer():
+    """Cloud model-rerun imports QuerySeed; that must not pull BarrierAnalyzer."""
+    sys.modules.pop("moyo.publicside.barrierprobe.barrier_analyzer", None)
+    sys.modules.pop("moyo.publicside.barrierprobe.distribution", None)
+
+    import moyo.publicside.barrierprobe as barrierprobe
+
+    importlib.reload(barrierprobe)
+    from moyo.publicside.barrierprobe.llm_fuzzer import QuerySeed
+
+    assert QuerySeed is not None
+    assert "moyo.publicside.barrierprobe.barrier_analyzer" not in sys.modules
+    assert "moyo.publicside.barrierprobe.distribution" not in sys.modules
+
+
 def test_faiss_index_load_still_imports_faiss(monkeypatch, tmp_path):
     monkeypatch.setattr(faiss_index_module, "_faiss_module", None, raising=False)
     monkeypatch.setattr(faiss_index_module, "_faiss_unavailable", False, raising=False)

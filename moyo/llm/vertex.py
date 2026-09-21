@@ -1,4 +1,9 @@
-"""Vertex AI Gemini for Cloud Run (ADC, no AI Studio API key)."""
+"""Vertex AI Gemini for Cloud Run processing (ADC, no AI Studio API key).
+
+Retrieval ("what does AI know") uses Gemini Frontier / Frontier-1 on AI
+Studio. This module is for extract, cluster, synthesize, reword, and
+other pipeline jobs that should not impersonate a public Gemini model.
+"""
 
 from __future__ import annotations
 
@@ -16,8 +21,8 @@ VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 # AI Studio preview ids 404 on Vertex us-central1. Override with
 # ``MOYO_VERTEX_GEMINI_MODEL`` (e.g. ``google/gemini-1.5-pro``).
 VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
-# Hosted Ollama-replacement jobs (reword / extract / cluster / …). Retrieval
-# Gemini stays on VERTEX_DEFAULT_GEMINI_MODEL unless MOYO_VERTEX_GEMINI_MODEL.
+# Hosted Ollama-replacement jobs (reword / extract / cluster / …).
+# Retrieval Gemini is not rewritten here; it stays on AI Studio Frontier.
 VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-2.5-flash"
 
 # Sized for a full retrieval fan-out (e.g. 7 models × 3 seeds = 21 POSTs)
@@ -100,11 +105,20 @@ def _prefixed_gemini_id(model: str) -> str:
     return f"google/{text}"
 
 
-def vertex_gemini_model(_current: str = "") -> str:
-    """Stable Vertex model id for the Gemini *retrieval* slot."""
+def vertex_gemini_model(current: str = "") -> str:
+    """Stable Vertex model id for a Gemini *retrieval* slot.
+
+    AI Studio preview ids (``gemini-3.1-pro-preview``, ``gemini-3.8-flash``)
+    are not available on Vertex us-central1, so we map to a GA Vertex id.
+    Flash catalog slots stay on Flash; everything else uses Pro unless
+    ``MOYO_VERTEX_GEMINI_MODEL`` overrides.
+    """
     override = (os.environ.get("MOYO_VERTEX_GEMINI_MODEL") or "").strip()
     if override:
         return _prefixed_gemini_id(override)
+    name = (current or "").lower()
+    if "flash" in name:
+        return VERTEX_UTILITY_GEMINI_MODEL
     return VERTEX_DEFAULT_GEMINI_MODEL
 
 
@@ -117,10 +131,11 @@ def vertex_utility_model() -> str:
 
 
 def rewrite_gemini_spec_for_vertex(spec: LLMSpec) -> LLMSpec:
-    """Point Gemini retrieval at Vertex's OpenAI-compatible endpoint.
+    """Point a Gemini spec at Vertex's OpenAI-compatible endpoint.
 
-    Auth is applied later by :class:`~moyo.llm.client.LLMClient` via ADC
-    (no AI Studio API key, token refreshed per request).
+    Used for pipeline processing that already lives on Vertex. Retrieval
+    Frontier / Frontier-1 calls stay on AI Studio and must not go through
+    this rewrite.
     """
     ensure_env_loaded()
     if not running_in_cloud() or not vertex_enabled():

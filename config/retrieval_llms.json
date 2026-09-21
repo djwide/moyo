@@ -29,7 +29,7 @@
       "model": "gemini-3.1-pro-preview",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "api_key": "$GEMINI_API_KEY",
-      "label": "Gemini (Google gemini-3.1-pro-preview)",
+      "label": "Gemini Frontier-1 (Google gemini-3.1-pro-preview)",
       "max_tokens": 8192,
       "timeout": 240
     },
@@ -106,7 +106,7 @@
       "model": "gemini-3.8-flash",
       "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
       "api_key": "$GEMINI_API_KEY",
-      "label": "Gemini (Google gemini-3.8-flash)",
+      "label": "Gemini Frontier (Google gemini-3.8-flash)",
       "max_tokens": 8192,
       "timeout": 240
     },

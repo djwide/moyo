@@ -153,12 +153,6 @@ def get_retrieval_specs(*, include_optional: bool = False) -> List[LLMSpec]:
                 spec.label or spec.model,
             )
             continue
-        try:
-            from moyo.llm.vertex import rewrite_gemini_spec_for_vertex
-
-            spec = rewrite_gemini_spec_for_vertex(spec)
-        except Exception as exc:
-            logger.warning("Vertex Gemini rewrite skipped: %s", exc)
         kept.append(spec)
     return kept if kept else specs
 
@@ -214,6 +208,8 @@ def get_retrieval_llms(
         specs = filtered
     clients: List[LLMClient] = []
     for spec in specs:
+        # Retrieval Gemini stays on AI Studio (Frontier / Frontier-1). Vertex
+        # is used for extract / cluster / synthesize, not this fan-out.
         model_id = retrieval_model_id(spec)
         use_web_search = model_id in web_search_wanted
         spec = replace(

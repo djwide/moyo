@@ -221,6 +221,59 @@ def test_vertex_gemini_model_honours_override(monkeypatch):
     assert vertex_gemini_model("ignored") == "google/gemini-1.5-pro"
 
 
+def test_vertex_gemini_model_maps_flash_vs_pro(monkeypatch):
+    from moyo.llm.vertex import vertex_gemini_model
+
+    monkeypatch.delenv("MOYO_VERTEX_GEMINI_MODEL", raising=False)
+    assert vertex_gemini_model("gemini-3.1-pro-preview") == "google/gemini-2.5-pro"
+    assert vertex_gemini_model("gemini-3.8-flash") == "google/gemini-2.5-flash"
+
+
+def test_get_retrieval_llms_keeps_ai_studio_gemini(monkeypatch):
+    """Frontier / Frontier-1 retrieval must not be rewritten onto Vertex."""
+    from moyo.llm import registry as reg
+    from moyo.llm.client import LLMSpec
+
+    catalog = [
+        LLMSpec(
+            provider="openai",
+            model="gpt-4o",
+            api_key="sk-test",
+            label="ChatGPT (OpenAI gpt-4o)",
+        ),
+        LLMSpec(
+            provider="custom",
+            model="gemini-3.1-pro-preview",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key="AIza-test",
+            label="Gemini Frontier-1 (Google gemini-3.1-pro-preview)",
+        ),
+        LLMSpec(
+            provider="custom",
+            model="gemini-3.8-flash",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key="AIza-test",
+            label="Gemini Frontier (Google gemini-3.8-flash)",
+        ),
+    ]
+
+    monkeypatch.setattr(reg, "get_retrieval_specs", lambda include_optional=False: list(catalog))
+
+    clients = reg.get_retrieval_llms(
+        ["custom:gemini-3.1-pro-preview", "custom:gemini-3.8-flash", "openai:gpt-4o"]
+    )
+    models = [c.spec.model for c in clients]
+    urls = {c.spec.model: c.spec.base_url for c in clients}
+    assert models == [
+        "gpt-4o",
+        "gemini-3.1-pro-preview",
+        "gemini-3.8-flash",
+    ]
+    assert "generativelanguage.googleapis.com" in (urls["gemini-3.1-pro-preview"] or "")
+    assert "generativelanguage.googleapis.com" in (urls["gemini-3.8-flash"] or "")
+    assert "google/gemini-2.5-pro" not in models
+
+
 def test_vertex_utility_model_honours_override(monkeypatch):
     from moyo.llm.vertex import vertex_utility_model
 
