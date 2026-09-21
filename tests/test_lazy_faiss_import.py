@@ -1,5 +1,6 @@
 """Black-box paths should not load the native FAISS library at import time."""
 
+import importlib
 import sys
 
 import shared_utils.faiss_index as faiss_index_module
@@ -14,6 +15,20 @@ def test_llm_fuzzer_import_does_not_load_faiss(monkeypatch):
 
     assert faiss_index_module._faiss_module is None
     assert "faiss" not in sys.modules
+
+
+def test_llm_fuzzer_import_does_not_load_embeddings():
+    sys.modules.pop("sentence_transformers", None)
+    sys.modules.pop("torch", None)
+    sys.modules.pop("shared_utils.embeddings", None)
+
+    import moyo.publicside.barrierprobe.llm_fuzzer as llm_fuzzer
+
+    importlib.reload(llm_fuzzer)
+
+    assert "sentence_transformers" not in sys.modules
+    assert "torch" not in sys.modules
+    assert "shared_utils.embeddings" not in sys.modules
 
 
 def test_faiss_index_load_still_imports_faiss(monkeypatch, tmp_path):

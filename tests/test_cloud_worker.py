@@ -114,6 +114,45 @@ def test_normalize_product_aliases():
         cw.normalize_product("deluxe")
 
 
+def test_drop_cloud_unsupported_strategies():
+    assert cw.drop_cloud_unsupported_strategies(
+        ["paraphrase", "shuffle", "typo"]
+    ) == ["paraphrase", "typo"]
+    assert cw.drop_cloud_unsupported_strategies(["shuffle"]) == []
+    assert cw.drop_cloud_unsupported_strategies("paraphrase,shuffle") == ["paraphrase"]
+    assert cw.drop_cloud_unsupported_strategies(None) == []
+
+
+def test_parse_order_drops_shuffle():
+    spec = cw.parse_order(
+        "ord_1",
+        {
+            "product": "snapshot",
+            "prompts": ["Enron"],
+            "strategies": ["paraphrase", "shuffle"],
+        },
+    )
+    assert spec.strategies == ["paraphrase"]
+
+
+def test_dockerfile_is_lean_cloud_worker():
+    text = Path(__file__).resolve().parents[1].joinpath("Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    code = "\n".join(
+        line
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert '".[reports,cloud]"' in code
+    assert "AS builder" in code
+    assert "AS runner" in code
+    lowered = code.lower()
+    assert "torch" not in lowered
+    assert "sentence-transformers" not in lowered
+    assert "faiss" not in lowered
+
+
 def test_orders_collection_defaults_to_reports(monkeypatch):
     monkeypatch.delenv("FIRESTORE_ORDERS_COLLECTION", raising=False)
     monkeypatch.delenv("FIRESTORE_COLLECTION", raising=False)

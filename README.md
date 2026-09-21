@@ -48,11 +48,12 @@ moyo provides:
 
 ```bash
 # From the repo root — shared_utils is vendored and installed automatically
-pip install -e .
+pip install -e ".[embeddings,ingest]"
 
 # Optional extras
-pip install -e ".[monitoring]"   # psutil, requests
-pip install -e ".[gui]"          # PyQt5, matplotlib, scikit-learn
+pip install -e ".[monitoring]"            # psutil, requests
+pip install -e ".[gui,embeddings,ingest]" # PyQt5 + local index/ingest stack
+pip install -e ".[reports,cloud]"         # Cloud Run worker (no torch / FAISS)
 ```
 
 ## Quick Start
@@ -215,8 +216,8 @@ After `moyo setup` (or creating a project in the GUI):
 ## Development
 
 ```bash
-# Install in editable mode with all extras
-pip install -e ".[monitoring,gui]"
+# Install in editable mode with desktop extras
+pip install -e ".[monitoring,gui,embeddings,ingest]"
 
 python -m pytest tests/
 flake8 moyo/
@@ -229,7 +230,7 @@ A PyQt5 desktop GUI ships inside the package at `moyo/gui/app.py`, exposed as
 the `moyo-gui` console script:
 
 ```bash
-pip install -e ".[gui]"
+pip install -e ".[gui,embeddings,ingest]"
 moyo-gui                       # preferred
 # equivalently:
 python -m moyo.gui.app

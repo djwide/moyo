@@ -540,6 +540,30 @@ def is_awaiting_qc_status(raw: Any) -> bool:
     return key in AWAITING_QC_STATUSES
 
 
+# Shuffle needs local embeddings / torch; the Cloud Run image does not ship them.
+CLOUD_UNSUPPORTED_STRATEGIES = frozenset({"shuffle"})
+
+
+def drop_cloud_unsupported_strategies(raw: Any) -> list[str]:
+    """Drop strategies the worker image cannot run (currently ``shuffle``)."""
+    values: list[str]
+    if raw is None:
+        values = []
+    elif isinstance(raw, str):
+        values = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        values = [str(item).strip() for item in raw if str(item).strip()]
+    dropped = [item for item in values if item.lower() in CLOUD_UNSUPPORTED_STRATEGIES]
+    kept = [item for item in values if item.lower() not in CLOUD_UNSUPPORTED_STRATEGIES]
+    if dropped:
+        logger.warning(
+            "Dropping Cloud-unsupported fuzz strategies %s (need local embeddings). Kept %s.",
+            dropped,
+            kept or "(mode defaults)",
+        )
+    return kept
+
+
 def normalize_product(raw: Any) -> str:
     """Map storefront product strings to build_report --report values."""
     if raw is None or raw == "":
@@ -640,6 +664,7 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     strategies = _first(data, "strategies", default=[]) or []
     if isinstance(strategies, str):
         strategies = [part.strip() for part in strategies.split(",") if part.strip()]
+    strategies = drop_cloud_unsupported_strategies(strategies)
 
     workers_raw = _first(data, "workers", default=None)
     workers = None

@@ -29,8 +29,11 @@ git clone https://github.com/<org>/moyo.git
 cd moyo
 pyenv activate sente   # or your virtualenv
 
-# Base install (no GUI or monitoring deps) — always use the same python for pip and CLI
+# Base install (API clients only; no torch / FAISS) — always use the same python for pip and CLI
 python -m pip install -e .
+
+# Local corpus / index / document ingest (torch, sentence-transformers, FAISS, parsers)
+python -m pip install -e ".[embeddings,ingest]"
 
 # If `moyo` / `moyo-datainput` fail with ModuleNotFoundError but `python -c "import moyo"` works:
 bash scripts/fix-cli-path.sh
@@ -38,11 +41,11 @@ bash scripts/fix-cli-path.sh
 # With monitoring extras
 pip install -e ".[monitoring]"
 
-# With GUI extras
-pip install -e ".[gui]"
+# With GUI extras (index tabs also need embeddings+ingest)
+pip install -e ".[gui,embeddings,ingest]"
 
 # With everything
-pip install -e ".[monitoring,gui]"
+pip install -e ".[monitoring,gui,embeddings,ingest,reports,cloud,aws]"
 ```
 
 ## Running Tests
@@ -52,8 +55,8 @@ pytest tests/ -v
 ```
 
 The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull
-request: it installs the package with `pip install -e .`, smoke-tests the
-public imports, and then runs `pytest`.
+request: it installs the package with `pip install -e ".[embeddings,ingest]"`,
+smoke-tests the public imports, and then runs `pytest`.
 
 ## Code Style
 

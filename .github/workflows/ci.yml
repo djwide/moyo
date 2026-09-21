@@ -21,7 +21,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: pip install -e .
+        run: pip install -e ".[embeddings,ingest]"
 
       - name: Verify package imports
         run: |

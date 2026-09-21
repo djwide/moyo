@@ -54,7 +54,7 @@ moyo/
 ```bash
 # Install moyo from the repo root
 # (vendored shared_utils is installed automatically)
-pip install -e .
+pip install -e ".[embeddings,ingest]"
 ```
 
 ### Step 2: Initial Setup

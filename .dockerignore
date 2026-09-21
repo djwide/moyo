@@ -4,14 +4,26 @@
 .env.*
 __pycache__
 *.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
 
 data/
 indexes/
+projects/
 reports/build/
 dist/
 
 .venv/
 venv/
+
+tests/
+docs/
+examples/
+moyo/gui/
+moyo/privateside/
 
 *.pdf
 *.log

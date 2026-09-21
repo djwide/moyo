@@ -122,7 +122,7 @@ Closest matches → Text fuzzing → LLM queries → Semantic search → Refined
 
 ```bash
 # Install from the repo root (shared_utils is vendored and included automatically)
-pip install -e .
+pip install -e ".[embeddings,ingest]"
 
 # Run tests
 python -m pytest tests/

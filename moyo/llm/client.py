@@ -444,15 +444,13 @@ def _anthropic_retrieval_thinking_kwargs(model: str) -> Dict[str, Any]:
 
     Opus 5 turns thinking on by default; thinking tokens share ``max_tokens``.
     Without a text block the API still returns HTTP 200 and we record
-    ``no content returned``. Disabling is allowed only at effort ``high`` or
-    below.
+    ``no content returned``. Disabling is allowed at the default effort
+    (``high``) or below — do not send ``output_config`` here: older
+    ``anthropic`` SDKs reject that kwarg before the request is sent.
     """
     if not _is_anthropic_no_temperature_model(model):
         return {}
-    return {
-        "thinking": {"type": "disabled"},
-        "output_config": {"effort": "high"},
-    }
+    return {"thinking": {"type": "disabled"}}
 
 
 def _anthropic_web_search_tools() -> List[Dict[str, Any]]:

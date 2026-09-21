@@ -1243,7 +1243,7 @@ class GatherPublicSourcesTab(QWidget):
             if name == "shuffle":
                 cb.setToolTip(
                     "Swap type-similar tokens (lists, IDs, amounts, paths). "
-                    "Optional; not in mode defaults."
+                    "Desktop only — Cloud Run does not ship embeddings."
                 )
             self._explore_strategy_checks[name] = cb
             strategy_layout.addWidget(cb)
@@ -1378,12 +1378,28 @@ class GatherPublicSourcesTab(QWidget):
         defaults = set(strategies_for_fuzz_mode(mode))
         for name, cb in self._explore_strategy_checks.items():
             cb.setChecked(name in defaults)
+        self._sync_cloud_shuffle()
+
+    def _cloud_explore(self) -> bool:
+        return bool(
+            hasattr(self, "_compute") and self._compute["cloud_radio"].isChecked()
+        )
+
+    def _sync_cloud_shuffle(self) -> None:
+        """Shuffle needs local embeddings; disable it for Cloud Run jobs."""
+        cb = self._explore_strategy_checks.get("shuffle")
+        if cb is None:
+            return
+        cloud = self._cloud_explore()
+        cb.setEnabled(not cloud)
+        if cloud:
+            cb.setChecked(False)
 
     def _selected_explore_strategies(self) -> list[str]:
         selected = [
             name
             for name, cb in self._explore_strategy_checks.items()
-            if cb.isChecked()
+            if cb.isChecked() and not (name == "shuffle" and self._cloud_explore())
         ]
         return selected
 
@@ -4056,9 +4072,10 @@ class MoyoScanTab(QWidget):
             cb = QCheckBox(name)
             if name == "shuffle":
                 cb.setToolTip(
-                    "Swap type-similar tokens (lists, IDs, amounts, paths). "
-                    "Optional; not in mode defaults."
+                    "Shuffle needs local embeddings; not available on Cloud Run."
                 )
+                cb.setEnabled(False)
+                cb.setChecked(False)
             self._strategy_checks[name] = cb
             strategy_layout.addWidget(cb)
         strategy_layout.addStretch(1)
@@ -4109,7 +4126,9 @@ class MoyoScanTab(QWidget):
 
     def _selected_strategies(self) -> list[str]:
         return [
-            name for name, cb in self._strategy_checks.items() if cb.isChecked()
+            name
+            for name, cb in self._strategy_checks.items()
+            if cb.isChecked() and name != "shuffle"
         ]
 
     def _explore(self):

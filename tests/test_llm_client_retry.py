@@ -214,7 +214,7 @@ def test_complete_omits_temperature_for_opus_5(monkeypatch):
     assert "temperature" not in captured
     assert captured["max_tokens"] >= 1024
     assert captured["thinking"] == {"type": "disabled"}
-    assert captured["output_config"] == {"effort": "high"}
+    assert "output_config" not in captured
     assert captured["tools"][0]["type"] == "web_search_20250305"
 
 

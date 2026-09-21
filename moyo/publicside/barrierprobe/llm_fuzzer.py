@@ -16,17 +16,21 @@ import json
 import time
 import random
 
-from shared_utils import (
-    embed,
-    normalize_text,
-    TextNormalizationConfig,
-    get_logger,
-)
+from shared_utils.logging import get_logger
+from shared_utils.text_processing import TextNormalizationConfig, normalize_text
 
 if TYPE_CHECKING:
     from shared_utils.faiss_index import FAISSIndex
 
 logger = get_logger(__name__)
+
+
+def embed(texts, model_name=None, **kwargs):
+    """Lazy wrapper so black-box explore does not import torch at module load."""
+    from shared_utils.embeddings import embed as _embed
+
+    return _embed(texts, model_name, **kwargs)
+
 
 DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"

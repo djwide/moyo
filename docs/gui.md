@@ -7,10 +7,11 @@ console script.
 ## Installation
 
 ```bash
-pip install -e ".[gui]"
+pip install -e ".[gui,embeddings,ingest]"
 ```
 
-This installs `PyQt5`, `matplotlib`, and `scikit-learn`. Optional extras:
+This installs `PyQt5`, `matplotlib`, `scikit-learn`, and the local
+embeddings/ingest stack (torch, FAISS, document parsers). Optional extras:
 
 ```bash
 pip install umap-learn          # enables UMAP in the Visualize Indices tab
@@ -348,7 +349,7 @@ python reports/build_report.py -e path/to/exploration.md --test
 
 | Symptom | Fix |
 | ------- | --- |
-| `moyo-gui: command not found` | Run `pip install -e ".[gui]"`, then `pyenv rehash` (if using pyenv). |
+| `moyo-gui: command not found` | Run `pip install -e ".[gui,embeddings,ingest]"`, then `pyenv rehash` (if using pyenv). |
 | Black canvas / no plot | Click **Load Indices** first; the **Generate Plot** button is disabled until then. |
 | `UMAP not installed` | `pip install umap-learn` |
 | `scipy not available` | `pip install scipy` |
