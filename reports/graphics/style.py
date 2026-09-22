@@ -42,6 +42,9 @@ HEAT_SCALE = {
 # older report JSON.
 BAR_COLORS = {
     "security_relevant": INK,
+    "damaging": INK,
+    "potentially_damaging": TEAL_DEEP,
+    "sensitive": INK,
     "unexpected": TEAL_DEEP,
     "interesting": TEAL,
     "expected": "#C4BFB2",
@@ -53,6 +56,9 @@ BAR_COLORS = {
 
 BAR_LABELS = {
     "security_relevant": "Security relevant",
+    "damaging": "Damaging",
+    "potentially_damaging": "Potentially damaging",
+    "sensitive": "Sensitive",
     "unexpected": "Unexpected",
     "interesting": "Interesting",
     "expected": "Expected",

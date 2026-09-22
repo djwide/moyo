@@ -14,20 +14,14 @@
   </header>
 
   <div class="cover-body">
-    <p class="cover-kicker">Exposure assessment</p>
+    <p class="cover-kicker">{{ content.meta.kicker or "Exposure assessment" }}</p>
 
     <div class="cover-lead">
-      <p class="cover-prompt-label">Prompt</p>
+      <p class="cover-prompt-label">Topic</p>
       <p class="cover-prompt">
-        {% if content.meta.prompts and content.meta.prompts|length > 1 %}
-          {% for p in content.meta.prompts %}
-            “{{ p }}”{% if not loop.last %}<br />{% endif %}
-          {% endfor %}
-        {% else %}
-          “{{ (content.meta.prompts[0] if content.meta.prompts else content.meta.topic) }}”
-        {% endif %}
+        “{{ content.meta.display_topic or content.meta.topic or (content.meta.prompts[0] if content.meta.prompts else '') }}”
       </p>
-      <p class="cover-date">{{ content.meta.report_date }}{% if content.meta.generated_at %} · {{ content.meta.generated_at | format_timestamp }}{% endif %}</p>
+      <p class="cover-date">{{ content.meta.report_date }}{% if content.meta.subject_detail %} · {{ content.meta.subject_detail }}{% endif %}</p>
     </div>
 
     <h1 class="cover-title">{{ content.meta.headline or "What the models disclosed" }}</h1>
@@ -76,7 +70,7 @@
       <span><strong>{{ content.meta.counts.findings | format_int }}</strong> findings</span>
       <span><strong>{{ (content.meta.coverage.substantive_response if content.meta.coverage.substantive_response is number else content.meta.counts.llms_tested) | format_int }}</strong> substantive</span>
       {% if content.meta.counts.high_sensitivity %}
-      <span><strong>{{ content.meta.counts.high_sensitivity | format_int }}</strong> high-sensitivity</span>
+      <span><strong>{{ content.meta.counts.high_sensitivity | format_int }}</strong> {{ (content.meta.priority_label or "high-sensitivity") | lower }}</span>
       {% endif %}
       {% if content.meta.counts.chains %}
       <span><strong>{{ content.meta.counts.chains | format_int }}</strong> chains</span>

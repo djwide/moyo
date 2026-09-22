@@ -266,6 +266,9 @@ class OrderSpec:
     product_id: str = "moyo_snapshot"
     source: str | None = None
     storage_folder: str = ""
+    display_topic: str | None = None
+    scan_audience: str = "organization"
+    subject_detail: str | None = None
 
     def __post_init__(self) -> None:
         folder = (self.storage_folder or "").strip().strip("/")
@@ -676,6 +679,45 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if headline is not None:
         headline = str(headline).strip() or None
 
+    prompts = normalize_prompts(
+        _first(data, "prompts", "customerPrompts", "customer_prompts", "prompt")
+    )
+    display_topic = _first(
+        data,
+        "scanTargetName",
+        "scan_target_name",
+        "displayTopic",
+        "display_topic",
+        default=None,
+    )
+    if display_topic is not None:
+        display_topic = str(display_topic).strip() or None
+    if not display_topic:
+        org = str(_first(data, "organization", default="") or "").strip()
+        first_prompt = prompts[0] if prompts else ""
+        org_l = org.lower()
+        wrapish = (
+            org_l.startswith("what do ai systems already know")
+            or org_l.startswith("what personal, biographical")
+            or org_l.startswith("compile opposition research")
+        )
+        if org and not wrapish and org != first_prompt:
+            display_topic = org
+
+    audience_raw = str(
+        _first(data, "scanAudience", "scan_audience", default="") or ""
+    ).strip().lower()
+    scan_audience = audience_raw if audience_raw in {"opposition", "personal"} else "organization"
+    race = str(_first(data, "scanRace", "scan_race", default="") or "").strip()
+    if scan_audience == "opposition" and display_topic and race and race not in display_topic:
+        display_topic = f"{display_topic} — {race}"
+    city = str(_first(data, "scanCity", "scan_city", default="") or "").strip()
+    school = str(_first(data, "scanSchool", "scan_school", default="") or "").strip()
+    company = str(_first(data, "scanCompany", "scan_company", default="") or "").strip()
+    subject_detail = ", ".join(part for part in (city, school, company) if part) or None
+    if scan_audience == "opposition":
+        subject_detail = None
+
     email = _first(data, "customerEmail", "customer_email", default=None)
     if email is not None:
         email = str(email).strip() or None
@@ -695,9 +737,7 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
 
     return OrderSpec(
         order_id=order_id,
-        prompts=normalize_prompts(
-            _first(data, "prompts", "customerPrompts", "customer_prompts", "prompt")
-        ),
+        prompts=prompts,
         product=product,
         fuzz_mode=fuzz_mode,
         seeds=seeds,
@@ -739,6 +779,9 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         storage_folder=str(
             _first(data, "storageFolder", "storage_folder", default="") or ""
         ).strip(),
+        display_topic=display_topic,
+        scan_audience=scan_audience,
+        subject_detail=subject_detail,
     )
 
 
@@ -1338,6 +1381,13 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     if spec.headline:
         cfg.setdefault("render", {})
         cfg["render"]["headline"] = spec.headline
+    if spec.display_topic:
+        cfg.setdefault("render", {})
+        cfg["render"]["display_topic"] = spec.display_topic
+    cfg.setdefault("render", {})
+    cfg["render"]["audience"] = spec.scan_audience or "organization"
+    if spec.subject_detail:
+        cfg["render"]["subject_detail"] = spec.subject_detail
     from moyo.llm.utility import running_in_cloud, vertex_flash_hosted_config
 
     if running_in_cloud():

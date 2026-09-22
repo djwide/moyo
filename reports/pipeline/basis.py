@@ -14,20 +14,20 @@ from .textclean import plain_text
 from .cluster import dedupe_findings_by_group, present_id
 
 
-def _severity_label(finding: dict[str, Any]) -> str:
+def _severity_label(finding: dict[str, Any], audience: str = "organization") -> str:
     from .score import disclosure_class
 
-    return disclosure_class(finding)
+    return disclosure_class(finding, audience)
 
 
-def _rationale(f: dict[str, Any]) -> str:
+def _rationale(f: dict[str, Any], audience: str = "organization") -> str:
     """Plain-English severity rationale from the scored dimensions."""
     sens = int(f.get("sensitivity") or 0)
     spec = int(f.get("specificity") or 0)
     nov = int(f.get("novelty") or 0)
     corr = int(f.get("corroboration") or 1)
     status = (f.get("status") or "UNVERIFIED").upper()
-    sev = _severity_label(f)
+    sev = _severity_label(f, audience)
 
     detail_bits = []
     if spec >= 4:
@@ -123,6 +123,7 @@ def build_basis_section(
     *,
     remediation: list[dict[str, Any]] | None = None,
     all_findings: list[dict[str, Any]] | None = None,
+    audience: str = "organization",
 ) -> dict[str, Any]:
     """Build the ``basis`` content block consumed by the Basis Report template."""
     # Ranked inventory stays one row per collapsed exposure group.
@@ -152,9 +153,9 @@ def build_basis_section(
         row = dict(f)
         row["claim"] = plain_text(f.get("claim"))
         row["present_id"] = present_id(f)
-        row["severity"] = _severity_label(f)
+        row["severity"] = _severity_label(f, audience)
         row["disclosure_class"] = row["severity"]
-        row["rationale"] = _rationale(f)
+        row["rationale"] = _rationale(f, audience)
         findings_full.append(row)
 
     # 3) Exposure chains: one collapsed finding per chain; corroborating model

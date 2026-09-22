@@ -13,7 +13,8 @@ from typing import Any
 
 from graphics.style import short_model_name
 from pipeline.cluster import present_id
-from pipeline.score import disclosure_bin, _source_models
+from pipeline.audience import chart_order, disclosure_bin, normalize_audience
+from pipeline.score import _source_models
 
 _RADAR_KEYS = (
     "specificity",
@@ -96,9 +97,12 @@ def build_model_dossiers(
     radar_averages: dict[str, Any] | None = None,
     models_probed: list[str] | None = None,
     aliases: dict[str, str] | None = None,
+    audience: str | None = None,
 ) -> list[dict[str, Any]]:
     """One dossier per scanned model, roster order."""
     aliases = aliases or {}
+    voice = normalize_audience(audience)
+    band_keys = chart_order(voice)
     findings = list(findings or [])
     corpus = list(corpus or [])
     sources = list(sources or [])
@@ -128,12 +132,7 @@ def build_model_dossiers(
         mine = by_model.get(model) or []
         unique_rows: list[dict[str, Any]] = []
         shared_rows: list[dict[str, Any]] = []
-        bands = {
-            "security_relevant": 0,
-            "unexpected": 0,
-            "interesting": 0,
-            "expected": 0,
-        }
+        bands = {key: 0 for key in band_keys}
         status_mix: dict[str, int] = defaultdict(int)
         languages: dict[str, int] = defaultdict(int)
         my_refs: dict[str, int] = defaultdict(int)
@@ -153,7 +152,7 @@ def build_model_dossiers(
                 shared_rows.append(row)
             else:
                 unique_rows.append(row)
-            bands[disclosure_bin(finding)] += 1
+            bands[disclosure_bin(finding, voice)] += 1
             status = str(finding.get("status") or "UNVERIFIED").upper()
             status_mix[status] += 1
             lang = str(finding.get("prompt_language") or "").strip()
@@ -223,7 +222,7 @@ def build_model_dossiers(
                 "findings": n_findings,
                 "unique": n_unique,
                 "shared": len(shared_rows),
-                "high": bands["security_relevant"],
+                "high": bands.get(band_keys[0], 0),
                 "overlap_pct": overlap_pct,
                 "radar": _radar_means(mine),
                 "corpus_radar": corpus_radar,

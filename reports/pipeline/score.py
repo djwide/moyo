@@ -6,6 +6,16 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from .audience import (
+    chart_order,
+    disclosure_bin as audience_disclosure_bin,
+    disclosure_class as audience_disclosure_class,
+    normalize_audience,
+    priority_count,
+    profile,
+    retain_finding,
+    sort_key,
+)
 from .language import looks_like_english
 from .cluster import dedupe_findings_by_group, present_id
 
@@ -33,39 +43,21 @@ def _alias(model: str, aliases: dict[str, str]) -> str:
     return short[:18] if short else model[:18]
 
 
-def disclosure_class(finding: dict) -> str:
-    """User-facing finding bucket. Replaces high/medium/low display labels.
+def disclosure_class(finding: dict, audience: str | None = None) -> str:
+    """User-facing finding bucket.
 
-    Expected: ordinary public facts (headquarters, CEO, products).
-    Interesting: lesser-known partnerships, org relationships, personnel ties.
-    Unexpected: hard to look up directly, but models agree.
-    Security relevant: sensitive operational, personnel, technical, strategic,
-    or commercial information.
+    Organization (business intelligence and security): Expected, Interesting,
+    Unexpected, Security relevant. Opposition and personal scans remap those
+    bands. See ``pipeline.audience``.
     """
-    sens = int(finding.get("sensitivity") or 0)
-    novelty = int(finding.get("novelty") or 0)
-    corr = int(finding.get("corroboration") or 1)
-    if sens >= 4:
-        return "Security relevant"
-    if novelty >= 4 or (novelty >= 3 and corr >= 2):
-        return "Unexpected"
-    if novelty >= 2 or sens >= 3:
-        return "Interesting"
-    if corr >= 2 and sens >= 2:
-        return "Unexpected"
-    return "Expected"
+    return audience_disclosure_class(finding, normalize_audience(audience))
 
 
 DISCLOSURE_BIN_KEYS = ("security_relevant", "unexpected", "interesting", "expected")
 
 
-def disclosure_bin(finding: dict) -> str:
-    return {
-        "Security relevant": "security_relevant",
-        "Unexpected": "unexpected",
-        "Interesting": "interesting",
-        "Expected": "expected",
-    }[disclosure_class(finding)]
+def disclosure_bin(finding: dict, audience: str | None = None) -> str:
+    return audience_disclosure_bin(finding, normalize_audience(audience))
 
 
 def _sensitivity_band(sensitivity: int) -> str:
@@ -167,8 +159,7 @@ def build_model_contrast(
     }
 
 
-def _empty_llm_row(name: str) -> dict[str, Any]:
-    band_keys = DISCLOSURE_BIN_KEYS
+def _empty_llm_row(name: str, band_keys: tuple[str, ...] = DISCLOSURE_BIN_KEYS) -> dict[str, Any]:
     return {
         "model": name,
         "count": 0,
@@ -182,6 +173,7 @@ def aggregate_findings_by_llm(
     aliases: dict[str, str] | None = None,
     *,
     models_probed: list[str] | None = None,
+    audience: str | None = None,
 ) -> list[dict[str, Any]]:
     """Score each test LLM by finding quantity and sensitivity.
 
@@ -196,15 +188,16 @@ def aggregate_findings_by_llm(
     dropped.
     """
     aliases = aliases or {}
-    band_keys = DISCLOSURE_BIN_KEYS
+    voice = normalize_audience(audience)
+    band_keys = chart_order(voice)
     rows: dict[str, dict[str, Any]] = {}
     for claim in claims or []:
         sens = int(claim.get("sensitivity", 0) or 0)
-        band = disclosure_bin(claim)
+        band = disclosure_bin(claim, voice)
         for name in _source_models(claim, aliases):
             row = rows.get(name)
             if row is None:
-                row = _empty_llm_row(name)
+                row = _empty_llm_row(name, band_keys)
                 rows[name] = row
             row["count"] += 1
             row["score"] += float(sens)
@@ -224,7 +217,7 @@ def aggregate_findings_by_llm(
             if not key or key == "unknown" or key in seen:
                 continue
             seen.add(key)
-            row = rows.get(key) or _empty_llm_row(key)
+            row = rows.get(key) or _empty_llm_row(key, band_keys)
             ranked_src.append(row)
     else:
         ranked_src = list(rows.values())
@@ -259,6 +252,7 @@ def score_report(
     topic: str,
     config: dict,
     graphics_cfg: dict,
+    audience: str | None = None,
 ) -> dict[str, Any]:
     weights = config.get("weights") or {
         "sensitivity": 0.25,
@@ -270,12 +264,21 @@ def score_report(
     high_min = int(config.get("high_sensitivity_min", 4))
     dot_max = int(graphics_cfg.get("dot_max", 5))
     aliases = graphics_cfg.get("model_aliases") or {}
+    voice = normalize_audience(audience or config.get("audience"))
+    voice_profile = profile(voice)
 
     # Presentation lists one row per collapsed group. Charts average and
     # stack every extracted claim from the investigation.
-    investigation = list(claims or [])
+    investigation = [c for c in (claims or []) if retain_finding(c, voice)]
+    kept_ids = {c.get("claim_id") for c in investigation}
+    clusters = [
+        cl
+        for cl in (clusters or [])
+        if any(cid in kept_ids for cid in (cl.get("claim_ids") or []))
+        or any(cid in kept_ids for cid in (cl.get("member_ids") or []))
+    ]
     claims = dedupe_findings_by_group(investigation)
-    ranked = sorted(claims, key=lambda c: _weighted_score(c, weights), reverse=True)
+    ranked = sorted(claims, key=lambda c: (*sort_key(c, voice), -_weighted_score(c, weights)))
 
     # Model exposure: sum of sensitivity*specificity for claims from that model.
     # Collapsed claims carry ``source_models`` (all corroborating LLMs).
@@ -287,7 +290,7 @@ def score_report(
             model_scores[m] += weight
             model_counts[m] += 1
 
-    findings_by_llm = aggregate_findings_by_llm(investigation, aliases)
+    findings_by_llm = aggregate_findings_by_llm(investigation, aliases, audience=voice)
     model_contrast = build_model_contrast(investigation, aliases)
 
     if model_scores:
@@ -303,7 +306,18 @@ def score_report(
 
     # Prefer an English claim body for the headline finding; foreign-language
     # prompting stays on the finding as metadata, not as display text.
-    top = next((c for c in ranked if looks_like_english(str(c.get("claim") or ""))), None)
+    def _english(rows: list[dict]) -> dict | None:
+        return next((c for c in rows if looks_like_english(str(c.get("claim") or ""))), None)
+
+    if voice == "personal":
+        expected = [c for c in ranked if disclosure_class(c, voice) == "Expected"]
+        top = _english(expected) or _english(ranked)
+    elif voice == "opposition":
+        damaging = [c for c in ranked if disclosure_class(c, voice) == "Damaging"]
+        maybe = [c for c in ranked if disclosure_class(c, voice) == "Potentially damaging"]
+        top = _english(damaging) or _english(maybe) or _english(ranked)
+    else:
+        top = _english(ranked)
     if top is None:
         top = ranked[0] if ranked else None
     badges: list[str] = []
@@ -318,7 +332,9 @@ def score_report(
     contested = sum(1 for c in claims if c.get("status") == "CONTESTED")
     outliers = sum(1 for c in claims if c.get("status") == "OUTLIER")
     model_specific = sum(1 for c in claims if c.get("status") == "MODEL-SPECIFIC")
-    high_sens = sum(1 for c in claims if c.get("sensitivity", 0) >= high_min)
+    high_sens = priority_count(claims, voice) if voice != "organization" else sum(
+        1 for c in claims if c.get("sensitivity", 0) >= high_min
+    )
 
     # Simple exposure chain from score bands
     chain = [
@@ -385,7 +401,8 @@ def score_report(
         "run_id": run_id,
         "topic": topic_clean,
         "prompts": prompts,
-        "headline": _headline_for_topic(topic_clean),
+        "headline": voice_profile["headline"] if voice != "organization" else _headline_for_topic(topic_clean),
+        "audience": voice,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "counts": {
             "findings": len(claims),
@@ -418,7 +435,7 @@ def score_report(
             "confidence": avg("confidence"),
         },
         "sensitivity_bins": {
-            key: sum(1 for c in claims if disclosure_bin(c) == key) for key in DISCLOSURE_BIN_KEYS
+            key: sum(1 for c in claims if disclosure_bin(c, voice) == key) for key in chart_order(voice)
         },
         "followups": [],
         "executive_summary": "",

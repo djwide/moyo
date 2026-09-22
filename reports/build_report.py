@@ -675,10 +675,19 @@ def main(argv: list[str] | None = None) -> int:
             topic=topic,
             config=score_cfg,
             graphics_cfg=graphics_cfg,
+            audience=(render_cfg.get("audience") or ""),
         )
         if prompts:
             report_data["prompts"] = prompts
             report_data["topic"] = prompts[0]
+        display_topic = (render_cfg.get("display_topic") or "").strip()
+        if display_topic:
+            report_data["display_topic"] = display_topic
+        subject_detail = (render_cfg.get("subject_detail") or "").strip()
+        if subject_detail:
+            report_data["subject_detail"] = subject_detail
+        if render_cfg.get("audience"):
+            report_data["audience"] = str(render_cfg.get("audience"))
         if render_cfg.get("headline"):
             report_data["headline"] = render_cfg["headline"]
         attach_explore_meta(
@@ -698,6 +707,14 @@ def main(argv: list[str] | None = None) -> int:
             exploration,
             aliases=graphics_cfg.get("model_aliases") or {},
         )
+        display_topic = (render_cfg.get("display_topic") or "").strip()
+        if display_topic and not (report_data.get("display_topic") or "").strip():
+            report_data["display_topic"] = display_topic
+        subject_detail = (render_cfg.get("subject_detail") or "").strip()
+        if subject_detail and not (report_data.get("subject_detail") or "").strip():
+            report_data["subject_detail"] = subject_detail
+        if render_cfg.get("audience") and not report_data.get("audience"):
+            report_data["audience"] = str(render_cfg.get("audience"))
 
     if want("synthesize"):
         print("[3] synthesize", file=sys.stderr)
@@ -716,6 +733,14 @@ def main(argv: list[str] | None = None) -> int:
             if prompts:
                 report_data["prompts"] = prompts
                 report_data["topic"] = prompts[0]
+        display_topic = (render_cfg.get("display_topic") or "").strip()
+        if display_topic:
+            report_data["display_topic"] = display_topic
+        subject_detail = (render_cfg.get("subject_detail") or "").strip()
+        if subject_detail:
+            report_data["subject_detail"] = subject_detail
+        if render_cfg.get("audience"):
+            report_data["audience"] = str(render_cfg.get("audience"))
         report_data = synthesize(
             report_data,
             prompts_dir=REPORTS_ROOT / "prompts",

@@ -100,7 +100,13 @@ def model_mix_svg(
     height: int = 112,
 ) -> str:
     """100% stacked bar of this model's disclosure mix."""
-    order = DISCLOSURE_CHART_ORDER
+    keys = set((bands or {}).keys())
+    if "damaging" in keys or "potentially_damaging" in keys:
+        order = ("damaging", "potentially_damaging", "unexpected", "interesting")
+    elif "sensitive" in keys and "security_relevant" not in keys:
+        order = ("sensitive", "unexpected", "interesting", "expected")
+    else:
+        order = DISCLOSURE_CHART_ORDER
     counts = [max(0, int((bands or {}).get(k) or 0)) for k in order]
     total = sum(counts) or 1
     x, y, bar_h = 8, 28, 22

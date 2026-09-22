@@ -60,3 +60,19 @@ def test_onepage_template_contains_no_anchor_elements():
 
     assert "<a " not in template.lower()
     assert "<a>" not in template.lower()
+
+
+def test_title_surfaces_use_only_report_date():
+    """Cover / one-pager / exec stamp must not also print generated_at."""
+    root = Path(__file__).resolve().parents[1] / "reports" / "design-system"
+    paths = [
+        root / "templates" / "onepage.html.j2",
+        root / "pages" / "cover.j2",
+        root / "pages" / "basis_cover.j2",
+        root / "pages" / "executive_summary.j2",
+    ]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "generated_at" not in text, path.name
+        assert "format_timestamp" not in text, path.name
+        assert "report_date" in text, path.name

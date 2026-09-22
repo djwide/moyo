@@ -3,8 +3,6 @@
   <h2>{{ content.pages.executive_summary.title or "Disclosure Summary" }}</h2>
   <p class="run-stamp">
     {{ content.meta.report_date }}
-    {% if content.meta.generated_at %} · generated {{ content.meta.generated_at | format_timestamp }}{% endif %}
-    {% if content.meta.run_id %} · run {{ content.meta.run_id }}{% endif %}
   </p>
   <p class="section-lede">{{ content.pages.executive_summary.body | link_cites }}</p>
   {% if content.pages.executive_summary.pull_quote %}
@@ -14,7 +12,7 @@
   <dl class="stat-strip">
     <div class="stat-strip__lead">
       <span class="stat-strip__value">{{ content.meta.counts.high_sensitivity | format_int }}</span>
-      <span class="stat-strip__label">High-sensitivity</span>
+      <span class="stat-strip__label">{{ content.meta.priority_label or "High-sensitivity" }}</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ content.meta.counts.findings | format_int }}</span>

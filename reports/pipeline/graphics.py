@@ -136,9 +136,14 @@ def generate_graphics(
     out_dir.mkdir(parents=True, exist_ok=True)
     emit = emit or list(DEFAULT_EMIT)
     aliases = aliases or {}
-    chart_findings = list(
-        report_data.get("findings_all") or report_data.get("findings") or []
-    )
+    from pipeline.audience import normalize_audience, retain_finding
+
+    voice = normalize_audience(report_data.get("audience"))
+    chart_findings = [
+        f
+        for f in (report_data.get("findings_all") or report_data.get("findings") or [])
+        if retain_finding(f, voice)
+    ]
     chart_chains = list(report_data.get("chains") or [])
     graphics: dict[str, str] = {}
 
@@ -179,6 +184,7 @@ def generate_graphics(
                 chart_findings,
                 aliases,
                 models_probed=probed or None,
+                audience=voice,
             )
         else:
             rows = list(report_data.get("findings_by_llm") or [])

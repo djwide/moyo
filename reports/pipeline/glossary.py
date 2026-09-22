@@ -223,12 +223,27 @@ _GROUPS: list[dict[str, Any]] = [
 ]
 
 
-def glossary_groups() -> list[dict[str, Any]]:
+def glossary_groups(audience: str = "organization") -> list[dict[str, Any]]:
     """Glossary structure consumed by the report templates."""
-    return [
-        {
-            "title": group["title"],
-            "terms": [{"term": term, "definition": definition} for term, definition in group["terms"]],
-        }
-        for group in _GROUPS
-    ]
+    from pipeline.audience import normalize_audience
+
+    voice = normalize_audience(audience)
+    groups = []
+    for group in _GROUPS:
+        terms = [{"term": term, "definition": definition} for term, definition in group["terms"]]
+        if group["title"] == "Severity Bands" and voice == "opposition":
+            terms = [
+                {"term": "Damaging", "definition": "Sensitivity 4–5. Material an opposition researcher would treat as damaging."},
+                {"term": "Potentially damaging", "definition": "Sensitivity 3 that is not already Unexpected. Worth checking before it is treated as established."},
+                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
+                {"term": "Interesting", "definition": "Lesser-known public facts that are not yet damaging."},
+            ]
+        elif group["title"] == "Severity Bands" and voice == "personal":
+            terms = [
+                {"term": "Sensitive", "definition": "Sensitivity 4–5. Privacy-relevant associations models already state."},
+                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
+                {"term": "Interesting", "definition": "Lesser-known biographical or social facts."},
+                {"term": "Expected", "definition": "Ordinary public biography: roles, schools, employers, places."},
+            ]
+        groups.append({"title": group["title"], "terms": terms})
+    return groups

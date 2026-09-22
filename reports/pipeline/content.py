@@ -18,6 +18,13 @@ from .cluster import dedupe_findings_by_group, present_id
 from pipeline.graphics import ASSET_NAMES
 from pipeline.model_dossiers import build_model_dossiers
 from pipeline.synthesize import parse_executive_payload
+from pipeline.audience import (
+    disclosure_class as audience_disclosure_class,
+    normalize_audience,
+    profile as audience_profile,
+    retain_finding,
+    sort_key,
+)
 from pipeline.score import build_model_contrast
 from pipeline.basis import build_basis_section
 from pipeline.glossary import glossary_groups
@@ -33,10 +40,10 @@ from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
 
 
-def _severity_label(finding: dict[str, Any]) -> str:
+def _severity_label(finding: dict[str, Any], audience: str = "organization") -> str:
     from pipeline.score import disclosure_class
 
-    return disclosure_class(finding)
+    return disclosure_class(finding, audience)
 
 
 def group_response_corpus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -185,6 +192,110 @@ def build_next_steps(*, include_remediation: bool = False) -> dict[str, Any]:
             "items": basis_items,
         },
     }
+
+
+def _status(finding: dict[str, Any]) -> str:
+    return str(finding.get("status") or "").upper().replace("_", "-").replace(" ", "-")
+
+
+def opposition_next_steps(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Close an opposition report on verification, not remediation."""
+    damaging = [f for f in findings if audience_disclosure_class(f, "opposition") == "Damaging"]
+    corroborated = [
+        f
+        for f in damaging
+        if _status(f) == "CORROBORATED" or int(f.get("corroboration") or 1) >= 2
+    ]
+    contested = [
+        f
+        for f in findings
+        if _status(f) in {"CONTESTED", "OUTLIER", "MODEL-SPECIFIC"}
+        or int(f.get("corroboration") or 1) < 2
+    ]
+    section = {
+        "title": "What to Verify",
+        "lede": (
+            "Treat corroborated damaging claims as the working record. "
+            "Single-model and contested items stay allegations until a "
+            "public source confirms them."
+        ),
+        "items": [
+            {
+                "title": "Corroborated damaging claims",
+                "body": (
+                    f"{len(corroborated)} damaging claim"
+                    f"{'' if len(corroborated) == 1 else 's'} "
+                    "are stated by more than one model or marked corroborated. "
+                    "Start verification there."
+                ),
+            },
+            {
+                "title": "Contested or single-model items",
+                "body": (
+                    f"{len(contested)} claim"
+                    f"{'' if len(contested) == 1 else 's'} "
+                    "are contested, outliers, or unique to one model. "
+                    "Do not treat those as an established record."
+                ),
+            },
+            {
+                "title": "Public sources the models named",
+                "body": (
+                    "Check the cited filings, news, and disclosures behind "
+                    "each damaging claim. Distinguish allegation, reporting, "
+                    "and established record."
+                ),
+            },
+        ],
+    }
+    return {"snapshot": section, "basis": section}
+
+
+def personal_next_steps(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Close a personal report on what is already public."""
+    expected = sum(1 for f in findings if audience_disclosure_class(f, "personal") == "Expected")
+    lesser = sum(
+        1
+        for f in findings
+        if audience_disclosure_class(f, "personal") in {"Interesting", "Unexpected"}
+    )
+    sensitive = sum(1 for f in findings if audience_disclosure_class(f, "personal") == "Sensitive")
+    section = {
+        "title": "What Is Already Public",
+        "lede": (
+            "These are associations models already state from public "
+            "information: biography, lesser-known ties, and sensitive facts."
+        ),
+        "items": [
+            {
+                "title": "Biography models already state",
+                "body": (
+                    f"{expected} finding"
+                    f"{'' if expected == 1 else 's'} "
+                    "read as ordinary public biography: roles, schools, "
+                    "employers, and places."
+                ),
+            },
+            {
+                "title": "Lesser-known associations",
+                "body": (
+                    f"{lesser} finding"
+                    f"{'' if lesser == 1 else 's'} "
+                    "are interesting or unexpected relative to a first-page search."
+                ),
+            },
+            {
+                "title": "Sensitive associations",
+                "body": (
+                    f"{sensitive} finding"
+                    f"{'' if sensitive == 1 else 's'} "
+                    "are sensitive. They are included because models already "
+                    "associate them with this person from public sources."
+                ),
+            },
+        ],
+    }
+    return {"snapshot": section, "basis": section}
 
 
 def _enrich_findings(
@@ -401,6 +512,40 @@ def _prompts_list(report_data: dict[str, Any]) -> list[str]:
     return [topic] if topic and topic != run_id else []
 
 
+def _looks_like_scan_wrap(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    return lowered.startswith("what do ai systems already know") or lowered.startswith(
+        "what personal, biographical"
+    )
+
+
+def _display_topic(report_data: dict[str, Any]) -> str:
+    """Customer-facing topic: never the reconstructed retrieval wrap."""
+    display = plain_text(report_data.get("display_topic") or "").strip()
+    if display:
+        return display
+    topic = plain_text(report_data.get("topic") or "").strip()
+    if topic and not _looks_like_scan_wrap(topic):
+        return topic
+    for candidate in _prompts_list(report_data):
+        text = plain_text(candidate).strip()
+        if text and not _looks_like_scan_wrap(text):
+            return text
+    return ""
+
+
+def _customer_prompts(report_data: dict[str, Any]) -> list[str]:
+    display = _display_topic(report_data)
+    if display:
+        return [display]
+    out: list[str] = []
+    for candidate in _prompts_list(report_data):
+        text = plain_text(candidate).strip()
+        if text and not _looks_like_scan_wrap(text):
+            out.append(text)
+    return out
+
+
 def _build_executive_page(
     report_data: dict[str, Any],
     *,
@@ -519,9 +664,15 @@ def build_content_doc(
 ) -> dict[str, Any]:
     """Structured content document consumed by design-system templates."""
     counts = report_data.get("counts") or {}
+    voice = normalize_audience(report_data.get("audience"))
+    voice_profile = audience_profile(voice)
     top = report_data.get("top_finding") or {}
     findings_enriched = _enrich_findings(
-        list(report_data.get("findings_all") or report_data.get("findings") or []),
+        [
+            f
+            for f in (report_data.get("findings_all") or report_data.get("findings") or [])
+            if retain_finding(f, voice)
+        ],
         list(report_data.get("clusters") or []),
         aliases=aliases,
         llm_config=llm_config,
@@ -529,9 +680,12 @@ def build_content_doc(
     sources, findings_enriched = build_source_registry(findings_enriched)
     # Snapshot lists collapsed groups; basis narrative can use every claim.
     findings = dedupe_findings_by_group(findings_enriched)
+    findings.sort(key=lambda f: sort_key(f, voice))
     top = _sync_top_finding_english(top, findings)
     pull = plain_text(top.get("text") or "")[:280]
-    prompts = [plain_text(p) for p in _prompts_list(report_data)]
+    display_topic = _display_topic(report_data)
+    # Customer-facing templates never show reconstructed retrieval wraps.
+    prompts = _customer_prompts(report_data)
     exec_page = _build_executive_page(
         report_data,
         findings=findings,
@@ -571,6 +725,7 @@ def build_content_doc(
     ] or [
         f for f in findings if looks_like_english(str(f.get("claim") or ""))
     ] or findings
+    english_findings = sorted(english_findings, key=lambda f: sort_key(f, voice))
     specific_findings = sorted(
         [
             f
@@ -600,6 +755,17 @@ def build_content_doc(
         for f in english_findings
         if f.get("claim_id") not in shown_ids
     ][:onepage_more_cap]
+    if voice == "personal":
+        sensitive = [
+            f
+            for f in english_findings
+            if audience_disclosure_class(f, "personal") == "Sensitive"
+        ]
+        shown = shown_ids | {f.get("claim_id") for f in onepage_more}
+        missing = [f for f in sensitive if f.get("claim_id") not in shown]
+        if missing:
+            onepage_more = list(onepage_more) + missing[:2]
+            abridged = list(abridged) + [f for f in missing[:2] if f not in abridged]
 
     explore_meta = report_data.get("explore_meta") or {}
     alias_map = aliases or {}
@@ -628,9 +794,11 @@ def build_content_doc(
     languages_count = len(prompt_languages) if foreign_languages else 0
 
     headline = (report_data.get("headline") or "").strip()
-    if not headline or headline.lower().startswith("what ai systems reveal about"):
-        headline = "What AI Systems Reveal"
-    if headline.lower() == "what ai systems reveal":
+    if voice != "organization" and (
+        not headline or headline.lower().startswith("what ai systems reveal")
+    ):
+        headline = voice_profile["headline"]
+    elif not headline or headline.lower().startswith("what ai systems reveal about"):
         headline = "What AI Systems Reveal"
 
     # Basis Report content; ISVF remediation only when explicitly enabled.
@@ -649,6 +817,7 @@ def build_content_doc(
         findings,
         remediation=remediation,
         all_findings=findings_enriched,
+        audience=voice,
     )
     followups = [
         {
@@ -678,9 +847,16 @@ def build_content_doc(
     return {
         "meta": {
             "run_id": report_data.get("run_id"),
-            "topic": report_data.get("topic"),
+            "topic": display_topic or report_data.get("topic"),
+            "display_topic": display_topic or None,
+            "subject_detail": (report_data.get("subject_detail") or "").strip() or None,
             "prompts": prompts,
             "headline": headline,
+            "audience": voice,
+            "kicker": voice_profile["kicker"],
+            "basis_kicker": voice_profile["basis_kicker"],
+            "eyebrow": voice_profile["eyebrow"],
+            "priority_label": voice_profile["priority_label"],
             "generated_at": report_data.get("generated_at")
             or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "report_date": report_date,
@@ -811,11 +987,17 @@ def build_content_doc(
         "abridged_findings": abridged,
         "evidence_findings": evidence_findings,
         "basis": basis_section,
-        "next_steps": build_next_steps(include_remediation=include_remediation),
+        "next_steps": (
+            opposition_next_steps(findings)
+            if voice == "opposition"
+            else personal_next_steps(findings)
+            if voice == "personal"
+            else build_next_steps(include_remediation=include_remediation)
+        ),
         "specific_findings": specific_findings,
         "onepage_more": onepage_more,
         "sources": sources,
-        "glossary": glossary_groups(),
+        "glossary": glossary_groups(voice),
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],
         "model_exposure": report_data.get("model_exposure") or [],
         "findings_by_llm": report_data.get("findings_by_llm") or [],
@@ -831,7 +1013,8 @@ def build_content_doc(
             models_probed=list(
                 explore_meta.get("models_tested") or models_tested or []
             ),
-            aliases=aliases,
+            aliases=alias_map,
+            audience=voice,
         ),
         "model_contrast": contrast,
         "chains": report_data.get("chains") or [],
@@ -937,7 +1120,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
     ]
     for f in content.get("abridged_findings") or content.get("findings") or []:
-        sev = _severity_label(f)
+        sev = _severity_label(f, str(meta.get("audience") or "organization"))
         source = f.get("source_cite") or f.get("source_model")
         refs = ", ".join(f.get("source_refs") or [])
         lines.append(

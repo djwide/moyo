@@ -157,9 +157,17 @@ def llm_findings_bars_svg(
     Bar height is the sum of finding sensitivities for that model. Stacks are
     colored by sensitivity band so both volume and severity are visible.
     """
-    band_order = ("expected", "interesting", "unexpected", "security_relevant")  # bottom → top
     series = [dict(r) for r in (rows or []) if r.get("model")]
     series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
+    sample = series[0].get("bands") if series else {}
+    band_keys = set((sample or {}).keys()) if isinstance(sample, dict) else set()
+    if "damaging" in band_keys or "potentially_damaging" in band_keys:
+        legend_order = ("damaging", "potentially_damaging", "unexpected", "interesting")
+    elif "sensitive" in band_keys and "security_relevant" not in band_keys:
+        legend_order = ("sensitive", "unexpected", "interesting", "expected")
+    else:
+        legend_order = DISCLOSURE_CHART_ORDER
+    band_order = tuple(reversed(legend_order))  # bottom → top
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 
     # Plot area sits inside a hairline panel matched to the exposure radar.
@@ -260,7 +268,7 @@ def llm_findings_bars_svg(
 
     legend = []
     legend_y = height - 34
-    items = [(k, BAR_LABELS[k]) for k in DISCLOSURE_CHART_ORDER]
+    items = [(k, BAR_LABELS[k]) for k in legend_order]
     n_leg = len(items)
     # Even slots across the plot area; each swatch+label pair is centered in its slot.
     char_w = 5.5  # ~font-size 10

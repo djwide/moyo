@@ -120,7 +120,7 @@ def build_alert_email(
             "",
             f"We received substantive answers from {n_substantive} of {n_attempted} models "
             f"and retained {n_findings} findings "
-            f"({n_high} high-sensitivity).",
+            f"({n_high} {(meta.get('priority_label') or 'high-sensitivity').lower()}).",
             "",
             "Highest-impact claims from this run:",
             *bullets_txt,
@@ -208,7 +208,7 @@ def build_alert_email(
               We received substantive answers from <strong>{n_substantive}</strong> of
               <strong>{n_attempted}</strong> models and retained
               <strong>{n_findings}</strong> findings
-              (<strong>{n_high}</strong> high-sensitivity). Below are the
+              (<strong>{n_high}</strong> {(meta.get('priority_label') or 'high-sensitivity').lower()}). Below are the
               highest-impact claims from this run.
             </p>
             <ol style="margin:0;padding-left:18px;">
