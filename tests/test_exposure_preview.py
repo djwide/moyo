@@ -2,7 +2,7 @@ from moyo.exposure_preview import estimate_exposure_preview
 
 
 def test_preview_is_stable_and_avoids_word_counts():
-    topic = "What's the secret recipe for Brightwell Cola?"
+    topic = "What's the secret recipe for Duff Cola?"
     first = estimate_exposure_preview(topic)
     second = estimate_exposure_preview(f"  {topic}  ")
     assert first["snapshot"] == second["snapshot"]

@@ -42,26 +42,26 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.32rem 0.7rem;
+  padding: 0.64rem 0.7rem;
   margin: 0 -6mm 0.2rem;
   width: calc(100% + 12mm);
 }
 .brand-bar__slot {
   display: flex;
   align-items: center;
-  min-height: 18px;
+  min-height: 36px;
 }
 .brand-bar__slot--left { margin-right: auto; }
 .brand-bar__slot--right { margin-left: auto; }
 .brand-bar img.logo {
-  height: 18px;
+  height: 36px;
   width: auto;
   display: block;
   object-fit: contain;
 }
 .brand-bar .logo--partner {
-  height: 22px;
-  max-width: 110px;
+  height: 44px;
+  max-width: 220px;
 }
 
 .snap-masthead {
