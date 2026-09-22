@@ -154,8 +154,8 @@ _GROUPS: list[dict[str, Any]] = [
                 "Findings By LLM",
                 "Each tested model scored by how many findings it produced and "
                 "how sensitive those findings are. Bar height is the sum of "
-                "finding sensitivities; color shows the high / medium / low / "
-                "informational mix.",
+                "finding sensitivities; color shows Expected, Interesting, "
+                "Unexpected, and Security relevant.",
             ),
             (
                 "Model comparison",

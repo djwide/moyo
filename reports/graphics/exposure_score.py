@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 from .style import (
     BAR_COLORS,
     BAR_LABELS,
+    DISCLOSURE_CHART_ORDER,
     CREAM_DEEP,
     FONT,
     INK,
@@ -143,7 +144,7 @@ def _llm_row_score(row: Mapping[str, Any]) -> float:
     score = row.get("score")
     if score is not None:
         return max(0.0, float(score or 0))
-    return sum(_band_score(row, k) for k in ("high", "medium", "low", "informational"))
+    return sum(_band_score(row, k) for k in DISCLOSURE_CHART_ORDER)
 
 
 def llm_findings_bars_svg(
@@ -156,7 +157,7 @@ def llm_findings_bars_svg(
     Bar height is the sum of finding sensitivities for that model. Stacks are
     colored by sensitivity band so both volume and severity are visible.
     """
-    band_order = ("informational", "low", "medium", "high")  # bottom → top
+    band_order = ("expected", "interesting", "unexpected", "security_relevant")  # bottom → top
     series = [dict(r) for r in (rows or []) if r.get("model")]
     series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
@@ -259,7 +260,7 @@ def llm_findings_bars_svg(
 
     legend = []
     legend_y = height - 34
-    items = [(k, BAR_LABELS[k]) for k in ("high", "medium", "low", "informational")]
+    items = [(k, BAR_LABELS[k]) for k in DISCLOSURE_CHART_ORDER]
     n_leg = len(items)
     # Even slots across the plot area; each swatch+label pair is centered in its slot.
     char_w = 5.5  # ~font-size 10

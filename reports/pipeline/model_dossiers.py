@@ -13,7 +13,7 @@ from typing import Any
 
 from graphics.style import short_model_name
 from pipeline.cluster import present_id
-from pipeline.score import _sensitivity_band, _source_models
+from pipeline.score import disclosure_bin, _source_models
 
 _RADAR_KEYS = (
     "specificity",
@@ -129,10 +129,10 @@ def build_model_dossiers(
         unique_rows: list[dict[str, Any]] = []
         shared_rows: list[dict[str, Any]] = []
         bands = {
-            "high": 0,
-            "medium": 0,
-            "low": 0,
-            "informational": 0,
+            "security_relevant": 0,
+            "unexpected": 0,
+            "interesting": 0,
+            "expected": 0,
         }
         status_mix: dict[str, int] = defaultdict(int)
         languages: dict[str, int] = defaultdict(int)
@@ -153,7 +153,7 @@ def build_model_dossiers(
                 shared_rows.append(row)
             else:
                 unique_rows.append(row)
-            bands[_sensitivity_band(int(finding.get("sensitivity") or 0))] += 1
+            bands[disclosure_bin(finding)] += 1
             status = str(finding.get("status") or "UNVERIFIED").upper()
             status_mix[status] += 1
             lang = str(finding.get("prompt_language") or "").strip()
@@ -223,7 +223,7 @@ def build_model_dossiers(
                 "findings": n_findings,
                 "unique": n_unique,
                 "shared": len(shared_rows),
-                "high": bands["high"],
+                "high": bands["security_relevant"],
                 "overlap_pct": overlap_pct,
                 "radar": _radar_means(mine),
                 "corpus_radar": corpus_radar,

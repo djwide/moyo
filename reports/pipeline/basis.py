@@ -14,14 +14,10 @@ from .textclean import plain_text
 from .cluster import dedupe_findings_by_group, present_id
 
 
-def _severity_label(sensitivity: int) -> str:
-    if sensitivity >= 4:
-        return "high"
-    if sensitivity == 3:
-        return "medium"
-    if sensitivity == 2:
-        return "low"
-    return "info"
+def _severity_label(finding: dict[str, Any]) -> str:
+    from .score import disclosure_class
+
+    return disclosure_class(finding)
 
 
 def _rationale(f: dict[str, Any]) -> str:
@@ -31,7 +27,7 @@ def _rationale(f: dict[str, Any]) -> str:
     nov = int(f.get("novelty") or 0)
     corr = int(f.get("corroboration") or 1)
     status = (f.get("status") or "UNVERIFIED").upper()
-    sev = _severity_label(sens).capitalize()
+    sev = _severity_label(f)
 
     detail_bits = []
     if spec >= 4:
@@ -48,7 +44,7 @@ def _rationale(f: dict[str, Any]) -> str:
         corr_note = "single-model disclosure"
 
     return (
-        f"{sev} severity (sensitivity {sens}/5, specificity {spec}/5, "
+        f"{sev} (sensitivity {sens}/5, specificity {spec}/5, "
         f"novelty {nov}/5). {detail.capitalize()}; status {status}; {corr_note}."
     )
 
@@ -156,7 +152,8 @@ def build_basis_section(
         row = dict(f)
         row["claim"] = plain_text(f.get("claim"))
         row["present_id"] = present_id(f)
-        row["severity"] = _severity_label(int(f.get("sensitivity") or 0))
+        row["severity"] = _severity_label(f)
+        row["disclosure_class"] = row["severity"]
         row["rationale"] = _rationale(f)
         findings_full.append(row)
 

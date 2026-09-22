@@ -33,14 +33,10 @@ from pipeline.sources import build_source_registry, top_source_labels
 from pipeline.textclean import plain_text, strip_markdown
 
 
-def _severity_label(sensitivity: int) -> str:
-    if sensitivity >= 4:
-        return "high"
-    if sensitivity == 3:
-        return "medium"
-    if sensitivity == 2:
-        return "low"
-    return "info"
+def _severity_label(finding: dict[str, Any]) -> str:
+    from pipeline.score import disclosure_class
+
+    return disclosure_class(finding)
 
 
 def group_response_corpus(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -941,7 +937,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         "",
     ]
     for f in content.get("abridged_findings") or content.get("findings") or []:
-        sev = _severity_label(int(f.get("sensitivity") or 0))
+        sev = _severity_label(f)
         source = f.get("source_cite") or f.get("source_model")
         refs = ", ".join(f.get("source_refs") or [])
         lines.append(

@@ -84,8 +84,11 @@ def test_dossier_chart_svgs_render_and_key_to_dossiers():
     fp = model_fingerprint_svg({"sensitivity": 4}, {"sensitivity": 2})
     assert "This model" in fp
     assert "Corpus mean" in fp
-    mix = model_mix_svg({"high": 2, "medium": 1, "low": 0, "informational": 0})
-    assert "Sensitivity Mix" in mix
+    mix = model_mix_svg(
+        {"security_relevant": 2, "unexpected": 1, "interesting": 0, "expected": 0}
+    )
+    assert "Disclosure mix" in mix
+    assert "Security relevant" in mix
     probes = model_probes_svg({"attempted": 3, "answered": 2, "empty": 0, "failed": 1})
     assert "Probe Outcomes" in probes
     overlap = model_overlap_svg(3, 1)

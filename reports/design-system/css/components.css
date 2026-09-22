@@ -26,6 +26,10 @@
   font-size: 0.95em;
   line-height: 1;
 }
+.severity-badge--expected,
+.severity-badge--interesting,
+.severity-badge--unexpected,
+.severity-badge--security-relevant,
 .severity-badge--high,
 .severity-badge--medium,
 .severity-badge--low,

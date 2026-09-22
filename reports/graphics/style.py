@@ -38,8 +38,13 @@ HEAT_SCALE = {
     5: INK,
 }
 
-# Severity palette for distribution bars
+# Disclosure palette for distribution bars. Legacy sensitivity keys still color
+# older report JSON.
 BAR_COLORS = {
+    "security_relevant": INK,
+    "unexpected": TEAL_DEEP,
+    "interesting": TEAL,
+    "expected": "#C4BFB2",
     "high": INK,
     "medium": TEAL_DEEP,
     "low": TEAL,
@@ -47,11 +52,17 @@ BAR_COLORS = {
 }
 
 BAR_LABELS = {
-    "high": "High",
-    "medium": "Medium",
-    "low": "Low",
-    "informational": "Info",
+    "security_relevant": "Security relevant",
+    "unexpected": "Unexpected",
+    "interesting": "Interesting",
+    "expected": "Expected",
+    "high": "Security relevant",
+    "medium": "Interesting",
+    "low": "Interesting",
+    "informational": "Expected",
 }
+
+DISCLOSURE_CHART_ORDER = ("security_relevant", "unexpected", "interesting", "expected")
 
 
 def escape_xml(text: str) -> str:

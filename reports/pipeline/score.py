@@ -33,6 +33,41 @@ def _alias(model: str, aliases: dict[str, str]) -> str:
     return short[:18] if short else model[:18]
 
 
+def disclosure_class(finding: dict) -> str:
+    """User-facing finding bucket. Replaces high/medium/low display labels.
+
+    Expected: ordinary public facts (headquarters, CEO, products).
+    Interesting: lesser-known partnerships, org relationships, personnel ties.
+    Unexpected: hard to look up directly, but models agree.
+    Security relevant: sensitive operational, personnel, technical, strategic,
+    or commercial information.
+    """
+    sens = int(finding.get("sensitivity") or 0)
+    novelty = int(finding.get("novelty") or 0)
+    corr = int(finding.get("corroboration") or 1)
+    if sens >= 4:
+        return "Security relevant"
+    if novelty >= 4 or (novelty >= 3 and corr >= 2):
+        return "Unexpected"
+    if novelty >= 2 or sens >= 3:
+        return "Interesting"
+    if corr >= 2 and sens >= 2:
+        return "Unexpected"
+    return "Expected"
+
+
+DISCLOSURE_BIN_KEYS = ("security_relevant", "unexpected", "interesting", "expected")
+
+
+def disclosure_bin(finding: dict) -> str:
+    return {
+        "Security relevant": "security_relevant",
+        "Unexpected": "unexpected",
+        "Interesting": "interesting",
+        "Expected": "expected",
+    }[disclosure_class(finding)]
+
+
 def _sensitivity_band(sensitivity: int) -> str:
     if sensitivity >= 4:
         return "high"
@@ -133,7 +168,7 @@ def build_model_contrast(
 
 
 def _empty_llm_row(name: str) -> dict[str, Any]:
-    band_keys = ("high", "medium", "low", "informational")
+    band_keys = DISCLOSURE_BIN_KEYS
     return {
         "model": name,
         "count": 0,
@@ -161,11 +196,11 @@ def aggregate_findings_by_llm(
     dropped.
     """
     aliases = aliases or {}
-    band_keys = ("high", "medium", "low", "informational")
+    band_keys = DISCLOSURE_BIN_KEYS
     rows: dict[str, dict[str, Any]] = {}
     for claim in claims or []:
         sens = int(claim.get("sensitivity", 0) or 0)
-        band = _sensitivity_band(sens)
+        band = disclosure_bin(claim)
         for name in _source_models(claim, aliases):
             row = rows.get(name)
             if row is None:
@@ -383,10 +418,7 @@ def score_report(
             "confidence": avg("confidence"),
         },
         "sensitivity_bins": {
-            "high": sum(1 for c in claims if c.get("sensitivity", 0) >= 4),
-            "medium": sum(1 for c in claims if c.get("sensitivity", 0) == 3),
-            "low": sum(1 for c in claims if c.get("sensitivity", 0) == 2),
-            "informational": sum(1 for c in claims if c.get("sensitivity", 0) <= 1),
+            key: sum(1 for c in claims if disclosure_bin(c) == key) for key in DISCLOSURE_BIN_KEYS
         },
         "followups": [],
         "executive_summary": "",

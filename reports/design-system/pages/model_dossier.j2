@@ -15,7 +15,7 @@
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.high | format_int }}</span>
-      <span class="stat-strip__label">High-sens</span>
+      <span class="stat-strip__label">Security</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.overlap_pct | format_number }}%</span>
@@ -36,7 +36,7 @@
       {{ svg_asset('', graphics.get(dossier.charts.fingerprint), 'compact', 'Score Fingerprint') }}
     </div>
     <div class="dossier-charts__stack">
-      {{ svg_asset('', graphics.get(dossier.charts.mix), 'compact', 'Sensitivity Mix') }}
+      {{ svg_asset('', graphics.get(dossier.charts.mix), 'compact', 'Disclosure mix') }}
       {{ svg_asset('', graphics.get(dossier.charts.probes), 'compact', 'Probe Outcomes') }}
     </div>
   </div>

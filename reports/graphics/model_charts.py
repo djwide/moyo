@@ -12,6 +12,7 @@ from typing import Any, Mapping, Sequence
 from .style import (
     BAR_COLORS,
     BAR_LABELS,
+    DISCLOSURE_CHART_ORDER,
     FONT,
     FONT_MONO,
     INK,
@@ -96,10 +97,10 @@ def model_mix_svg(
     bands: Mapping[str, Any] | None,
     *,
     width: int = 280,
-    height: int = 88,
+    height: int = 112,
 ) -> str:
-    """100% stacked bar of this model's sensitivity mix."""
-    order = ("high", "medium", "low", "informational")
+    """100% stacked bar of this model's disclosure mix."""
+    order = DISCLOSURE_CHART_ORDER
     counts = [max(0, int((bands or {}).get(k) or 0)) for k in order]
     total = sum(counts) or 1
     x, y, bar_h = 8, 28, 22
@@ -122,15 +123,17 @@ def model_mix_svg(
             )
         cursor += w
     legend = []
-    lx = 8
-    for key in order:
-        legend.append(
-            f'<rect x="{lx}" y="{height - 18}" width="8" height="8" fill="{BAR_COLORS[key]}"/>'
-            f'<text x="{lx + 11}" y="{height - 11}" font-family="{FONT}" font-size="8" '
-            f'fill="{INK}">{escape_xml(BAR_LABELS[key])}</text>'
-        )
-        lx += 52
-    body = f"""  <text x="8" y="16" font-family="{FONT}" font-size="9" font-weight="600" fill="{MUTED}">Sensitivity Mix</text>
+    for row_index, keys in enumerate((order[:2], order[2:])):
+        lx = 8
+        y = height - 34 + row_index * 16
+        for key in keys:
+            legend.append(
+                f'<rect x="{lx}" y="{y}" width="8" height="8" fill="{BAR_COLORS[key]}"/>'
+                f'<text x="{lx + 11}" y="{y + 8}" font-family="{FONT}" font-size="8" '
+                f'fill="{INK}">{escape_xml(BAR_LABELS[key])}</text>'
+            )
+            lx += 136
+    body = f"""  <text x="8" y="16" font-family="{FONT}" font-size="9" font-weight="600" fill="{MUTED}">Disclosure mix</text>
   {"".join(chunks)}
   {"".join(legend)}"""
     return svg_root(width, height, body)
