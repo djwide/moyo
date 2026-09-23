@@ -208,7 +208,7 @@ def get_retrieval_llms(
         specs = filtered
     clients: List[LLMClient] = []
     for spec in specs:
-        # Retrieval Gemini stays on AI Studio (Frontier / Frontier-1). Vertex
+        # Retrieval Gemini stays on AI Studio. Vertex
         # is used for extract / cluster / synthesize, not this fan-out.
         model_id = retrieval_model_id(spec)
         use_web_search = model_id in web_search_wanted

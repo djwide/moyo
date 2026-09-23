@@ -299,12 +299,12 @@ def _ollama_group_batch(
     try:
         text = client.complete(prompt)
     except Exception as exc:
-        print(f"  warn: ollama cluster batch failed: {exc}", file=sys.stderr)
+        print(f"  warn: cluster batch failed: {exc}", file=sys.stderr)
         return _singleton_groups(sorted(valid))
     groups = _parse_groups_payload(text or "", valid)
     if not groups:
         print(
-            "  warn: ollama cluster returned unparseable groups; "
+            "  warn: cluster returned unparseable groups; "
             "keeping batch claims unmerged",
             file=sys.stderr,
         )
@@ -340,7 +340,7 @@ def group_claim_ids_with_ollama(
         chunk_ids = all_ids[i : i + size]
         batch = [by_id[cid] for cid in chunk_ids]
         print(
-            f"  ollama cluster batch {i // size + 1}/"
+            f"  cluster batch {i // size + 1}/"
             f"{(len(all_ids) + size - 1) // size} ({len(batch)} claims)",
             file=sys.stderr,
         )
@@ -373,7 +373,7 @@ def group_claim_ids_with_ollama(
     for i in range(0, len(reps), size):
         chunk = reps[i : i + size]
         print(
-            f"  ollama cluster merge-pass {i // size + 1}/"
+            f"  cluster merge-pass {i // size + 1}/"
             f"{(len(reps) + size - 1) // size} ({len(chunk)} groups)",
             file=sys.stderr,
         )
@@ -639,7 +639,7 @@ def cluster_claims(
         except Exception as exc:
             # Last resort: do not use Jaccard; leave unmerged so the run continues.
             print(
-                f"  warn: ollama clustering failed ({exc}); "
+                f"  warn: clustering failed ({exc}); "
                 "leaving claims unmerged",
                 file=sys.stderr,
             )

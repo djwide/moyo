@@ -410,7 +410,9 @@ def _openai_create_extras(
 
     When ``web_search`` is true, turns on provider web-search options where the
     Chat Completions endpoint exposes a simple flag (Qwen ``enable_search``,
-    Gemini ``web_search_options``, OpenRouter ``web`` plugin). OpenAI/xAI/
+    OpenRouter ``web`` plugin). Gemini AI Studio’s OpenAI-compat layer does
+    **not** accept ``web_search_options``; use
+    :meth:`LLMClient._complete_gemini_with_web_search` instead. OpenAI/xAI/
     Anthropic use dedicated tool paths elsewhere in this module.
     """
     extras: Dict[str, Any] = {}
@@ -432,11 +434,67 @@ def _openai_create_extras(
     # ``none`` is rejected by Pro-class aliases that require thinking mode.
     if _is_gemini_model(model, base_url):
         extras["reasoning_effort"] = "low"
-        if web_search:
-            extras["web_search_options"] = {}
     if _is_openai_max_completion_tokens_model(model):
         extras.setdefault("reasoning_effort", "low")
     return extras
+
+
+def _gemini_native_api_key(spec: "LLMSpec") -> Optional[str]:
+    """API key for Gemini AI Studio generateContent (not OpenAI-compat)."""
+    if spec.api_key:
+        return spec.api_key
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+
+
+def _citations_from_gemini_generate_content(payload: Dict[str, Any]) -> List[str]:
+    """URLs from Gemini generateContent groundingMetadata."""
+    out: List[str] = []
+    seen: set[str] = set()
+    for candidate in payload.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        grounding = (
+            candidate.get("groundingMetadata")
+            or candidate.get("grounding_metadata")
+            or {}
+        )
+        if not isinstance(grounding, dict):
+            continue
+        chunks = grounding.get("groundingChunks") or grounding.get("grounding_chunks") or []
+        for chunk in chunks:
+            if not isinstance(chunk, dict):
+                continue
+            web = chunk.get("web") or chunk.get("retrievedContext") or {}
+            if not isinstance(web, dict):
+                continue
+            url = str(web.get("uri") or web.get("url") or "").strip()
+            title = str(web.get("title") or "").strip()
+            cite = _citation_string(url, title)
+            if cite and cite not in seen:
+                seen.add(cite)
+                out.append(cite)
+    return out
+
+
+def _text_from_gemini_generate_content(payload: Dict[str, Any]) -> str:
+    """Visible model text from a generateContent JSON body."""
+    parts_out: List[str] = []
+    for candidate in payload.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content") or {}
+        if not isinstance(content, dict):
+            continue
+        for part in content.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            # Skip pure thought parts when the API marks them.
+            if part.get("thought") is True:
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                parts_out.append(text)
+    return "\n".join(parts_out).strip()
 
 
 def _anthropic_retrieval_thinking_kwargs(model: str) -> Dict[str, Any]:
@@ -1223,6 +1281,16 @@ class LLMClient:
         if provider in ("openai", "custom"):
             if (
                 web_search
+                and _is_gemini_model(self.spec.model, self.spec.base_url)
+            ):
+                return self._complete_gemini_with_web_search(
+                    prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            if (
+                web_search
                 and _is_moonshot_url(self.spec.base_url)
                 and not _is_kimi_k3(self.spec.model)
             ):
@@ -1322,6 +1390,79 @@ class LLMClient:
             response,
             lambda: _responses_output_text(response),
         )
+
+    def _complete_gemini_with_web_search(
+        self,
+        prompt: str,
+        *,
+        system: Optional[str],
+        temperature: Optional[float],
+        max_tokens: int,
+    ) -> str:
+        """Gemini AI Studio generateContent with Google Search grounding.
+
+        The OpenAI-compat endpoint rejects ``web_search_options`` and does not
+        accept ``google_search`` tools, so web search must use the native REST
+        API.
+        """
+        import json
+        import urllib.error
+        import urllib.request
+
+        api_key = _gemini_native_api_key(self.spec)
+        if not api_key:
+            raise RuntimeError(
+                f"{self.label} web search requires GEMINI_API_KEY (or GOOGLE_API_KEY)"
+            )
+
+        body: Dict[str, Any] = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"maxOutputTokens": int(max_tokens)},
+        }
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+        if temperature is not None and not _omit_temperature_for_model(self.spec.model):
+            body["generationConfig"]["temperature"] = float(temperature)
+
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self.spec.model}:generateContent"
+        )
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+            method="POST",
+        )
+        timeout = max(30, int(getattr(self.spec, "timeout", 0) or 120))
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            message = detail.strip() or str(exc)
+            raise RuntimeError(
+                f"Gemini generateContent web search failed ({exc.code}): {message[:800]}"
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"{self.label} returned a non-object generateContent body")
+
+        def _parse() -> str:
+            from moyo.llm.content_filter import strip_reasoning_spill
+
+            text = strip_reasoning_spill(_text_from_gemini_generate_content(payload))
+            return _append_source_lines(text, _citations_from_gemini_generate_content(payload))
+
+        return self._text_from_stored_response(payload, _parse)
 
     def _complete_moonshot_with_web_search(
         self,

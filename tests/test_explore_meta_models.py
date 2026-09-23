@@ -278,3 +278,30 @@ def test_snapshot_evidence_graph_omits_clusters_not_in_abridged_set(tmp_path: Pa
     assert "CL013" not in snap
     assert "CL001" in snap
     assert "CL010" in snap
+
+
+def test_opposition_evidence_graph_omits_inferred_conclusions():
+    from graphics.graph import evidence_graph_svg
+
+    findings = [
+        {
+            "claim_id": "C0001",
+            "cluster_id": "CL001",
+            "present_id": "CL001",
+            "claim": "A sourced public fact.",
+            "source_model": "Claude (Anthropic Sonnet)",
+            "source_models": ["Claude (Anthropic Sonnet)"],
+            "citations": ["https://example.com/record"],
+        }
+    ]
+    chains = [{"chain_id": "CH1", "label": "Inferred chain", "claim_ids": ["C0001"]}]
+    svg = evidence_graph_svg(
+        findings,
+        chains,
+        include_conclusions=False,
+        aliases=ALIASES,
+    )
+    assert "Inferred conclusions" not in svg
+    assert "CH1" not in svg
+    assert "CL001" in svg
+    assert "Clusters" in svg

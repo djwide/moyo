@@ -1,6 +1,6 @@
 """Vertex AI Gemini for Cloud Run processing (ADC, no AI Studio API key).
 
-Retrieval ("what does AI know") uses Gemini Frontier / Frontier-1 on AI
+Retrieval ("what does AI know") uses Gemini on AI
 Studio. This module is for extract, cluster, synthesize, reword, and
 other pipeline jobs that should not impersonate a public Gemini model.
 """
@@ -22,7 +22,7 @@ VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 # ``MOYO_VERTEX_GEMINI_MODEL`` (e.g. ``google/gemini-1.5-pro``).
 VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
 # Hosted Ollama-replacement jobs (reword / extract / cluster / …).
-# Retrieval Gemini is not rewritten here; it stays on AI Studio Frontier.
+# Retrieval Gemini is not rewritten here; it stays on AI Studio.
 VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-2.5-flash"
 
 # Sized for a full retrieval fan-out (e.g. 7 models × 3 seeds = 21 POSTs)
@@ -134,7 +134,7 @@ def rewrite_gemini_spec_for_vertex(spec: LLMSpec) -> LLMSpec:
     """Point a Gemini spec at Vertex's OpenAI-compatible endpoint.
 
     Used for pipeline processing that already lives on Vertex. Retrieval
-    Frontier / Frontier-1 calls stay on AI Studio and must not go through
+    AI Studio Gemini calls stay on AI Studio and must not go through
     this rewrite.
     """
     ensure_env_loaded()

@@ -80,7 +80,9 @@ graphics:
     - evidence_graph
   model_aliases:
     "ChatGPT (OpenAI gpt-4o)": GPT
+    "Gemini (Google gemini-3.1)": Gemini
     "Gemini (Google gemini-3.1-pro-preview)": Gemini
+    "Gemini Frontier-1 (Google gemini-3.1-pro-preview)": Gemini
     "Grok (xAI grok-4.5)": Grok
     "Kimi (Moonshot kimi-k2.6)": Kimi
     "Llama 3.3 70B Instruct": Llama70

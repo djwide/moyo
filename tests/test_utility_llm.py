@@ -189,7 +189,7 @@ def test_vertex_rewrites_gemini_in_cloud(monkeypatch):
         model="gemini-3.1-pro-preview",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
         api_key="AIza-old",
-        label="Gemini (Google gemini-3.1-pro-preview)",
+        label="Gemini (Google gemini-3.1)",
     )
     out = rewrite_gemini_spec_for_vertex(spec)
     assert "aiplatform.googleapis.com" in (out.base_url or "")
@@ -230,7 +230,7 @@ def test_vertex_gemini_model_maps_flash_vs_pro(monkeypatch):
 
 
 def test_get_retrieval_llms_keeps_ai_studio_gemini(monkeypatch):
-    """Frontier / Frontier-1 retrieval must not be rewritten onto Vertex."""
+    """AI Studio Gemini retrieval must not be rewritten onto Vertex."""
     from moyo.llm import registry as reg
     from moyo.llm.client import LLMSpec
 
@@ -246,7 +246,7 @@ def test_get_retrieval_llms_keeps_ai_studio_gemini(monkeypatch):
             model="gemini-3.1-pro-preview",
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             api_key="AIza-test",
-            label="Gemini Frontier-1 (Google gemini-3.1-pro-preview)",
+            label="Gemini (Google gemini-3.1)",
         ),
         LLMSpec(
             provider="custom",

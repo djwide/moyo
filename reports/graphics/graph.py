@@ -232,14 +232,21 @@ def evidence_graph_svg(
     aliases: dict[str, str] | None = None,
     max_width: float = 640,
     max_height: float = PRINT_MAX_HEIGHT,
+    include_conclusions: bool = True,
 ) -> str:
     """Print evidence graph matching /how-it-works EvidenceGraph columns."""
     aliases = aliases or {}
     all_findings = list(findings)
     by_id = {f.get("claim_id"): f for f in all_findings if f.get("claim_id")}
-    chains = [c for c in list(chains)[:max_conclusions] if c.get("chain_id")]
+    chains = (
+        [c for c in list(chains)[:max_conclusions] if c.get("chain_id")]
+        if include_conclusions
+        else []
+    )
 
     width = min(max(max_width, 600), 660)
+    if not include_conclusions:
+        width = min(width, 490)
     height = min(max_height, 420)
 
     band_top = 8
@@ -291,13 +298,15 @@ def evidence_graph_svg(
     chain_ys = _ys(len(chains) or 1, node_top, node_bot)
 
     # Column geometry: conclusions are id-only, so that band stays narrow.
+    # Opposition graphs omit that column and the edges into it.
     x_cite, x_model, x_claim, x_chain = 28, 235, 400, 525
-    col_boxes = (
+    col_boxes = [
         (8, 150, "Real-world citations"),
         (205, 125, "Model inference"),
         (370, 110, "Clusters"),
-        (500, 98, "Inferred conclusions"),
-    )
+    ]
+    if include_conclusions:
+        col_boxes.append((500, 98, "Inferred conclusions"))
 
     bands: list[str] = []
     for x, w, label in col_boxes:
@@ -355,20 +364,21 @@ def evidence_graph_svg(
             _add_edge(x1 + 14, y1, x2 - 10, y2)
 
     # Clusters → inferred conclusions
-    for ch in chains:
-        chid = ch["chain_id"]
-        if chid not in chain_pos:
-            continue
-        x2, y2 = chain_pos[chid]
-        wanted: set[str] = set()
-        for cid in ch.get("claim_ids") or []:
-            f = by_id.get(str(cid))
-            wanted.add(_present_id(f) if f else str(cid))
-        for kid in cluster_ids:
-            if kid not in wanted or kid not in claim_pos:
+    if include_conclusions:
+        for ch in chains:
+            chid = ch["chain_id"]
+            if chid not in chain_pos:
                 continue
-            x1, y1 = claim_pos[kid]
-            _add_edge(x1 + 14, y1, x2 - 10, y2)
+            x2, y2 = chain_pos[chid]
+            wanted: set[str] = set()
+            for cid in ch.get("claim_ids") or []:
+                f = by_id.get(str(cid))
+                wanted.add(_present_id(f) if f else str(cid))
+            for kid in cluster_ids:
+                if kid not in wanted or kid not in claim_pos:
+                    continue
+                x1, y1 = claim_pos[kid]
+                _add_edge(x1 + 14, y1, x2 - 10, y2)
 
     nodes: list[str] = []
     for c in citations:
@@ -405,27 +415,29 @@ def evidence_graph_svg(
             f"</g>"
         )
 
-    for ch in chains:
-        chid = ch["chain_id"]
-        x, y = chain_pos[chid]
-        tip = truncate(ch.get("label") or chid, 80)
-        nodes.append(
-            f"<g>"
-            f"<title>{escape_xml(tip)}</title>"
-            f"{_bullseye(x, y)}"
-            f'<text x="{x + 14:.1f}" y="{y + 4:.1f}" font-family="{FONT_MONO}" '
-            f'font-size="10" font-weight="600" fill="{INK}">'
-            f"{escape_xml(chid)}</text>"
-            f"</g>"
-        )
+    if include_conclusions:
+        for ch in chains:
+            chid = ch["chain_id"]
+            x, y = chain_pos[chid]
+            tip = truncate(ch.get("label") or chid, 80)
+            nodes.append(
+                f"<g>"
+                f"<title>{escape_xml(tip)}</title>"
+                f"{_bullseye(x, y)}"
+                f'<text x="{x + 14:.1f}" y="{y + 4:.1f}" font-family="{FONT_MONO}" '
+                f'font-size="10" font-weight="600" fill="{INK}">'
+                f"{escape_xml(chid)}</text>"
+                f"</g>"
+            )
 
     mid_y = (node_top + node_bot) / 2
-    empties = (
+    empties = [
         (not citations, x_cite, "No citations"),
         (not models, x_model, "No models"),
         (not cluster_ids, x_claim, "No clusters"),
-        (not chains, x_chain, "No conclusions"),
-    )
+    ]
+    if include_conclusions:
+        empties.append((not chains, x_chain, "No conclusions"))
     for empty, x, msg in empties:
         if not empty:
             continue

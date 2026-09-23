@@ -192,11 +192,13 @@ def generate_graphics(
         report_data["findings_by_llm"] = rows
 
     if "evidence_graph" in emit:
+        show_conclusions = voice != "opposition"
         graphics["evidence_graph"] = evidence_graph_svg(
             chart_findings,
             chart_chains,
             aliases=aliases,
             models_probed=probed or None,
+            include_conclusions=show_conclusions,
         )
         snap_source = list(report_data.get("findings") or chart_findings)
         snap_findings = snapshot_graph_findings(snap_source)
@@ -206,6 +208,7 @@ def generate_graphics(
             aliases=aliases,
             models_probed=probed or None,
             max_claims=max(len(snap_findings), 1) if snap_findings else 10,
+            include_conclusions=show_conclusions,
         )
 
     dossiers = build_model_dossiers(

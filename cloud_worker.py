@@ -50,8 +50,8 @@ orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
 summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
 (``google/gemini-2.5-flash`` via the job service account). Retrieval
-fan-out uses each provider's own key, including Gemini Frontier /
-Frontier-1 on AI Studio (``GEMINI_API_KEY``).
+fan-out uses each provider's own key, including Gemini
+on AI Studio (``GEMINI_API_KEY``).
 """
 
 from __future__ import annotations

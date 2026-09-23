@@ -2,8 +2,12 @@
 <section class="page page--basis-exposure" id="exposure">
   <h2>{{ (content.pages.exposure or {}).title or "Exposure Chains" }}</h2>
   <p class="basis-lede">
+    {% if content.meta.audience == 'opposition' %}
+    Real-world citations feed model inference; models corroborate claims into clusters.
+    {% else %}
     Real-world citations feed model inference; models corroborate claims that assemble
     into inferred conclusions.
+    {% endif %}
   </p>
   {{ svg_asset(content.assets.evidence_graph, graphics.get('evidence_graph'), 'wide', 'Evidence Graph') }}
 

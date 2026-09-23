@@ -8,6 +8,7 @@ from moyo.llm.client import (
     LLMClient,
     LLMSpec,
     _anthropic_message_text,
+    _citations_from_gemini_generate_content,
     _citations_from_response,
     _responses_output_text,
     _fixed_temperature_for_model,
@@ -17,6 +18,7 @@ from moyo.llm.client import (
     _openai_create_extras,
     _openai_extra_body_for_model,
     _openai_message_text,
+    _text_from_gemini_generate_content,
     format_llm_error,
     is_retryable_llm_error,
     retry_delay_seconds,
@@ -273,7 +275,7 @@ def test_web_search_extras_for_qwen_gemini_openrouter():
         "https://generativelanguage.googleapis.com/v1beta/openai/",
         web_search=True,
     )
-    assert gemini["web_search_options"] == {}
+    assert "web_search_options" not in gemini
     assert gemini["reasoning_effort"] == "low"
 
     openrouter = _openai_create_extras(
@@ -289,6 +291,81 @@ def test_web_search_extras_for_qwen_gemini_openrouter():
     assert _openai_create_extras(
         "qwen3.8-max", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     )["extra_body"]["enable_thinking"] is False
+
+
+def test_gemini_generate_content_text_and_citations():
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {"thought": True, "text": "hidden"},
+                        {"text": "Spain won Euro 2024."},
+                    ]
+                },
+                "groundingMetadata": {
+                    "groundingChunks": [
+                        {
+                            "web": {
+                                "uri": "https://example.com/euro",
+                                "title": "Euro 2024",
+                            }
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+    assert _text_from_gemini_generate_content(payload) == "Spain won Euro 2024."
+    assert _citations_from_gemini_generate_content(payload) == [
+        "Euro 2024 — https://example.com/euro"
+    ]
+
+
+def test_complete_gemini_uses_native_web_search(monkeypatch):
+    captured: dict = {}
+
+    class _FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return (
+                b'{"candidates":[{"content":{"parts":[{"text":"Grounded answer."}]},'
+                b'"groundingMetadata":{"groundingChunks":[{"web":{"uri":"https://a.example/"}}]}}]}'
+            )
+
+    def fake_urlopen(request, timeout=0):  # noqa: ARG001
+        captured["url"] = request.full_url
+        import json
+
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return _FakeResp()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    client = LLMClient(
+        LLMSpec(
+            provider="custom",
+            model="gemini-3.1-pro-preview",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            api_key="test-key",
+            web_search=True,
+            max_tokens=256,
+            timeout=30,
+            max_retries=0,
+        )
+    )
+    text = client.complete("Who won?", max_tokens=256, retries=0)
+    assert "Grounded answer." in text
+    assert "https://a.example/" in text
+    assert captured["body"]["tools"] == [{"google_search": {}}]
+    assert "web_search_options" not in captured["body"]
+    assert "generateContent" in captured["url"]
 
 
 def test_complete_retries_then_succeeds(monkeypatch):
