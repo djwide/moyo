@@ -707,16 +707,23 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     audience_raw = str(
         _first(data, "scanAudience", "scan_audience", default="") or ""
     ).strip().lower()
-    scan_audience = audience_raw if audience_raw in {"opposition", "personal"} else "organization"
+    scan_audience = (
+        audience_raw
+        if audience_raw in {"opposition", "personal", "competitive", "security"}
+        else "organization"
+    )
     race = str(_first(data, "scanRace", "scan_race", default="") or "").strip()
     if scan_audience == "opposition" and display_topic and race and race not in display_topic:
         display_topic = f"{display_topic} — {race}"
     city = str(_first(data, "scanCity", "scan_city", default="") or "").strip()
     school = str(_first(data, "scanSchool", "scan_school", default="") or "").strip()
     company = str(_first(data, "scanCompany", "scan_company", default="") or "").strip()
-    subject_detail = ", ".join(part for part in (city, school, company) if part) or None
-    if scan_audience == "opposition":
+    if scan_audience in {"competitive", "security"}:
+        subject_detail = ", ".join(part for part in (company, city) if part) or None
+    elif scan_audience == "opposition":
         subject_detail = None
+    else:
+        subject_detail = ", ".join(part for part in (city, school, company) if part) or None
 
     email = _first(data, "customerEmail", "customer_email", default=None)
     if email is not None:

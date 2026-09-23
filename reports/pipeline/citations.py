@@ -238,6 +238,18 @@ def citation_entry(raw: str) -> dict[str, str]:
     return {"label": label, "url": url, "text": cleaned}
 
 
+def _with_url(items: list[str], *, limit: int) -> list[str]:
+    """Keep citations that include a real URL. A headline alone is not a source."""
+    out: list[str] = []
+    for item in items:
+        if not _URL_RE.search(item or ""):
+            continue
+        out.append(item)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def resolve_claim_citations(
     *,
     claim: str = "",
@@ -247,11 +259,14 @@ def resolve_claim_citations(
     reference_map: dict[str, str] | None = None,
     limit: int = 6,
 ) -> list[str]:
-    """Pick the citations that actually back one claim.
+    """Citations that this claim's own excerpt points at, and that include a URL.
 
-    Markers and Sources tails inside the claim's own excerpt win; only when the
-    excerpt carries no citation of its own do the parent chunk's sources apply.
+    Numbered markers in the excerpt may resolve through ``reference_map``.
+    A quoted headline with no URL is dropped. The parent chunk's source list
+    is not copied onto the claim: ``chunk_citations`` is ignored so an
+    unrelated biography or House.gov link does not ride along.
     """
+    del chunk_citations
     blob = "\n".join(part for part in (excerpt, claim) if part)
     specific = merge_citations(
         citations_from_markers(blob, reference_map),
@@ -261,11 +276,17 @@ def resolve_claim_citations(
         ),
         limit=limit,
     )
-    llm_resolved = resolve_reference_citations(llm_citations, reference_map)
-    chunk_resolved = resolve_reference_citations(chunk_citations, reference_map)
-    if specific:
-        return merge_citations(specific, llm_resolved, limit=limit)
-    return merge_citations(llm_resolved, chunk_resolved, limit=limit)
+    # A citation the extractor listed counts only when its URL is actually
+    # written in this claim or excerpt. Otherwise a prior chunk bibliography
+    # stored on the claim would be treated as a source.
+    haystack = blob
+    grounded_llm: list[str] = []
+    for item in resolve_reference_citations(llm_citations, reference_map):
+        urls = _urls_in(item)
+        if urls and any(url in haystack for url in urls):
+            grounded_llm.append(item)
+    picked = merge_citations(specific, grounded_llm, limit=limit)
+    return _with_url(picked, limit=limit)
 
 
 def _urls_in(text: str) -> list[str]:
@@ -408,10 +429,10 @@ def attach_chunk_citations(
     overwrite: bool = False,
     limit: int = 6,
 ) -> list[dict]:
-    """Fill claim ``citations`` from the parent chunk's sources.
+    """Fill claim ``citations`` from markers and URLs in that claim's excerpt.
 
-    Claims whose excerpt carries its own ``[n]`` markers get just those
-    references; the rest inherit the chunk's Sources list.
+    The chunk source list is available for resolving ``[n]`` markers. It is
+    not copied onto claims whose excerpt has no marker and no URL.
     """
     by_id: dict[str, list[str]] = {}
     refs_by_id: dict[str, dict[str, str]] = {}

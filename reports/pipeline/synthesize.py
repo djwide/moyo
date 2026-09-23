@@ -163,9 +163,29 @@ def synthesize(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Enrich report_data with executive_summary and followups."""
+    from .provenance import presentation_rows, provenance_label, slim_finding
+
+    audience = report_data.get("audience")
+    raw_findings = list(report_data.get("findings") or [])
+    for row in raw_findings:
+        if not row.get("provenance"):
+            row["provenance"] = provenance_label(row)
+    sourced, unverified = presentation_rows(raw_findings, audience)
     findings_preview = json.dumps(
-        report_data.get("findings", [])[:25], ensure_ascii=False, indent=2
+        [slim_finding(row) for row in sourced[:12]],
+        ensure_ascii=False,
+        indent=2,
     )
+    summary_payload = {
+        "topic": report_data.get("topic"),
+        "counts": report_data.get("counts"),
+        "top_finding": report_data.get("top_finding"),
+        "findings": [slim_finding(row) for row in sourced[:12]],
+        "unverified_findings": [slim_finding(row) for row in unverified[:12]],
+        "chains": report_data.get("chains", [])[:5],
+        "followups": report_data.get("followups", [])[:5],
+        "model_contrast": report_data.get("model_contrast") or {},
+    }
     exec_path = prompts_dir / Path(
         config.get("executive_prompt", "prompts/executive_summary.md")
     ).name
@@ -279,15 +299,7 @@ def synthesize(
                 findings_json=findings_preview,
                 counts_json=json.dumps(report_data.get("counts", {})),
                 report_data_json=json.dumps(
-                    {
-                        "topic": report_data.get("topic"),
-                        "counts": report_data.get("counts"),
-                        "top_finding": report_data.get("top_finding"),
-                        "findings": report_data.get("findings", [])[:25],
-                        "chains": report_data.get("chains", [])[:5],
-                        "followups": report_data.get("followups", [])[:5],
-                        "model_contrast": report_data.get("model_contrast") or {},
-                    },
+                    summary_payload,
                     ensure_ascii=False,
                     indent=2,
                 ),

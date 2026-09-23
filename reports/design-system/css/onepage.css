@@ -30,8 +30,6 @@ body {
 
 .onepage {
   width: 100%;
-  max-height: 204mm;
-  overflow: hidden;
   padding: 0 6mm;
   background: var(--moyo-white);
   border: none;
@@ -212,10 +210,6 @@ body {
   letter-spacing: -0.015em;
   margin: 0 0 0.22rem;
   max-width: 42rem;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
 }
 .badges {
   margin: 0 0 0.15rem;
@@ -296,8 +290,6 @@ body {
   border-top: 0.6pt solid var(--moyo-ink);
   column-count: 2;
   column-gap: 6mm;
-  max-height: 48mm;
-  overflow: hidden;
 }
 .snap-more > h2 {
   column-span: all;

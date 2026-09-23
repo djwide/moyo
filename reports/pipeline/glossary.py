@@ -65,11 +65,15 @@ _GROUPS: list[dict[str, Any]] = [
             ),
             (
                 "Unverified",
-                "Plausible but weakly grounded; limited support in the exploration.",
+                "No source URL backs the claim. A quoted headline without a link does not count.",
             ),
             (
                 "Model-specific",
-                "Distinctive to one model family or one language-tagged run of it.",
+                "Stated by one model. The model name is printed on the same line.",
+            ),
+            (
+                "Language-specific",
+                "Stated only in a non-English prompt. The language is printed on the same line.",
             ),
         ],
     },
@@ -244,6 +248,20 @@ def glossary_groups(audience: str = "organization") -> list[dict[str, Any]]:
                 {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
                 {"term": "Interesting", "definition": "Lesser-known biographical or social facts."},
                 {"term": "Expected", "definition": "Ordinary public biography: roles, schools, employers, places."},
+            ]
+        elif group["title"] == "Severity Bands" and voice == "competitive":
+            terms = [
+                {"term": "Commercially sensitive", "definition": "Sensitivity 4–5. Product, partnership, or strategy material a competitor analyst would treat as commercially sensitive."},
+                {"term": "Potentially strategic", "definition": "Sensitivity 3 that is not already Unexpected. Worth watching before it is treated as established."},
+                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
+                {"term": "Interesting", "definition": "Lesser-known public facts that are not yet commercially sensitive."},
+            ]
+        elif group["title"] == "Severity Bands" and voice == "security":
+            terms = [
+                {"term": "Security relevant", "definition": "Sensitivity 4–5. Operational, personnel, or infrastructure facts a CISO or counsel would review first."},
+                {"term": "Material", "definition": "Sensitivity 3 that is not already Unexpected. Worth review before it is treated as an incident."},
+                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
+                {"term": "Interesting", "definition": "Lesser-known operational or personnel facts."},
             ]
         groups.append({"title": group["title"], "terms": terms})
     return groups

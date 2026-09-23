@@ -79,10 +79,7 @@
           {% endfor %}
           {{ language_badge(content.top_finding.prompt_language) }}
         </h2>
-        <p class="lead-finding">{{ content.top_finding.text | clip(320) }}</p>
-        {% if content.top_finding.language_annotation %}
-        <p class="lead-lang">{{ content.top_finding.language_annotation }}</p>
-        {% endif %}
+        <p class="lead-finding">{{ content.top_finding.text }}{% if content.top_finding.provenance %} — {{ content.top_finding.provenance }}{% endif %}</p>
         {% if content.pages.executive_summary.public_sources %}
         <p class="panel-sources">
           Cited: {{ content.pages.executive_summary.public_sources | join('; ') }}
@@ -100,10 +97,10 @@
               {{ severity_badge('SPECIFIC') }}
               {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
             </div>
-            <p class="specific-claim">{{ f.claim | clip(120) }}</p>
+            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
           </li>
           {% else %}
-          <li class="empty">No high-specificity findings in this run.</li>
+          <li class="empty">No sourced corroborated findings in this run.</li>
           {% endfor %}
         </ul>
       </section>
@@ -119,7 +116,7 @@
             <span class="mono">{{ f.present_id or f.claim_id }}</span>
             {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
           </div>
-          <p class="snap-more-claim">{{ f.claim | clip(110) }}</p>
+          <p class="snap-more-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
         </li>
         {% endfor %}
       </ul>

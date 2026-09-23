@@ -19,6 +19,9 @@
   {% for d in content.model_dossiers or [] %}
     {% set ns.model_kids = ns.model_kids + [{"id": d.id, "title": d.model}] %}
   {% endfor %}
+  {% if content.unverified_findings %}
+    {% set ns.toc = ns.toc[:4] + [{"id": "unverified", "title": content.pages.unverified.title or "Single-model and unverified"}] + ns.toc[4:] %}
+  {% endif %}
   {% if ns.model_kids %}
     {% set ns.toc = ns.toc + [{
       "id": ns.model_kids[0].id,
@@ -46,6 +49,7 @@
   {% include "pages/risk_overview.j2" %}
   {% include "pages/evidence.j2" %}
   {% include "pages/findings.j2" %}
+  {% include "pages/unverified.j2" %}
   {% include "pages/model_comparison.j2" %}
   {% for dossier in content.model_dossiers or [] %}
     {% with depth = "snapshot" %}

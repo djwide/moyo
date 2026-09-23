@@ -25,9 +25,8 @@ def _claim(**kwargs):
 def test_organization_labels_stay_on_the_basic_builder():
     finding = _claim(sensitivity=5, novelty=1)
     assert disclosure_class(finding) == "Security relevant"
-    assert disclosure_class(finding, "competitive") == "Security relevant"
-    assert disclosure_class(finding, "security") == "Security relevant"
-    assert retain_finding(_claim(sensitivity=1), "security")
+    assert disclosure_class(finding, "organization") == "Security relevant"
+    assert retain_finding(_claim(sensitivity=1), "organization")
 
 
 def test_opposition_drops_info_and_renames_bands():
@@ -113,11 +112,17 @@ def test_personal_onepager_includes_sensitive_findings():
         },
         report_date="23 Sep 2026",
     )
-    shown = {
+    onepage = {
         f["claim_id"]
         for f in doc["onepage_more"] + doc["abridged_findings"] + doc["specific_findings"]
     }
-    assert "S1" in shown
+    parked = {
+        f["claim_id"]
+        for row in doc["unverified_findings"]
+        for f in [row, *(row.get("facets") or [])]
+    }
+    assert "S1" not in onepage
+    assert "S1" in parked
     assert doc["meta"]["priority_label"] == "Sensitive"
     assert doc["next_steps"]["snapshot"]["title"] == "What Is Already Public"
 
@@ -151,3 +156,129 @@ def test_opposition_closes_on_what_to_verify():
     assert doc["next_steps"]["snapshot"]["title"] == "What to Verify"
     assert doc["meta"]["priority_label"] == "Damaging"
     assert doc["meta"]["kicker"] == "Opposition research"
+
+
+def test_competitive_drops_expected_and_renames_bands():
+    ordinary = _claim(claim_id="C0", sensitivity=1, novelty=1)
+    mid = _claim(claim_id="C2", claim="A supplier contract.", sensitivity=3, novelty=1)
+    hot = _claim(claim_id="C3", claim="An unannounced product line.", sensitivity=5, novelty=2)
+    odd = _claim(claim_id="C4", claim="Models agree on a hard-to-find hiring plan.", sensitivity=2, novelty=4)
+    assert not retain_finding(ordinary, "competitive")
+    assert disclosure_class(mid, "competitive") == "Potentially strategic"
+    assert disclosure_class(hot, "competitive") == "Commercially sensitive"
+    assert disclosure_class(odd, "competitive") == "Unexpected"
+    data = score_report(
+        [ordinary, mid, hot, odd],
+        [],
+        run_id="ci",
+        topic="Duff Cola",
+        config={},
+        graphics_cfg={},
+        audience="competitive",
+    )
+    ids = {f["claim_id"] for f in data["findings"]}
+    assert "C0" not in ids
+    assert data["headline"] == "What models already know about this competitor"
+    assert data["counts"]["high_sensitivity"] == 1
+    assert data["sensitivity_bins"]["commercially_sensitive"] == 1
+    assert "expected" not in data["sensitivity_bins"]
+    assert "security_relevant" not in data["sensitivity_bins"]
+
+
+def test_security_drops_expected_and_keeps_security_relevant():
+    ordinary = _claim(claim_id="C0", sensitivity=1, novelty=1)
+    mid = _claim(claim_id="C2", claim="A vendor with network access.", sensitivity=3, novelty=1)
+    hot = _claim(claim_id="C3", claim="A public incident writeup.", sensitivity=5, novelty=2)
+    assert not retain_finding(ordinary, "security")
+    assert disclosure_class(mid, "security") == "Material"
+    assert disclosure_class(hot, "security") == "Security relevant"
+    data = score_report(
+        [ordinary, mid, hot],
+        [],
+        run_id="sec",
+        topic="Northline Robotics",
+        config={},
+        graphics_cfg={},
+        audience="security",
+    )
+    assert {f["claim_id"] for f in data["findings"]} == {"C2", "C3"}
+    assert data["headline"] == "What an outsider can already reconstruct"
+    assert data["counts"]["high_sensitivity"] == 1
+    assert data["sensitivity_bins"]["security_relevant"] == 1
+    assert data["sensitivity_bins"]["material"] == 1
+    assert "expected" not in data["sensitivity_bins"]
+
+
+def _sourced(claim_id: str, claim: str, **kwargs):
+    row = _claim(claim_id=claim_id, claim=claim, citations=["https://example.com/source"], **kwargs)
+    return row
+
+
+def test_competitive_onepager_reserves_commercially_sensitive_findings():
+    findings = [
+        _sourced(
+            f"C{i:02d}",
+            f"Unannounced sku {i} uses a private bottler in plant {i}.",
+            sensitivity=5,
+            specificity=2,
+            novelty=1,
+        )
+        for i in range(1, 15)
+    ]
+    doc = build_content_doc(
+        {
+            "run_id": "ci",
+            "topic": "Duff Cola",
+            "audience": "competitive",
+            "subject_detail": "Duff Cola, Austin, Texas",
+            "counts": {"findings": 14, "llms_tested": 1, "high_sensitivity": 14},
+            "top_finding": {"claim_id": "C01", "text": findings[0]["claim"], "badges": []},
+            "findings": findings,
+            "clusters": [],
+        },
+        report_date="23 Sep 2026",
+    )
+    shown = {
+        f["claim_id"]
+        for f in doc["onepage_more"] + doc["abridged_findings"] + doc["specific_findings"]
+    }
+    assert "C13" in shown
+    assert "C14" in shown
+    assert doc["meta"]["priority_label"] == "Commercially sensitive"
+    assert doc["meta"]["kicker"] == "Competitive intelligence"
+    assert doc["meta"]["subject_detail"] == "Duff Cola, Austin, Texas"
+    assert doc["next_steps"]["snapshot"]["title"] == "What to Watch"
+    assert doc["next_steps"]["basis"]["title"] == "What to Watch"
+    assert "Red-team" not in " ".join(item["title"] for item in doc["next_steps"]["basis"]["items"])
+
+
+def test_security_basis_adds_red_team_and_snapshot_does_not():
+    findings = [
+        _sourced(
+            "C3",
+            "A public incident writeup names the backup vendor.",
+            sensitivity=5,
+            specificity=3,
+            novelty=2,
+            corroboration=2,
+            status="CORROBORATED",
+        )
+    ]
+    doc = build_content_doc(
+        {
+            "run_id": "sec",
+            "topic": "Northline Robotics",
+            "audience": "security",
+            "counts": {"findings": 1, "llms_tested": 1, "high_sensitivity": 1},
+            "top_finding": {"claim_id": "C3", "text": findings[0]["claim"], "badges": []},
+            "findings": findings,
+            "clusters": [],
+        },
+        report_date="23 Sep 2026",
+    )
+    assert doc["next_steps"]["snapshot"]["title"] == "What to Review"
+    assert doc["meta"]["priority_label"] == "Security relevant"
+    snap_titles = [item["title"] for item in doc["next_steps"]["snapshot"]["items"]]
+    basis_titles = [item["title"] for item in doc["next_steps"]["basis"]["items"]]
+    assert "Red-team the reachable conclusions" not in snap_titles
+    assert "Red-team the reachable conclusions" in basis_titles

@@ -662,12 +662,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if want("score"):
         print("[3] score → report_data.json", file=sys.stderr)
+        prior_report: dict = {}
+        if report_data_path.exists():
+            try:
+                prior_report = json.loads(report_data_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                prior_report = {}
         if exploration and exploration.exists():
             topic = topic_from_exploration(exploration)
             prompts = prompts_from_exploration(exploration)
         else:
             topic = run_id.replace("_", " ")
             prompts = [topic] if topic and topic != run_id else []
+        audience = (
+            str(render_cfg.get("audience") or "").strip()
+            or str(prior_report.get("audience") or "").strip()
+        )
         report_data = score_report(
             claims,
             clusters,
@@ -675,21 +685,28 @@ def main(argv: list[str] | None = None) -> int:
             topic=topic,
             config=score_cfg,
             graphics_cfg=graphics_cfg,
-            audience=(render_cfg.get("audience") or ""),
+            audience=audience,
         )
         if prompts:
             report_data["prompts"] = prompts
             report_data["topic"] = prompts[0]
+        if prior_report.get("display_topic") and not (render_cfg.get("display_topic") or "").strip():
+            report_data["topic"] = prior_report.get("topic") or report_data.get("topic")
+            report_data["display_topic"] = prior_report["display_topic"]
+            if prior_report.get("prompts"):
+                report_data["prompts"] = prior_report["prompts"]
         display_topic = (render_cfg.get("display_topic") or "").strip()
         if display_topic:
             report_data["display_topic"] = display_topic
         subject_detail = (render_cfg.get("subject_detail") or "").strip()
         if subject_detail:
             report_data["subject_detail"] = subject_detail
-        if render_cfg.get("audience"):
-            report_data["audience"] = str(render_cfg.get("audience"))
+        if audience:
+            report_data["audience"] = audience
         if render_cfg.get("headline"):
             report_data["headline"] = render_cfg["headline"]
+        elif prior_report.get("headline"):
+            report_data["headline"] = prior_report["headline"]
         attach_explore_meta(
             report_data,
             exploration,

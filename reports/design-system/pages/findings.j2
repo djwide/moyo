@@ -1,4 +1,4 @@
-{% from "components/macros.j2" import finding_block %}
+{% from "components/macros.j2" import finding_block, facet_list %}
 <section class="page page--findings" id="findings">
   <h2>{{ content.pages.findings.title or "Priority Findings" }}</h2>
   {% for f in content.abridged_findings %}
@@ -9,5 +9,8 @@
     {% else %}
       {{ finding_block(f, 'compact') }}
     {% endif %}
+    {{ facet_list(f.facets) }}
+  {% else %}
+  <p class="section-lede">No sourced, corroborated finding is available for this list.</p>
   {% endfor %}
 </section>

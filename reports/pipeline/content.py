@@ -25,6 +25,7 @@ from pipeline.audience import (
     retain_finding,
     sort_key,
 )
+from .provenance import presentation_rows, provenance_label
 from pipeline.score import build_model_contrast
 from pipeline.basis import build_basis_section
 from pipeline.glossary import glossary_groups
@@ -36,7 +37,7 @@ from pipeline.language import (
     languages_from_findings,
     looks_like_english,
 )
-from pipeline.sources import build_source_registry, top_source_labels
+from pipeline.sources import build_source_registry
 from pipeline.textclean import plain_text, strip_markdown
 
 
@@ -296,6 +297,133 @@ def personal_next_steps(findings: list[dict[str, Any]]) -> dict[str, Any]:
         ],
     }
     return {"snapshot": section, "basis": section}
+
+
+def competitive_next_steps(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Close a competitive report on what to watch, not remediation."""
+    commercial = [
+        f
+        for f in findings
+        if audience_disclosure_class(f, "competitive") == "Commercially sensitive"
+    ]
+    corroborated = [
+        f
+        for f in commercial
+        if _status(f) == "CORROBORATED" or int(f.get("corroboration") or 1) >= 2
+    ]
+    contested = [
+        f
+        for f in findings
+        if _status(f) in {"CONTESTED", "OUTLIER", "MODEL-SPECIFIC"}
+        or int(f.get("corroboration") or 1) < 2
+    ]
+    section = {
+        "title": "What to Watch",
+        "lede": (
+            "Treat corroborated commercial claims as the working record. "
+            "Single-model and contested signals stay leads until a public "
+            "source confirms them."
+        ),
+        "items": [
+            {
+                "title": "Corroborated commercial claims",
+                "body": (
+                    f"{len(corroborated)} commercially sensitive claim"
+                    f"{'' if len(corroborated) == 1 else 's'} "
+                    "are stated by more than one model or marked corroborated. "
+                    "Start there."
+                ),
+            },
+            {
+                "title": "Contested or single-model signals",
+                "body": (
+                    f"{len(contested)} claim"
+                    f"{'' if len(contested) == 1 else 's'} "
+                    "are contested, outliers, or unique to one model. "
+                    "Treat those as leads, not an established record."
+                ),
+            },
+            {
+                "title": "Public sources the models named",
+                "body": (
+                    "Check the filings, job posts, and supplier pages behind "
+                    "each commercial claim. Distinguish rumor, reporting, "
+                    "and established record."
+                ),
+            },
+        ],
+    }
+    return {"snapshot": section, "basis": section}
+
+
+def security_next_steps(findings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Close a security report on review. Red-team only on the Basis report."""
+    relevant = [
+        f
+        for f in findings
+        if audience_disclosure_class(f, "security") == "Security relevant"
+    ]
+    corroborated = [
+        f
+        for f in relevant
+        if _status(f) == "CORROBORATED" or int(f.get("corroboration") or 1) >= 2
+    ]
+    single = [
+        f
+        for f in findings
+        if _status(f) in {"CONTESTED", "OUTLIER", "MODEL-SPECIFIC"}
+        or int(f.get("corroboration") or 1) < 2
+    ]
+    section = {
+        "title": "What to Review",
+        "lede": (
+            "Treat corroborated security-relevant claims as the working "
+            "record. Single-model items are not yet incidents."
+        ),
+        "items": [
+            {
+                "title": "Corroborated security-relevant claims",
+                "body": (
+                    f"{len(corroborated)} security-relevant claim"
+                    f"{'' if len(corroborated) == 1 else 's'} "
+                    "are stated by more than one model or marked corroborated. "
+                    "Review those first."
+                ),
+            },
+            {
+                "title": "Single-model items",
+                "body": (
+                    f"{len(single)} claim"
+                    f"{'' if len(single) == 1 else 's'} "
+                    "are contested, outliers, or unique to one model. "
+                    "They are not incidents until a public source confirms them."
+                ),
+            },
+            {
+                "title": "Public sources the models named",
+                "body": (
+                    "Check the filings, notices, and pages behind each "
+                    "security-relevant claim. Distinguish rumor, reporting, "
+                    "and established record."
+                ),
+            },
+        ],
+    }
+    basis = {
+        **section,
+        "items": [
+            *section["items"],
+            {
+                "title": "Red-team the reachable conclusions",
+                "body": (
+                    "Pressure-test whether the security-relevant conclusions "
+                    "remain reachable under hostile prompting, paraphrase, "
+                    "and multi-step chaining."
+                ),
+            },
+        ],
+    }
+    return {"snapshot": section, "basis": basis}
 
 
 def _enrich_findings(
@@ -576,18 +704,16 @@ def _build_executive_page(
     if not conf_score and findings:
         conf_score = int(findings[0].get("confidence") or 0)
 
-    # Real citations carried by the model answers outrank anything the LLM or
-    # the fallback patterns guessed.
-    public_sources = top_source_labels(list(sources or []), limit=3)
-    if len(public_sources) < 3:
-        candidates = [
-            plain_text(s) for s in (fields.get("public_sources") or [])
-        ] + _infer_public_sources(findings, limit=3)
-        for src in candidates:
-            if src and src not in public_sources:
-                public_sources.append(src)
-            if len(public_sources) >= 3:
-                break
+    # Only sources that include a URL. A guessed outlet name is not a citation.
+    public_sources = []
+    for source in list(sources or []):
+        url = str(source.get("url") or "").strip()
+        if not url.startswith("http"):
+            continue
+        label = plain_text(source.get("label") or "").strip()
+        public_sources.append(f"{label} — {url}" if label else url)
+        if len(public_sources) >= 3:
+            break
 
     inference = list(fields.get("inference_chain") or [])[:5]
     if not inference:
@@ -681,8 +807,39 @@ def build_content_doc(
     # Snapshot lists collapsed groups; basis narrative can use every claim.
     findings = dedupe_findings_by_group(findings_enriched)
     findings.sort(key=lambda f: sort_key(f, voice))
-    top = _sync_top_finding_english(top, findings)
-    pull = plain_text(top.get("text") or "")[:280]
+    for row in findings:
+        row["provenance"] = provenance_label(row)
+    shown, parked = presentation_rows(findings, voice)
+    top = _sync_top_finding_english(top, shown or findings)
+    shown_ids = {row.get("claim_id") for row in shown}
+    if top.get("claim_id") not in shown_ids:
+        if shown:
+            lead = shown[0]
+            top = {
+                "claim_id": lead.get("claim_id"),
+                "text": plain_text(lead.get("claim")),
+                "badges": list(top.get("badges") or []),
+                "language_annotation": lead.get("language_annotation") or "",
+                "prompt_language": lead.get("prompt_language") or lead.get("language"),
+                "provenance": lead.get("provenance") or "",
+            }
+        else:
+            top = {
+                "claim_id": "",
+                "text": (
+                    "No sourced finding in this run is corroborated enough to lead."
+                ),
+                "badges": [],
+                "provenance": "",
+            }
+    elif shown:
+        match = next(
+            (row for row in shown if row.get("claim_id") == top.get("claim_id")),
+            None,
+        )
+        if match:
+            top["provenance"] = match.get("provenance") or ""
+    pull = plain_text(top.get("text") or "")
     display_topic = _display_topic(report_data)
     # Customer-facing templates never show reconstructed retrieval wraps.
     prompts = _customer_prompts(report_data)
@@ -703,69 +860,48 @@ def build_content_doc(
     contrast["commonality_prose"] = list(exec_page.get("model_commonality") or [])
     contrast["differences_prose"] = list(exec_page.get("model_differences") or [])
 
-    # One-pager budget: fill a single A4 landscape sheet, nothing more.
-    # Lead + ~4 rail claims + ~6 compact further rows is the ceiling.
-    specific_min = 4
+    # One row per episode. Unsourced and single-model damaging claims stay
+    # off the one-pager and the priority list.
     specific_cap = 4
     snapshot_cap = 12
     onepage_more_cap = 6
     top_id = top.get("claim_id") or ""
-
-    def _specific_rank(f: dict[str, Any]) -> tuple[int, int, int]:
-        return (
-            int(f.get("specificity") or 0),
-            int(f.get("sensitivity") or 0),
-            int(f.get("confidence") or 0),
-        )
-
-    english_findings = [
-        f
-        for f in findings
-        if looks_like_english(str(f.get("claim") or "")) and not f.get("english_pending")
-    ] or [
-        f for f in findings if looks_like_english(str(f.get("claim") or ""))
-    ] or findings
-    english_findings = sorted(english_findings, key=lambda f: sort_key(f, voice))
-    specific_findings = sorted(
-        [
-            f
-            for f in english_findings
-            if int(f.get("specificity") or 0) >= specific_min
-            and f.get("claim_id") != top_id
-        ],
-        key=_specific_rank,
-        reverse=True,
-    )[:specific_cap]
-    if not specific_findings:
-        specific_findings = sorted(
-            [f for f in english_findings if f.get("claim_id") != top_id],
-            key=_specific_rank,
-            reverse=True,
-        )[:specific_cap]
-
-    abridged = english_findings[:snapshot_cap]
+    page_rows = [
+        row
+        for row in shown
+        if looks_like_english(str(row.get("claim") or "")) and not row.get("english_pending")
+    ] or shown
+    specific_findings = [row for row in page_rows if row.get("claim_id") != top_id][
+        :specific_cap
+    ]
+    abridged = page_rows[:snapshot_cap]
     evidence_findings = snapshot_graph_findings(
-        english_findings,
+        page_rows or findings,
         cap=snapshot_cap,
         limit=10,
     )
-    shown_ids = {top_id} | {f.get("claim_id") for f in specific_findings}
+    used_ids = {top_id} | {row.get("claim_id") for row in specific_findings}
     onepage_more = [
-        f
-        for f in english_findings
-        if f.get("claim_id") not in shown_ids
+        row for row in page_rows if row.get("claim_id") not in used_ids
     ][:onepage_more_cap]
-    if voice == "personal":
-        sensitive = [
-            f
-            for f in english_findings
-            if audience_disclosure_class(f, "personal") == "Sensitive"
+    reserve_label = {
+        "competitive": "Commercially sensitive",
+        "security": "Security relevant",
+    }.get(voice)
+    if reserve_label:
+        placed = used_ids | {row.get("claim_id") for row in onepage_more} | {
+            row.get("claim_id") for row in abridged
+        }
+        missing = [
+            row
+            for row in page_rows
+            if audience_disclosure_class(row, voice) == reserve_label
+            and row.get("claim_id") not in placed
         ]
-        shown = shown_ids | {f.get("claim_id") for f in onepage_more}
-        missing = [f for f in sensitive if f.get("claim_id") not in shown]
         if missing:
-            onepage_more = list(onepage_more) + missing[:2]
-            abridged = list(abridged) + [f for f in missing[:2] if f not in abridged]
+            extra = missing[:2]
+            onepage_more = list(onepage_more) + extra
+            abridged = list(abridged) + [row for row in extra if row not in abridged]
 
     explore_meta = report_data.get("explore_meta") or {}
     alias_map = aliases or {}
@@ -912,6 +1048,14 @@ def build_content_doc(
                 "title": "Priority Findings",
                 "body": "",
             },
+            "unverified": {
+                "title": "Single-model and unverified",
+                "lede": (
+                    "These claims have no source URL, or in an opposition "
+                    "report they are damaging and come from only one model. "
+                    "They are not on the one-pager."
+                ),
+            },
             "evidence": {
                 "title": "Verbatim Excerpts",
                 "body": "",
@@ -959,13 +1103,14 @@ def build_content_doc(
             "sources": {
                 "title": "Cited Sources",
                 "lede": (
-                    "Sources the model answers named, numbered once for the "
-                    "run. Findings point here as S1, S2, and so on. A citation "
-                    "records what a model named; it is not an endorsement."
+                    "Sources named in a claim's own excerpt that include a "
+                    "link. A headline without a URL is not listed. Findings "
+                    "point here as S1, S2, and so on."
                 ),
                 "empty": (
-                    "No model answer in this run cited an external source, so "
-                    "findings are attributed to the model that produced them."
+                    "No claim in this run cited a source URL. Unsourced "
+                    "claims are listed as unverified and attributed to the "
+                    "model that produced them."
                 ),
             },
             "glossary": {
@@ -985,6 +1130,7 @@ def build_content_doc(
         "top_finding": top,
         "findings": findings,
         "abridged_findings": abridged,
+        "unverified_findings": parked,
         "evidence_findings": evidence_findings,
         "basis": basis_section,
         "next_steps": (
@@ -992,6 +1138,10 @@ def build_content_doc(
             if voice == "opposition"
             else personal_next_steps(findings)
             if voice == "personal"
+            else competitive_next_steps(findings)
+            if voice == "competitive"
+            else security_next_steps(findings)
+            if voice == "security"
             else build_next_steps(include_remediation=include_remediation)
         ),
         "specific_findings": specific_findings,
@@ -1119,15 +1269,32 @@ def render_report_md(content: dict[str, Any]) -> str:
         pages["findings"]["body"],
         "",
     ]
-    for f in content.get("abridged_findings") or content.get("findings") or []:
+    def _finding_line(f: dict[str, Any], *, indent: str = "") -> str:
         sev = _severity_label(f, str(meta.get("audience") or "organization"))
+        provenance = (f.get("provenance") or "").strip()
+        label = provenance or str(f.get("status") or "")
         source = f.get("source_cite") or f.get("source_model")
         refs = ", ".join(f.get("source_refs") or [])
-        lines.append(
-            f"- **{f.get('claim_id')}** [{f.get('status')}/{sev}] "
-            f"{f.get('claim')} — _{source}_"
+        tail = "" if provenance else f" — _{source}_"
+        return (
+            f"{indent}- **{f.get('claim_id')}** [{label}/{sev}] "
+            f"{f.get('claim')}{tail}"
             + (f" ({refs})" if refs else "")
         )
+
+    for f in content.get("abridged_findings") or []:
+        lines.append(_finding_line(f))
+        for facet in f.get("facets") or []:
+            lines.append(_finding_line(facet, indent="  "))
+    unverified = content.get("unverified_findings") or []
+    if unverified:
+        title = (pages.get("unverified") or {}).get("title") or "Single-model and unverified"
+        lede = (pages.get("unverified") or {}).get("lede") or ""
+        lines += ["", f"## {title}", "", lede, ""]
+        for f in unverified:
+            lines.append(_finding_line(f))
+            for facet in f.get("facets") or []:
+                lines.append(_finding_line(facet, indent="  "))
     if content.get("sources"):
         lines += ["", "## Sources and citations", ""]
         for src in content["sources"]:

@@ -163,6 +163,15 @@ def llm_findings_bars_svg(
     band_keys = set((sample or {}).keys()) if isinstance(sample, dict) else set()
     if "damaging" in band_keys or "potentially_damaging" in band_keys:
         legend_order = ("damaging", "potentially_damaging", "unexpected", "interesting")
+    elif "commercially_sensitive" in band_keys or "potentially_strategic" in band_keys:
+        legend_order = (
+            "commercially_sensitive",
+            "potentially_strategic",
+            "unexpected",
+            "interesting",
+        )
+    elif "material" in band_keys:
+        legend_order = ("security_relevant", "material", "unexpected", "interesting")
     elif "sensitive" in band_keys and "security_relevant" not in band_keys:
         legend_order = ("sensitive", "unexpected", "interesting", "expected")
     else:

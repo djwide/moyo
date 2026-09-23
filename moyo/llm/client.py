@@ -464,34 +464,125 @@ def _anthropic_web_search_tools() -> List[Dict[str, Any]]:
     ]
 
 
-def _responses_output_text(response: Any) -> str:
-    """Visible text from an OpenAI/xAI Responses API result."""
-    text = getattr(response, "output_text", None)
-    if isinstance(text, str) and text.strip():
-        return text.strip()
-    parts: list[str] = []
-    for item in getattr(response, "output", None) or []:
-        item_type = getattr(item, "type", None)
-        if isinstance(item, dict):
-            item_type = item.get("type")
-            content = item.get("content") or []
-        else:
-            content = getattr(item, "content", None) or []
-        if item_type != "message":
+def _node_get(node: Any, key: str, default: Any = None) -> Any:
+    if isinstance(node, dict):
+        return node.get(key, default)
+    return getattr(node, key, default)
+
+
+def _citation_string(url: str, title: str = "") -> str:
+    cleaned = (url or "").strip().rstrip(".,);]")
+    if not cleaned.lower().startswith("http"):
+        return ""
+    label = (title or "").strip()
+    if label and label.lower() != cleaned.lower():
+        return f"{label} — {cleaned}"
+    return cleaned
+
+
+def _citation_from_item(item: Any) -> str:
+    if isinstance(item, str):
+        return _citation_string(item)
+    if item is None:
+        return ""
+    nested = _node_get(item, "url_citation") or _node_get(item, "web")
+    url = str(
+        _node_get(item, "url")
+        or _node_get(item, "uri")
+        or _node_get(item, "href")
+        or ( _node_get(nested, "url") if nested else "")
+        or ( _node_get(nested, "uri") if nested else "")
+        or ""
+    )
+    title = str(
+        _node_get(item, "title")
+        or _node_get(item, "name")
+        or ( _node_get(nested, "title") if nested else "")
+        or ""
+    )
+    return _citation_string(url, title)
+
+
+def _extend_citations(out: List[str], seen: set[str], items: Any) -> None:
+    if not items:
+        return
+    if isinstance(items, (str, dict)) or not isinstance(items, (list, tuple)):
+        items = [items]
+    for item in items:
+        cite = _citation_from_item(item)
+        if not cite:
             continue
-        for part in content:
-            if isinstance(part, dict):
-                if part.get("type") in (None, "output_text", "text"):
-                    chunk = str(part.get("text") or "").strip()
-                    if chunk:
-                        parts.append(chunk)
+        key = cite.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cite)
+
+
+def _append_source_lines(content: str, citations: List[str]) -> str:
+    """Append provider citation URLs that are not already in the answer text."""
+    body = content or ""
+    missing: List[str] = []
+    seen: set[str] = set()
+    for raw in citations:
+        cite = (raw or "").strip()
+        if not cite or cite.lower() in seen:
+            continue
+        seen.add(cite.lower())
+        if cite in body:
+            continue
+        url_match = re.search(r"https?://\S+", cite)
+        if url_match and url_match.group(0).rstrip(".,);]") in body:
+            continue
+        missing.append(cite)
+    if not missing:
+        return content
+    lines = "\n".join(f"- {cite}" for cite in missing)
+    if body.rstrip():
+        return f"{body.rstrip()}\n\nSources:\n{lines}"
+    return f"Sources:\n{lines}"
+
+
+def _responses_output_text(response: Any) -> str:
+    """Visible text from an OpenAI/xAI Responses API result, plus citation URLs."""
+    text = getattr(response, "output_text", None)
+    parts: list[str] = []
+    if isinstance(text, str) and text.strip():
+        parts.append(text.strip())
+    else:
+        for item in getattr(response, "output", None) or []:
+            item_type = getattr(item, "type", None)
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                content = item.get("content") or []
             else:
-                part_type = getattr(part, "type", None)
-                if part_type in (None, "output_text", "text"):
-                    chunk = str(getattr(part, "text", "") or "").strip()
-                    if chunk:
-                        parts.append(chunk)
-    return "\n".join(parts).strip()
+                content = getattr(item, "content", None) or []
+            if item_type != "message":
+                continue
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") in (None, "output_text", "text"):
+                        chunk = str(part.get("text") or "").strip()
+                        if chunk:
+                            parts.append(chunk)
+                else:
+                    part_type = getattr(part, "type", None)
+                    if part_type in (None, "output_text", "text"):
+                        chunk = str(getattr(part, "text", "") or "").strip()
+                        if chunk:
+                            parts.append(chunk)
+    return _append_source_lines("\n".join(parts).strip(), _responses_citations(response))
+
+
+def _responses_citations(response: Any) -> List[str]:
+    """url_citation annotations on an OpenAI/xAI Responses API result."""
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in getattr(response, "output", None) or []:
+        content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+        for part in content or []:
+            _extend_citations(out, seen, _node_get(part, "annotations"))
+    return out
 
 
 def _openai_message_text(message: Any) -> str:
@@ -541,48 +632,60 @@ def _anthropic_message_text(response: Any) -> str:
         text = getattr(block, "text", None)
         if isinstance(text, str) and text.strip():
             parts.append(text.strip())
-    return "\n".join(parts).strip()
+    return _append_source_lines("\n".join(parts).strip(), _anthropic_citations(response))
+
+
+def _anthropic_citations(response: Any) -> List[str]:
+    """URLs from Anthropic text citations and web_search tool results."""
+    out: List[str] = []
+    seen: set[str] = set()
+    for block in getattr(response, "content", None) or []:
+        block_type = str(_node_get(block, "type") or "")
+        _extend_citations(out, seen, _node_get(block, "citations"))
+        if block_type == "web_search_tool_result":
+            _extend_citations(out, seen, _node_get(block, "content"))
+    return out
 
 
 def _citations_from_response(response: Any) -> List[str]:
-    """Pull citation URLs from OpenAI-compatible responses (e.g. Perplexity)."""
-    raw = getattr(response, "citations", None)
-    if raw is None:
-        extra = getattr(response, "model_extra", None) or {}
-        if isinstance(extra, dict):
-            raw = extra.get("citations")
-    if not isinstance(raw, (list, tuple)):
-        return []
+    """Citation URLs from OpenAI-compatible chat responses.
+
+    Covers Perplexity ``citations``, message annotations, Qwen ``search_info``,
+    Gemini grounding chunks, and OpenRouter citation lists.
+    """
     out: List[str] = []
     seen: set[str] = set()
-    for item in raw:
-        if isinstance(item, str):
-            url = item.strip()
-        elif isinstance(item, dict):
-            url = str(item.get("url") or item.get("href") or "").strip()
-        else:
-            url = ""
-        if not url or url in seen:
+    extra = getattr(response, "model_extra", None) or {}
+    if not isinstance(extra, dict):
+        extra = {}
+
+    _extend_citations(out, seen, getattr(response, "citations", None))
+    _extend_citations(out, seen, extra.get("citations"))
+
+    search_info = extra.get("search_info") or getattr(response, "search_info", None) or {}
+    if isinstance(search_info, dict):
+        _extend_citations(out, seen, search_info.get("search_results"))
+
+    for key in ("grounding_metadata", "groundingMetadata"):
+        grounding = extra.get(key) or getattr(response, key, None) or {}
+        if isinstance(grounding, dict):
+            _extend_citations(out, seen, grounding.get("grounding_chunks") or grounding.get("groundingChunks"))
+
+    for choice in getattr(response, "choices", None) or []:
+        message = _node_get(choice, "message")
+        if message is None:
             continue
-        seen.add(url)
-        out.append(url)
+        _extend_citations(out, seen, _node_get(message, "annotations"))
+        message_extra = _node_get(message, "model_extra") or {}
+        if isinstance(message_extra, dict):
+            _extend_citations(out, seen, message_extra.get("annotations"))
+            _extend_citations(out, seen, message_extra.get("citations"))
     return out
 
 
 def _with_provider_citations(content: str, response: Any) -> str:
     """Append a Sources list when the provider returns structured citations."""
-    citations = _citations_from_response(response)
-    if not citations:
-        return content
-    # Avoid duplicating URLs already present in the answer body.
-    missing = [c for c in citations if c not in content]
-    if not missing:
-        return content
-    lines = "\n".join(f"- {c}" for c in missing)
-    body = (content or "").rstrip()
-    if body:
-        return f"{body}\n\nSources:\n{lines}"
-    return f"Sources:\n{lines}"
+    return _append_source_lines(content, _citations_from_response(response))
 
 
 def _is_fixed_temperature_error(exc: BaseException) -> bool:
@@ -1247,6 +1350,7 @@ class LLMClient:
         last_content = ""
         response = None
         message = None
+        search_cites: List[str] = []
         for _ in range(4):
             create_kwargs: Dict[str, Any] = {
                 "model": self.spec.model,
@@ -1277,7 +1381,10 @@ class LLMClient:
             tool_calls = getattr(message, "tool_calls", None) or []
             if not tool_calls:
                 return self._finish_moonshot_response(
-                    _with_provider_citations(last_content, response),
+                    _append_source_lines(
+                        _with_provider_citations(last_content, response),
+                        search_cites,
+                    ),
                     response,
                     message,
                 )
@@ -1301,6 +1408,9 @@ class LLMClient:
             assistant_msg["tool_calls"] = serialized_calls
             messages.append(assistant_msg)
             for call in serialized_calls:
+                arguments = str(call["function"]["arguments"] or "")
+                for match in re.finditer(r"https?://[^\s\"'\\]+", arguments):
+                    search_cites.append(match.group(0).rstrip(".,);]"))
                 messages.append(
                     {
                         "role": "tool",
@@ -1309,7 +1419,11 @@ class LLMClient:
                         "content": call["function"]["arguments"],
                     }
                 )
-        return self._finish_moonshot_response(last_content, response, message)
+        return self._finish_moonshot_response(
+            _append_source_lines(last_content, search_cites),
+            response,
+            message,
+        )
 
     def _finish_moonshot_response(
         self,

@@ -113,6 +113,8 @@ def test_snapshot_keeps_more_than_five_findings():
             "specificity": 5 if i < 6 else 3,
             "source_model": "ChatGPT",
             "confidence": 3,
+            "corroboration": 2,
+            "citations": [f"Filing — https://example.com/vault/{i}"],
         }
         for i in range(1, 16)
     ]
@@ -341,7 +343,7 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
     assert "SNAPSHOT_MUST_OMIT_THIS_CORPUS" not in snap
     assert "Normalized Responses" not in snap
     assert 'id="appendix-responses"' not in snap
-    assert "The model provided no citations for this assertion." in basis
+    assert "Unverified — no source URL." in basis
     assert "toc--sub" in basis
     assert 'id="model-gpt"' in snap
     assert 'id="model-gpt"' in basis

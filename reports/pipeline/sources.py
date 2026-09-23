@@ -69,6 +69,10 @@ def build_source_registry(
                 continue
             label = plain_text(entry.get("label") or entry.get("text") or "")
             url = (entry.get("url") or "").strip()
+            # A named outlet with no link is not a citation. Keep the full
+            # label and URL together, or omit the source.
+            if not url.startswith("http"):
+                continue
             if not label and not url:
                 continue
             key = _dedupe_key({"label": label, "url": url, "text": entry.get("text", "")})

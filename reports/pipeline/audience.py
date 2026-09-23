@@ -1,8 +1,8 @@
 """Report voice by storefront scan audience.
 
-Business intelligence and security stay on the organization builder.
-Opposition research drops ordinary public facts and renames the top bands.
-Personal scans keep biography and call the top band Sensitive.
+The generic organization builder is unchanged. Competitive intelligence and
+security each keep Interesting and Unexpected, drop ordinary Expected facts,
+and rename the top bands. Opposition and personal keep their own voices.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from typing import Any
 ORGANIZATION = "organization"
 OPPOSITION = "opposition"
 PERSONAL = "personal"
+COMPETITIVE = "competitive"
+SECURITY = "security"
 
 _BASIC_CLASS_TO_BIN = {
     "Security relevant": "security_relevant",
@@ -36,10 +38,33 @@ _PERSONAL_CLASS_TO_BIN = {
     "Security relevant": "sensitive",
 }
 
+_COMPETITIVE_CLASS_TO_BIN = {
+    "Commercially sensitive": "commercially_sensitive",
+    "Potentially strategic": "potentially_strategic",
+    "Unexpected": "unexpected",
+    "Interesting": "interesting",
+    "Expected": "expected",
+}
+
+_SECURITY_CLASS_TO_BIN = {
+    "Security relevant": "security_relevant",
+    "Material": "material",
+    "Unexpected": "unexpected",
+    "Interesting": "interesting",
+    "Expected": "expected",
+}
+
 CHART_ORDER = {
     ORGANIZATION: ("security_relevant", "unexpected", "interesting", "expected"),
     OPPOSITION: ("damaging", "potentially_damaging", "unexpected", "interesting"),
     PERSONAL: ("sensitive", "unexpected", "interesting", "expected"),
+    COMPETITIVE: (
+        "commercially_sensitive",
+        "potentially_strategic",
+        "unexpected",
+        "interesting",
+    ),
+    SECURITY: ("security_relevant", "material", "unexpected", "interesting"),
 }
 
 # Lower sorts first in inventories and on the one-pager.
@@ -63,6 +88,20 @@ CLASS_RANK = {
         "Unexpected": 2,
         "Sensitive": 3,
     },
+    COMPETITIVE: {
+        "Commercially sensitive": 0,
+        "Potentially strategic": 1,
+        "Unexpected": 2,
+        "Interesting": 3,
+        "Expected": 9,
+    },
+    SECURITY: {
+        "Security relevant": 0,
+        "Material": 1,
+        "Unexpected": 2,
+        "Interesting": 3,
+        "Expected": 9,
+    },
 }
 
 
@@ -72,11 +111,15 @@ def normalize_audience(raw: Any) -> str:
         return OPPOSITION
     if text == PERSONAL:
         return PERSONAL
+    if text == COMPETITIVE:
+        return COMPETITIVE
+    if text == SECURITY:
+        return SECURITY
     return ORGANIZATION
 
 
 def base_disclosure_class(finding: dict) -> str:
-    """Organization-builder bucket. Unchanged for business and security scans."""
+    """Organization-builder bucket. Other voices remap this label."""
     sens = int(finding.get("sensitivity") or 0)
     novelty = int(finding.get("novelty") or 0)
     corr = int(finding.get("corroboration") or 1)
@@ -109,6 +152,26 @@ def disclosure_class(finding: dict, audience: str = ORGANIZATION) -> str:
         if base == "Security relevant":
             return "Sensitive"
         return base
+    if audience == COMPETITIVE:
+        if base == "Security relevant" or sens >= 4:
+            return "Commercially sensitive"
+        if base == "Unexpected":
+            return "Unexpected"
+        if sens >= 3:
+            return "Potentially strategic"
+        if base == "Interesting":
+            return "Interesting"
+        return "Expected"
+    if audience == SECURITY:
+        if base == "Security relevant" or sens >= 4:
+            return "Security relevant"
+        if base == "Unexpected":
+            return "Unexpected"
+        if sens >= 3:
+            return "Material"
+        if base == "Interesting":
+            return "Interesting"
+        return "Expected"
     return base
 
 
@@ -118,6 +181,8 @@ def disclosure_bin(finding: dict, audience: str = ORGANIZATION) -> str:
     table = {
         OPPOSITION: _OPPO_CLASS_TO_BIN,
         PERSONAL: _PERSONAL_CLASS_TO_BIN,
+        COMPETITIVE: _COMPETITIVE_CLASS_TO_BIN,
+        SECURITY: _SECURITY_CLASS_TO_BIN,
     }.get(audience, _BASIC_CLASS_TO_BIN)
     return table.get(label, "expected")
 
@@ -127,12 +192,13 @@ def chart_order(audience: str = ORGANIZATION) -> tuple[str, ...]:
 
 
 def retain_finding(finding: dict, audience: str = ORGANIZATION) -> bool:
-    """Opposition reports omit Info and non-controversial Expected facts."""
-    if normalize_audience(audience) != OPPOSITION:
+    """Opposition, competitive, and security reports omit ordinary public facts."""
+    audience = normalize_audience(audience)
+    if audience not in {OPPOSITION, COMPETITIVE, SECURITY}:
         return True
     if int(finding.get("sensitivity") or 0) <= 1:
         return False
-    return disclosure_class(finding, OPPOSITION) != "Expected"
+    return disclosure_class(finding, audience) != "Expected"
 
 
 def sort_key(finding: dict, audience: str = ORGANIZATION) -> tuple:
@@ -168,6 +234,24 @@ def profile(audience: str = ORGANIZATION) -> dict[str, str]:
             "priority_label": "Sensitive",
             "headline": "What models associate with this person",
         }
+    if audience == COMPETITIVE:
+        return {
+            "audience": COMPETITIVE,
+            "kicker": "Competitive intelligence",
+            "basis_kicker": "Competitive intelligence",
+            "eyebrow": "Competitive intelligence",
+            "priority_label": "Commercially sensitive",
+            "headline": "What models already know about this competitor",
+        }
+    if audience == SECURITY:
+        return {
+            "audience": SECURITY,
+            "kicker": "Security exposure",
+            "basis_kicker": "Security exposure",
+            "eyebrow": "Security exposure",
+            "priority_label": "Security relevant",
+            "headline": "What an outsider can already reconstruct",
+        }
     return {
         "audience": ORGANIZATION,
         "kicker": "Exposure assessment",
@@ -184,4 +268,10 @@ def priority_count(findings: list[dict], audience: str = ORGANIZATION) -> int:
         return sum(1 for f in findings if disclosure_class(f, audience) == "Damaging")
     if audience == PERSONAL:
         return sum(1 for f in findings if disclosure_class(f, audience) == "Sensitive")
+    if audience == COMPETITIVE:
+        return sum(
+            1 for f in findings if disclosure_class(f, audience) == "Commercially sensitive"
+        )
+    if audience == SECURITY:
+        return sum(1 for f in findings if disclosure_class(f, audience) == "Security relevant")
     return sum(1 for f in findings if int(f.get("sensitivity") or 0) >= 4)

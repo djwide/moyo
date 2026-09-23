@@ -18,6 +18,7 @@ from .audience import (
 )
 from .language import looks_like_english
 from .cluster import dedupe_findings_by_group, present_id
+from .provenance import page_eligible
 
 
 def _headline_for_topic(topic: str) -> str:
@@ -46,9 +47,9 @@ def _alias(model: str, aliases: dict[str, str]) -> str:
 def disclosure_class(finding: dict, audience: str | None = None) -> str:
     """User-facing finding bucket.
 
-    Organization (business intelligence and security): Expected, Interesting,
-    Unexpected, Security relevant. Opposition and personal scans remap those
-    bands. See ``pipeline.audience``.
+    Organization keeps Expected, Interesting, Unexpected, and Security relevant.
+    Competitive, security, opposition, and personal scans remap those bands.
+    See ``pipeline.audience``.
     """
     return audience_disclosure_class(finding, normalize_audience(audience))
 
@@ -309,17 +310,54 @@ def score_report(
     def _english(rows: list[dict]) -> dict | None:
         return next((c for c in rows if looks_like_english(str(c.get("claim") or ""))), None)
 
+    eligible = [c for c in ranked if page_eligible(c, voice)]
     if voice == "personal":
-        expected = [c for c in ranked if disclosure_class(c, voice) == "Expected"]
-        top = _english(expected) or _english(ranked)
+        expected = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Expected"
+        ]
+        top = _english(expected) or _english(eligible)
     elif voice == "opposition":
-        damaging = [c for c in ranked if disclosure_class(c, voice) == "Damaging"]
-        maybe = [c for c in ranked if disclosure_class(c, voice) == "Potentially damaging"]
-        top = _english(damaging) or _english(maybe) or _english(ranked)
+        damaging = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Damaging"
+        ]
+        maybe = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Potentially damaging"
+        ]
+        top = _english(damaging) or _english(maybe) or _english(eligible)
+    elif voice == "competitive":
+        commercial = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Commercially sensitive"
+        ]
+        maybe = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Potentially strategic"
+        ]
+        top = _english(commercial) or _english(maybe) or _english(eligible)
+    elif voice == "security":
+        relevant = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Security relevant"
+        ]
+        maybe = [
+            c
+            for c in eligible
+            if disclosure_class(c, voice) == "Material"
+        ]
+        top = _english(relevant) or _english(maybe) or _english(eligible)
     else:
-        top = _english(ranked)
-    if top is None:
-        top = ranked[0] if ranked else None
+        top = _english(eligible)
+    if top is None and not eligible:
+        top = None
     badges: list[str] = []
     if top:
         if top.get("sensitivity", 0) >= high_min:
@@ -415,7 +453,11 @@ def score_report(
         },
         "top_finding": {
             "claim_id": top["claim_id"] if top else "",
-            "text": top["claim"] if top else "No findings extracted.",
+            "text": (
+                top["claim"]
+                if top
+                else "No sourced finding in this run is corroborated enough to lead."
+            ),
             "badges": badges,
         },
         "model_exposure": model_exposure,

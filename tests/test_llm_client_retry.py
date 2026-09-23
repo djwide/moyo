@@ -8,6 +8,8 @@ from moyo.llm.client import (
     LLMClient,
     LLMSpec,
     _anthropic_message_text,
+    _citations_from_response,
+    _responses_output_text,
     _fixed_temperature_for_model,
     _is_anthropic_no_temperature_model,
     _is_openai_max_completion_tokens_model,
@@ -558,3 +560,44 @@ def test_complete_openai_skips_web_search_by_default(monkeypatch):
     monkeypatch.setattr(client, "_client", FakeClient())
     assert client.complete("hi", max_tokens=16, retries=0) == "OK"
     assert "tools" not in captured
+
+
+def test_responses_api_appends_url_citations():
+    class Part:
+        type = "output_text"
+        text = "Gonzalez filed a disclosure."
+        annotations = [
+            {
+                "type": "url_citation",
+                "url": "https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2023/10054321.pdf",
+                "title": "House financial disclosure",
+            }
+        ]
+
+    class Message:
+        type = "message"
+        content = [Part()]
+
+    class Resp:
+        output_text = "Gonzalez filed a disclosure."
+        output = [Message()]
+
+    text = _responses_output_text(Resp())
+    assert "https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2023/10054321.pdf" in text
+    assert "House financial disclosure" in text
+
+
+def test_chat_completions_keep_search_result_urls():
+    class Resp:
+        citations = None
+        choices = []
+        model_extra = {
+            "search_info": {
+                "search_results": [
+                    {"title": "FEC candidate", "url": "https://www.fec.gov/data/candidate/H6TX15112/"}
+                ]
+            }
+        }
+
+    cites = _citations_from_response(Resp())
+    assert cites == ["FEC candidate — https://www.fec.gov/data/candidate/H6TX15112/"]

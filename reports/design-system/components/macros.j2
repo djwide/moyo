@@ -31,23 +31,37 @@
 {% macro citation_line(citations) -%}
   {%- set ns = namespace(items=[]) -%}
   {%- for c in citations or [] -%}
-    {%- if c.ref or c.label -%}
+    {%- if c.url -%}
       {%- set ns.items = ns.items + [c] -%}
     {%- endif -%}
   {%- endfor -%}
   <div class="citation-line">
     {%- if ns.items -%}
     <span class="citation-line__label">Cited</span>
-    {%- for c in ns.items %}
+    {%- for c in ns.items if c.url %}
     <span class="citation-line__item">
-      <a class="cite-ref source-refs" href="#cite-{{ c.ref }}">{{ c.ref }}</a>
-      {{ c.label }}
+      <a class="cite-ref source-refs" href="{{ c.url }}">{{ c.ref }}</a>
+      <a href="{{ c.url }}">{{ c.label }}</a>
     </span>{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
     {%- endfor %}
     {%- else -%}
-    <span class="citation-line__empty">The model provided no citations for this assertion.</span>
+    <span class="citation-line__empty">Unverified — no source URL.</span>
     {%- endif -%}
   </div>
+{%- endmacro %}
+
+{% macro facet_list(facets) -%}
+  {%- if facets -%}
+  <ul class="finding-facets">
+    {%- for facet in facets %}
+    <li>
+      <span class="mono">{{ facet.claim_id }}</span>
+      {{ facet.claim }}
+      {%- if facet.provenance %} — {{ facet.provenance }}{% endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif -%}
 {%- endmacro %}
 
 {% macro language_badge(language) -%}
@@ -66,7 +80,7 @@
       {{ severity_badge(sev) }}
       {{ language_badge(f.prompt_language) }}
     </header>
-    <p class="finding__claim">{{ f.claim | link_cites }}</p>
+    <p class="finding__claim">{{ f.claim | link_cites }}{% if f.provenance %} <span class="finding__provenance">{{ f.provenance }}</span>{% endif %}</p>
     <div class="finding__meta">
       <span>{{ source_cite(f) }}</span>
       <span>Sens {{ f.sensitivity | format_score }} · Spec {{ f.specificity | format_score }}</span>

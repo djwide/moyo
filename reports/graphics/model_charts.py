@@ -103,6 +103,15 @@ def model_mix_svg(
     keys = set((bands or {}).keys())
     if "damaging" in keys or "potentially_damaging" in keys:
         order = ("damaging", "potentially_damaging", "unexpected", "interesting")
+    elif "commercially_sensitive" in keys or "potentially_strategic" in keys:
+        order = (
+            "commercially_sensitive",
+            "potentially_strategic",
+            "unexpected",
+            "interesting",
+        )
+    elif "material" in keys:
+        order = ("security_relevant", "material", "unexpected", "interesting")
     elif "sensitive" in keys and "security_relevant" not in keys:
         order = ("sensitive", "unexpected", "interesting", "expected")
     else:
