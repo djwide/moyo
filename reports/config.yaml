@@ -101,6 +101,10 @@ render:
   isvf_path: IdeaSecurityVerificationFramework
   # Off by default; enable via --include-remediation or this flag.
   include_remediation: false
+  # Report voice: organization | personal | competitive | security | opposition.
+  # Cloud jobs set this from scanAudience. Locally pass --audience or leave
+  # unset to infer from a storefront wrap in exploration.md.
+  # audience: organization
   show_request_full_report: false  # one-pager omits CTA; email may still CTA
   page_size: A4
   design_system: design-system

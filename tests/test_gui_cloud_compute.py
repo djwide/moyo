@@ -35,6 +35,7 @@ def test_build_order_payload_shape():
     assert payload["includeRemediation"] is True
     assert "organization" not in payload
     assert "title" not in payload
+    assert "scanAudience" not in payload
 
 
 def test_build_order_payload_includes_project_name():
@@ -45,6 +46,19 @@ def test_build_order_payload_includes_project_name():
     )
     assert payload["organization"] == "Coke Recipe"
     assert payload["title"] == "Coke Recipe Basis Report"
+
+
+def test_build_order_payload_includes_scan_audience():
+    payload = build_order_payload(
+        prompts=["Compile opposition research from public sources on Selina Meyer."],
+        scan_audience="opposition",
+    )
+    assert payload["scanAudience"] == "opposition"
+    org = build_order_payload(
+        prompts=["What happened at Enron?"],
+        scan_audience="organization",
+    )
+    assert "scanAudience" not in org
 
 
 def test_order_storage_folder_for_gui_id():

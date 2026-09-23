@@ -282,3 +282,89 @@ def test_security_basis_adds_red_team_and_snapshot_does_not():
     basis_titles = [item["title"] for item in doc["next_steps"]["basis"]["items"]]
     assert "Red-team the reachable conclusions" not in snap_titles
     assert "Red-team the reachable conclusions" in basis_titles
+
+
+OPPO_WRAP = (
+    "Compile opposition research from public sources on Vicente Gonzalez Jr. "
+    "as a candidate in Texas 34th Congressional District 2026. Disambiguate "
+    "the person using the race (office, jurisdiction, and cycle): Texas 34th "
+    "Congressional District 2026. Report documented public-record material "
+    "an opposition researcher would catalog: controversies and contradictions."
+)
+PERSONAL_WRAP = (
+    "What personal, biographical, and lesser-known public information do AI "
+    "systems associate with Tracy Flick? Include roles, associates, schools, "
+    "employers, and facts that are not on the first page of a web search."
+)
+COMPETITIVE_WRAP = (
+    "What do AI systems already know about Duff Cola (Austin, Texas) from "
+    "public information? Include unannounced or non-public product details, "
+    "programs they appear to be hiring for, partnerships, and operational "
+    "facts that are not in official marketing."
+)
+ORG_WRAP = (
+    "What do AI systems already know about Northline Robotics from public "
+    "information? Include headquarters, leadership, products, and "
+    "lesser-known relationships."
+)
+
+
+def test_infer_audience_from_storefront_wraps():
+    from pipeline.audience import infer_audience_from_text, infer_cover_from_text
+
+    assert infer_audience_from_text(OPPO_WRAP) == "opposition"
+    assert infer_audience_from_text(PERSONAL_WRAP) == "personal"
+    assert infer_audience_from_text(COMPETITIVE_WRAP) == "competitive"
+    assert infer_audience_from_text(ORG_WRAP) == "organization"
+    assert infer_audience_from_text("What happened at Enron?") is None
+    headed = "# Topic exploration: " + OPPO_WRAP
+    assert infer_audience_from_text(headed) == "opposition"
+    assert infer_cover_from_text(headed)["display_topic"].startswith("Vicente Gonzalez Jr.")
+
+    oppo = infer_cover_from_text(OPPO_WRAP)
+    assert oppo["audience"] == "opposition"
+    assert oppo["display_topic"] == (
+        "Vicente Gonzalez Jr. — Texas 34th Congressional District 2026"
+    )
+    personal = infer_cover_from_text(PERSONAL_WRAP)
+    assert personal["display_topic"] == "Tracy Flick"
+    competitive = infer_cover_from_text(COMPETITIVE_WRAP)
+    assert competitive["display_topic"] == "Duff Cola"
+    assert competitive["subject_detail"] == "Austin, Texas"
+
+
+def test_resolve_audience_prefers_cli_then_wrap_over_prior_org():
+    from pipeline.audience import resolve_audience, resolve_cover_field
+
+    assert (
+        resolve_audience(explicit="security", texts=[OPPO_WRAP], prior="personal")
+        == "security"
+    )
+    assert (
+        resolve_audience(config="competitive", texts=[OPPO_WRAP], prior="personal")
+        == "competitive"
+    )
+    assert resolve_audience(texts=[OPPO_WRAP], prior="organization") == "opposition"
+    assert resolve_audience(prior="personal") == "personal"
+    assert resolve_audience() == "organization"
+    assert (
+        resolve_cover_field(key="display_topic", texts=[OPPO_WRAP])
+        == "Vicente Gonzalez Jr. — Texas 34th Congressional District 2026"
+    )
+    assert (
+        resolve_cover_field(
+            key="display_topic",
+            explicit="Selina Meyer",
+            texts=[OPPO_WRAP],
+        )
+        == "Selina Meyer"
+    )
+
+
+def test_stock_headlines_cover_every_voice():
+    from pipeline.audience import AUDIENCE_CHOICES, profile, stock_headlines
+
+    titles = stock_headlines()
+    assert "What AI Systems Reveal" in titles
+    for name in AUDIENCE_CHOICES:
+        assert profile(name)["headline"] in titles

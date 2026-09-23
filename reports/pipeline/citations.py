@@ -250,6 +250,72 @@ def _with_url(items: list[str], *, limit: int) -> list[str]:
     return out
 
 
+_GENERIC_HOST_KEYS = frozenset(
+    {
+        "www",
+        "http",
+        "https",
+        "com",
+        "org",
+        "gov",
+        "edu",
+        "net",
+        "html",
+        "htm",
+        "io",
+        "us",
+        "house",
+        "news",
+        "www2",
+        "public",
+        "data",
+        "info",
+        "pdf",
+    }
+)
+_TLDS = frozenset({"com", "org", "gov", "edu", "net", "io", "us"})
+
+
+def citation_match_keys(raw: str) -> set[str]:
+    """Distinctive host tokens used to match a footer URL to an excerpt.
+
+    ``opensecrets.org`` yields ``opensecrets``. ``house.gov`` does not yield
+    ``house``, so a House.gov link is not attached just because the prose
+    says "House".
+    """
+    _label, url = split_citation(raw)
+    if not url:
+        return set()
+    host = re.sub(r"^https?://", "", url.lower()).split("/")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    parts = [part for part in re.split(r"[.\-]", host) if part]
+    if parts and parts[-1] in _TLDS:
+        parts = parts[:-1]
+    keys: set[str] = set()
+    distinctive = [part for part in parts if part not in _GENERIC_HOST_KEYS and len(part) >= 3]
+    keys.update(distinctive)
+    joined = "".join(distinctive)
+    if len(joined) >= 6:
+        keys.add(joined)
+    return keys
+
+
+def _name_matches(haystack: str, keys: set[str]) -> bool:
+    if not keys or not haystack:
+        return False
+    lowered = haystack.lower()
+    compact = re.sub(r"[^a-z0-9]", "", lowered)
+    for key in keys:
+        if re.search(rf"\b{re.escape(key)}\b", lowered):
+            return True
+        if len(key) >= 6 and key in compact:
+            return True
+        if key.endswith("s") and len(key) > 5 and key[:-1] in compact:
+            return True
+    return False
+
+
 def resolve_claim_citations(
     *,
     claim: str = "",
@@ -261,12 +327,12 @@ def resolve_claim_citations(
 ) -> list[str]:
     """Citations that this claim's own excerpt points at, and that include a URL.
 
-    Numbered markers in the excerpt may resolve through ``reference_map``.
-    A quoted headline with no URL is dropped. The parent chunk's source list
-    is not copied onto the claim: ``chunk_citations`` is ignored so an
-    unrelated biography or House.gov link does not ride along.
+    Numbered markers in the excerpt resolve through ``reference_map`` (including
+    ``chunk.citation_refs``). A footer URL is kept when the excerpt names that
+    source (OpenSecrets matches an opensecrets.org link). The rest of the
+    chunk bibliography is not copied. A quoted headline with no matching URL
+    is dropped.
     """
-    del chunk_citations
     blob = "\n".join(part for part in (excerpt, claim) if part)
     specific = merge_citations(
         citations_from_markers(blob, reference_map),
@@ -285,7 +351,17 @@ def resolve_claim_citations(
         urls = _urls_in(item)
         if urls and any(url in haystack for url in urls):
             grounded_llm.append(item)
-    picked = merge_citations(specific, grounded_llm, limit=limit)
+    named_footer: list[str] = []
+    for item in chunk_citations or []:
+        if not _URL_RE.search(item or ""):
+            continue
+        urls = _urls_in(item)
+        if urls and any(url in haystack for url in urls):
+            named_footer.append(item)
+            continue
+        if _name_matches(haystack, citation_match_keys(item)):
+            named_footer.append(item)
+    picked = merge_citations(specific, grounded_llm, named_footer, limit=limit)
     return _with_url(picked, limit=limit)
 
 
@@ -429,10 +505,11 @@ def attach_chunk_citations(
     overwrite: bool = False,
     limit: int = 6,
 ) -> list[dict]:
-    """Fill claim ``citations`` from markers and URLs in that claim's excerpt.
+    """Fill claim ``citations`` from this claim's excerpt.
 
-    The chunk source list is available for resolving ``[n]`` markers. It is
-    not copied onto claims whose excerpt has no marker and no URL.
+    ``[n]`` markers resolve through the chunk's ``citation_refs``. A footer
+    URL is attached when the excerpt names that source. The rest of the
+    chunk bibliography is not copied.
     """
     by_id: dict[str, list[str]] = {}
     refs_by_id: dict[str, dict[str, str]] = {}

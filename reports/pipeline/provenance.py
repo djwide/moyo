@@ -92,8 +92,14 @@ def language_specific(finding: dict[str, Any]) -> str:
     return first
 
 
-def provenance_label(finding: dict[str, Any]) -> str:
-    """Same-line label: language, model, and unverified when those apply."""
+def provenance_label(finding: dict[str, Any], audience: str | None = None) -> str:
+    """Same-line label: language, model, and unverified when those apply.
+
+    Personal and opposition reports say UNCORROBORATED for a single-model
+    claim. Other audiences keep MODEL-SPECIFIC.
+    """
+    from pipeline.audience import OPPOSITION, PERSONAL, normalize_audience
+
     parts: list[str] = []
     lang = language_specific(finding)
     if lang:
@@ -106,7 +112,9 @@ def provenance_label(finding: dict[str, Any]) -> str:
     if status == "MODEL-SPECIFIC" or n_models <= 1:
         names = _model_names(finding)
         model = _short_model(names[0] if names else "")
-        parts.append(f"MODEL-SPECIFIC · {model}")
+        voice = normalize_audience(audience) if audience else ""
+        word = "UNCORROBORATED" if voice in {PERSONAL, OPPOSITION} else "MODEL-SPECIFIC"
+        parts.append(f"{word} · {model}")
     if not has_source_url(finding):
         parts.append("UNVERIFIED")
     return " · ".join(parts)
@@ -238,7 +246,9 @@ def slim_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "claim_id": finding.get("claim_id"),
         "claim": finding.get("claim"),
         "status": finding.get("status"),
-        "provenance": finding.get("provenance") or provenance_label(finding),
+        "provenance": finding.get("provenance") or provenance_label(
+            finding, finding.get("audience")
+        ),
         "sensitivity": finding.get("sensitivity"),
         "corroboration": finding.get("corroboration"),
         "source_model": finding.get("source_model"),

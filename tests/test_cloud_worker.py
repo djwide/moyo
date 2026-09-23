@@ -159,6 +159,42 @@ def test_orders_collection_defaults_to_reports(monkeypatch):
     assert cw._orders_collection_candidates()[0] == "reports"
 
 
+def test_opposition_defaults_web_search_to_selected_models():
+    spec = cw.parse_order(
+        "ord_oppo",
+        {
+            "product": "snapshot",
+            "prompts": ["Compile opposition research from public sources on Ada."],
+            "scanAudience": "opposition",
+            "retrievalModels": ["grok-4.6", "kimi-k3"],
+        },
+    )
+    assert cw._opposition_web_search_ids(spec, spec.retrieval_models) == {
+        "grok-4.6",
+        "kimi-k3",
+    }
+    chosen = cw.parse_order(
+        "ord_oppo_subset",
+        {
+            "product": "snapshot",
+            "prompts": ["Compile opposition research from public sources on Ada."],
+            "scanAudience": "opposition",
+            "retrievalModels": ["grok-4.6", "kimi-k3"],
+            "retrievalWebSearchModels": ["grok-4.6"],
+        },
+    )
+    assert cw._opposition_web_search_ids(chosen, chosen.retrieval_models) == {"grok-4.6"}
+    org = cw.parse_order(
+        "ord_org",
+        {
+            "product": "snapshot",
+            "prompts": ["What do AI systems already know about Acme?"],
+            "retrievalModels": ["grok-4.6"],
+        },
+    )
+    assert cw._opposition_web_search_ids(org, org.retrieval_models) == set()
+
+
 def test_parse_storefront_order():
     spec = cw.parse_order(
         "ord_1",

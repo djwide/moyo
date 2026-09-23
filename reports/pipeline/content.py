@@ -19,6 +19,8 @@ from pipeline.graphics import ASSET_NAMES
 from pipeline.model_dossiers import build_model_dossiers
 from pipeline.synthesize import parse_executive_payload
 from pipeline.audience import (
+    OPPOSITION,
+    PERSONAL,
     disclosure_class as audience_disclosure_class,
     normalize_audience,
     profile as audience_profile,
@@ -808,7 +810,9 @@ def build_content_doc(
     findings = dedupe_findings_by_group(findings_enriched)
     findings.sort(key=lambda f: sort_key(f, voice))
     for row in findings:
-        row["provenance"] = provenance_label(row)
+        row["provenance"] = provenance_label(row, voice)
+        if voice in {PERSONAL, OPPOSITION} and _status(row) == "MODEL-SPECIFIC":
+            row["status_label"] = "Uncorroborated"
     shown, parked = presentation_rows(findings, voice)
     top = _sync_top_finding_english(top, shown or findings)
     shown_ids = {row.get("claim_id") for row in shown}
@@ -861,16 +865,34 @@ def build_content_doc(
     contrast["differences_prose"] = list(exec_page.get("model_differences") or [])
 
     # One row per episode. Unsourced and single-model damaging claims stay
-    # off the one-pager and the priority list.
+    # off the priority list. Opposition ranks them in a separate one-pager section.
     specific_cap = 4
     snapshot_cap = 12
     onepage_more_cap = 6
     top_id = top.get("claim_id") or ""
-    page_rows = [
-        row
-        for row in shown
-        if looks_like_english(str(row.get("claim") or "")) and not row.get("english_pending")
-    ] or shown
+
+    def _english_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        english = [
+            row
+            for row in rows
+            if looks_like_english(str(row.get("claim") or ""))
+            and not row.get("english_pending")
+        ]
+        return english or list(rows)
+
+    page_rows = _english_rows(shown)
+    if voice in {PERSONAL, OPPOSITION}:
+        top["badges"] = [
+            "Uncorroborated"
+            if str(badge).upper().replace("_", "-") == "MODEL-SPECIFIC"
+            else badge
+            for badge in list(top.get("badges") or [])
+        ]
+    # Opposition one-pager ranks verified and needs-verification separately.
+    onepage_verified = page_rows[:4] if voice == OPPOSITION else []
+    onepage_needs_verification = (
+        _english_rows(parked)[:4] if voice == OPPOSITION else []
+    )
     specific_findings = [row for row in page_rows if row.get("claim_id") != top_id][
         :specific_cap
     ]
@@ -1049,9 +1071,16 @@ def build_content_doc(
                 "body": "",
             },
             "unverified": {
-                "title": "Single-model and unverified",
+                "title": "Requires further verification"
+                if voice == OPPOSITION
+                else "Single-model and unverified",
                 "lede": (
-                    "These claims have no source URL, or in an opposition "
+                    "These claims have no source URL, or they are damaging and "
+                    "come from only one model. They are ranked separately from "
+                    "verified findings and featured on the one-pager under "
+                    "Requires further verification."
+                    if voice == OPPOSITION
+                    else "These claims have no source URL, or in an opposition "
                     "report they are damaging and come from only one model. "
                     "They are not on the one-pager."
                 ),
@@ -1146,6 +1175,8 @@ def build_content_doc(
         ),
         "specific_findings": specific_findings,
         "onepage_more": onepage_more,
+        "onepage_verified": onepage_verified,
+        "onepage_needs_verification": onepage_needs_verification,
         "sources": sources,
         "glossary": glossary_groups(voice),
         "what_else": [plain_text(w) for w in (report_data.get("what_else") or [])],

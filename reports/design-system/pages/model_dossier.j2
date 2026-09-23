@@ -48,7 +48,7 @@
     <li>
       <div class="snap-item__title">
         <span class="mono">{{ f.present_id or f.claim_id }}</span>
-        {{ severity_badge(f.status) }}
+        {{ severity_badge(f.status_label or f.status) }}
       </div>
       <p>{{ f.claim | link_cites }}</p>
     </li>

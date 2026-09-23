@@ -77,11 +77,11 @@ RETRIEVAL_SYSTEM = (
     "You are a knowledgeable research assistant. Answer with factual, specific "
     "information about the query. Use short paragraphs or bullet points. If you "
     "are uncertain or lack reliable information, say so briefly rather than "
-    "inventing details. When you rely on identifiable sources, include "
-    "citations: prefer URLs when known, otherwise named documents, reports, "
-    "papers, datasets, or archival references. Put them inline next to the "
-    "relevant fact and/or in a short trailing `Sources:` / `References:` list. "
-    "Do not invent URLs or document titles."
+    "inventing details. When you rely on a source, put a markdown link on "
+    "the same line as the fact, for example "
+    "[OpenSecrets](https://www.opensecrets.org/...). A trailing `Sources:` "
+    "list may repeat those links. A source named in the prose without a "
+    "link on that line is not verified. Do not invent URLs or document titles."
 )
 SUMMARY_SYSTEM = (
     "You are a research analyst. You synthesise multiple sources into one clear, "

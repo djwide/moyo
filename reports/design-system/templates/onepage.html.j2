@@ -70,6 +70,50 @@
       {% endif %}
     </div>
 
+    {% if content.meta.audience == 'opposition' %}
+    <div class="snap-split">
+      <section class="snap-split__col">
+        <h2>Verified</h2>
+        {% if content.onepage_verified %}
+        {% set lead = content.onepage_verified[0] %}
+        <p class="lead-finding">{{ lead.claim }}{% if lead.provenance %} — {{ lead.provenance }}{% endif %}</p>
+        <ul class="specific-list">
+          {% for f in content.onepage_verified[1:] %}
+          <li>
+            <div class="snap-item__title">
+              <span class="mono">{{ f.present_id or f.claim_id }}</span>
+              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+            </div>
+            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty">No verified findings in this run.</p>
+        {% endif %}
+      </section>
+      <section class="snap-split__col snap-split__col--verify">
+        <h2>Requires further verification</h2>
+        {% if content.onepage_needs_verification %}
+        {% set lead = content.onepage_needs_verification[0] %}
+        <p class="lead-finding">{{ lead.claim }}{% if lead.provenance %} — {{ lead.provenance }}{% endif %}</p>
+        <ul class="specific-list">
+          {% for f in content.onepage_needs_verification[1:] %}
+          <li>
+            <div class="snap-item__title">
+              <span class="mono">{{ f.present_id or f.claim_id }}</span>
+              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+            </div>
+            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty">No claims require further verification.</p>
+        {% endif %}
+      </section>
+    </div>
+    {% else %}
     <div class="snap-body">
       <section class="snap-body__lead">
         <h2>
@@ -95,7 +139,7 @@
             <div class="snap-item__title">
               <span class="mono">{{ f.present_id or f.claim_id }}</span>
               {{ severity_badge('SPECIFIC') }}
-              {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
+              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
             </div>
             <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
           </li>
@@ -114,13 +158,14 @@
         <li>
           <div class="snap-item__title">
             <span class="mono">{{ f.present_id or f.claim_id }}</span>
-            {% if f.status %}{{ severity_badge(f.status) }}{% endif %}
+            {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
           </div>
           <p class="snap-more-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
         </li>
         {% endfor %}
       </ul>
     </section>
+    {% endif %}
     {% endif %}
   </article>
 </body>

@@ -263,5 +263,15 @@ def glossary_groups(audience: str = "organization") -> list[dict[str, Any]]:
                 {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
                 {"term": "Interesting", "definition": "Lesser-known operational or personnel facts."},
             ]
+        if voice in {"opposition", "personal"}:
+            terms = [
+                {
+                    "term": "Uncorroborated",
+                    "definition": "Stated by one model. The model name is printed on the same line.",
+                }
+                if term["term"] == "Model-specific"
+                else term
+                for term in terms
+            ]
         groups.append({"title": group["title"], "terms": terms})
     return groups

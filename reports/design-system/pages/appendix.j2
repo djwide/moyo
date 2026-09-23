@@ -19,7 +19,7 @@
       <tr{% if loop.first %} class="is-priority"{% endif %}>
         <td class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}</td>
         <td>{{ f.claim | link_cites }}</td>
-        <td>{{ severity_badge(f.status) }}</td>
+        <td>{{ severity_badge(f.status_label or f.status) }}</td>
         <td class="num">{{ f.sensitivity | format_score }}</td>
         <td>
           <span class="source-cite">{{ f.source_cite or f.source_model }}</span>

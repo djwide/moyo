@@ -105,6 +105,7 @@ def build_order_payload(
     seeds: int = 3,
     organization: str | None = None,
     title: str | None = None,
+    scan_audience: str | None = None,
 ) -> dict[str, Any]:
     cleaned = [str(p).strip() for p in prompts if str(p).strip()]
     if not cleaned:
@@ -128,6 +129,9 @@ def build_order_payload(
         "source": "gui",
         "createdAt": utc_now(),
     }
+    audience = str(scan_audience or "").strip().lower()
+    if audience in {"opposition", "personal", "competitive", "security"}:
+        payload["scanAudience"] = audience
     if org:
         payload["organization"] = org
         payload["title"] = heading or f"{org} {product_label(product)}"
@@ -351,6 +355,7 @@ def submit_cloud_compute(
     seeds: int = 3,
     organization: str | None = None,
     title: str | None = None,
+    scan_audience: str | None = None,
     cfg: CloudComputeConfig | None = None,
     progress: ProgressFn | None = None,
 ) -> CloudSubmitResult:
@@ -367,6 +372,7 @@ def submit_cloud_compute(
         seeds=seeds,
         organization=organization,
         title=title,
+        scan_audience=scan_audience,
     )
     payload["orderId"] = order_id
     folder = order_storage_folder(order_id, prompts)

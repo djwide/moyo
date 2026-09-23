@@ -10,7 +10,7 @@
   <article class="basis-finding{% if f.severity == 'high' %} basis-finding--high{% endif %}{% if loop.first %} basis-finding--lead{% elif loop.index % 4 == 0 %} basis-finding--band{% endif %}">
     <div class="basis-finding__head">
       <span class="basis-finding__id">{{ f.present_id or f.cluster_id or f.claim_id }}</span>
-      {{ severity_badge(f.status) }}
+      {{ severity_badge(f.status_label or f.status) }}
       {{ severity_badge(f.severity) }}
       {{ language_badge(f.prompt_language) }}
     </div>

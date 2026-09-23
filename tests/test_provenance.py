@@ -26,12 +26,15 @@ def _claim(**kwargs):
 def test_model_and_language_labels_share_the_line():
     english = _claim()
     assert provenance_label(english) == "MODEL-SPECIFIC · Qwen · UNVERIFIED"
+    assert provenance_label(english, "organization") == "MODEL-SPECIFIC · Qwen · UNVERIFIED"
+    assert provenance_label(english, "opposition") == "UNCORROBORATED · Qwen · UNVERIFIED"
+    assert provenance_label(english, "personal") == "UNCORROBORATED · Qwen · UNVERIFIED"
     spanish = _claim(
         source_model="Qwen (Alibaba qwen3.8-max) (Spanish)",
         language="Spanish",
     )
-    assert provenance_label(spanish) == (
-        "LANGUAGE-SPECIFIC · Spanish · MODEL-SPECIFIC · Qwen · UNVERIFIED"
+    assert provenance_label(spanish, "opposition") == (
+        "LANGUAGE-SPECIFIC · Spanish · UNCORROBORATED · Qwen · UNVERIFIED"
     )
 
 

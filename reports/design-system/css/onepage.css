@@ -161,10 +161,29 @@ body {
   font-family: var(--font-sans);
 }
 
-.snap-body {
+.snap-body,
+.snap-split {
   display: flex;
   gap: 4mm;
   align-items: flex-start;
+}
+.snap-split__col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.snap-split__col--verify {
+  border-left: 2pt solid var(--moyo-ink);
+  padding-left: 3.5mm;
+}
+.snap-split__col > h2 {
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: var(--moyo-muted);
+  margin: 0 0 0.14rem;
+  border: 0;
+  padding: 0;
 }
 .snap-body__lead {
   flex: 1.15 1 0;

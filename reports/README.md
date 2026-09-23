@@ -21,6 +21,9 @@ python reports/build_report.py \
 # No LLM / smoke test
 python reports/build_report.py -e path/to/exploration.md --dry-run
 
+# Opposition / personal / competitive / security (same voices as the storefront)
+python reports/build_report.py -e path/to/exploration.md --audience opposition
+
 # Keep artifacts on disk only (default is to also push to the reports bucket)
 python reports/build_report.py -e path/to/exploration.md --no-upload
 ```

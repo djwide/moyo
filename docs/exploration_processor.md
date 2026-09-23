@@ -409,6 +409,15 @@ python reports/build_report.py -e path/to/exploration.md \
   --extract-workers 6 \
   --headline "What AI systems reveal about Coca-Cola's secret formula"
 
+# Storefront voices locally (opposition, personal, competitive, security)
+python reports/build_report.py -e path/to/exploration.md --audience opposition
+python reports/build_report.py -e path/to/exploration.md \
+  --audience opposition \
+  --display-topic "Vicente Gonzalez Jr. — Texas 34th Congressional District 2026"
+
+# Or omit --audience: the processor infers opposition / personal /
+# organization / competitive from a storefront wrap in exploration.md.
+
 # Editorial pass: edit report_data.json, then
 python reports/build_report.py --run-id <id> --from-stage render
 ```

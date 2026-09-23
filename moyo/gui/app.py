@@ -934,6 +934,55 @@ def _busy(button: QPushButton, busy: bool, idle_label: str) -> None:
         button.setEnabled(True)
 
 
+_REPORT_AUDIENCE_ITEMS = (
+    ("", "Auto (from exploration wrap)"),
+    ("organization", "Organization — exposure assessment"),
+    ("personal", "Personal — biographical associations"),
+    ("competitive", "Competitive intelligence"),
+    ("security", "Security exposure"),
+    ("opposition", "Opposition research"),
+)
+
+
+def _reports_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "reports"
+
+
+def _ensure_reports_on_path() -> None:
+    root = str(_reports_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+
+def _make_audience_combo(*, include_auto: bool = True) -> QComboBox:
+    combo = QComboBox()
+    for value, label in _REPORT_AUDIENCE_ITEMS:
+        if not value and not include_auto:
+            continue
+        combo.addItem(label, value)
+    combo.setToolTip(
+        "Report voice. Auto infers opposition / personal / organization "
+        "from a storefront-style wrap in the prompt or exploration.md. "
+        "Competitive and security share a wrap — pick security explicitly. "
+        "Rebuild from the score stage (or earlier) to apply a new voice."
+    )
+    return combo
+
+
+def _resolved_scan_audience(combo: QComboBox, prompts: list[str] | None = None) -> str:
+    selected = str(combo.currentData() or "").strip()
+    if selected:
+        return selected
+    _ensure_reports_on_path()
+    from pipeline.audience import infer_audience_from_text, ORGANIZATION
+
+    for raw in prompts or []:
+        inferred = infer_audience_from_text(raw)
+        if inferred:
+            return inferred
+    return ORGANIZATION
+
+
 def _make_compute_location_box(*, include_product: bool = True) -> tuple:
     """Local vs Cloud Run toggle plus connection settings.
 
@@ -1254,6 +1303,8 @@ class GatherPublicSourcesTab(QWidget):
         explore_fuzz_layout.addRow("Fuzz mode:", self.explore_fuzz_mode_combo)
         explore_fuzz_layout.addRow("Strategies:", strategy_row)
         explore_fuzz_layout.addRow("Extra languages:", self.explore_languages_input)
+        self.explore_audience_combo = _make_audience_combo(include_auto=True)
+        explore_fuzz_layout.addRow("Report voice:", self.explore_audience_combo)
         self.explore_fuzz_row.setVisible(False)
         layout.addWidget(self.explore_fuzz_row)
         self._sync_explore_strategy_checks()
@@ -1571,6 +1622,9 @@ class GatherPublicSourcesTab(QWidget):
                 strategies=strategies,
                 languages=extra_languages or [],
                 organization=gui_project_name(self),
+                scan_audience=_resolved_scan_audience(
+                    self.explore_audience_combo, prompts
+                ),
                 cfg=cfg,
                 progress=progress,
             )
@@ -1578,7 +1632,8 @@ class GatherPublicSourcesTab(QWidget):
         self.log.clear()
         self.log.append(
             f"Submitting {len(prompts)} prompt(s) to Cloud Run job {cfg.job} "
-            f"(product={product}, fuzz_mode={fuzz_mode})…"
+            f"(product={product}, fuzz_mode={fuzz_mode}, "
+            f"voice={_resolved_scan_audience(self.explore_audience_combo, prompts)})…"
         )
         self.progress_bar.setVisible(True)
         _busy(self.run_btn, True, "Run in Cloud")
@@ -3843,7 +3898,11 @@ class BuildReportTab(QWidget):
             "Report is the comprehensive assessment with full findings, "
             "derivation, exposure chain, and exploitation implications. "
             "Mitigations/remediations are off by default — enable the "
-            "checkbox below to include them."
+            "checkbox below to include them.\n\n"
+            "Report voice follows the storefront scan: organization, "
+            "personal, competitive, security, or opposition. Auto infers "
+            "from the exploration wrap when you used a storefront prompt. "
+            "Rebuild from score (or earlier) after changing the voice."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -3874,6 +3933,16 @@ class BuildReportTab(QWidget):
         self.report_combo.addItem("Basis Report (comprehensive)", "basis")
         self.report_combo.addItem("Both", "both")
         form.addRow("Report type:", self.report_combo)
+
+        self.audience_combo = _make_audience_combo(include_auto=True)
+        form.addRow("Report voice:", self.audience_combo)
+
+        self.display_topic_input = QLineEdit()
+        self.display_topic_input.setPlaceholderText(
+            "Optional cover name (candidate, person, or org). "
+            "Default: inferred from a storefront wrap."
+        )
+        form.addRow("Cover topic:", self.display_topic_input)
 
         self.stage_combo = QComboBox()
         # Display label includes a short explanation; data value stays the
@@ -3972,16 +4041,27 @@ class BuildReportTab(QWidget):
             argv.append("--include-remediation")
         else:
             argv.append("--no-include-remediation")
+        audience = str(self.audience_combo.currentData() or "").strip()
+        if audience:
+            argv += ["--audience", audience]
+        display_topic = self.display_topic_input.text().strip()
+        if display_topic:
+            argv += ["--display-topic", display_topic]
         if not self.upload_gcs_cb.isChecked():
             argv.append("--no-upload")
 
         from moyo.report_storage import infer_local_run_id
 
         run_label = run_id or infer_local_run_id(Path(exploration))
+        voice_label = (
+            self.audience_combo.currentText()
+            if audience
+            else "Auto (from exploration wrap)"
+        )
 
         def job():
             import sys as _sys
-            reports_root = Path(__file__).resolve().parents[2] / "reports"
+            reports_root = _reports_root()
             if str(reports_root) not in _sys.path:
                 _sys.path.insert(0, str(reports_root))
             import build_report
@@ -3989,7 +4069,8 @@ class BuildReportTab(QWidget):
 
         self.log.clear()
         self.log.append(
-            f"Building {self.report_combo.currentText()} for '{run_label}'…"
+            f"Building {self.report_combo.currentText()} for '{run_label}' "
+            f"(voice: {voice_label})…"
         )
         self.progress_bar.setVisible(True)
         _busy(self.run_btn, True, "Build Report")
@@ -4094,6 +4175,9 @@ class MoyoScanTab(QWidget):
         self.report_combo.setCurrentIndex(0)
         form.addRow("Report:", self.report_combo)
 
+        self.audience_combo = _make_audience_combo(include_auto=True)
+        form.addRow("Report voice:", self.audience_combo)
+
         layout.addLayout(form)
 
         self.run_btn = QPushButton("Explore")
@@ -4182,6 +4266,9 @@ class MoyoScanTab(QWidget):
                 strategies=strategies,
                 languages=extra_languages or [],
                 organization=gui_project_name(self),
+                scan_audience=_resolved_scan_audience(
+                    self.audience_combo, [prompt]
+                ),
                 cfg=cfg,
                 progress=progress,
             )
@@ -4190,6 +4277,7 @@ class MoyoScanTab(QWidget):
         self.log.append(
             f"Submitting query to Cloud Run job {cfg.job} "
             f"(product={product}, fuzz_mode={fuzz_mode}, "
+            f"voice={_resolved_scan_audience(self.audience_combo, [prompt])}, "
             f"strategies={'/'.join(strategies)})…"
         )
         self.progress_bar.setVisible(True)

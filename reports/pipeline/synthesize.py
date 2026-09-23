@@ -169,7 +169,7 @@ def synthesize(
     raw_findings = list(report_data.get("findings") or [])
     for row in raw_findings:
         if not row.get("provenance"):
-            row["provenance"] = provenance_label(row)
+            row["provenance"] = provenance_label(row, audience)
     sourced, unverified = presentation_rows(raw_findings, audience)
     findings_preview = json.dumps(
         [slim_finding(row) for row in sourced[:12]],

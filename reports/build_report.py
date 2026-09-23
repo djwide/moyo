@@ -20,6 +20,12 @@ if str(REPORTS_ROOT) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from pipeline.audience import (
+    AUDIENCE_CHOICES,
+    resolve_audience,
+    resolve_cover_field,
+    stock_headlines,
+)
 from pipeline.parse import (
     attach_explore_meta,
     load_chunks_manifest,
@@ -446,6 +452,32 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--extract-workers", type=int, default=None)
     ap.add_argument("--headline", type=str, default=None)
     ap.add_argument(
+        "--audience",
+        choices=AUDIENCE_CHOICES,
+        default=None,
+        help=(
+            "Report voice: organization, personal, competitive, security, "
+            "or opposition. Default: infer from the exploration wrap "
+            "(same voices as the storefront), else organization. "
+            "Apply at --from-stage score or earlier."
+        ),
+    )
+    ap.add_argument(
+        "--display-topic",
+        type=str,
+        default=None,
+        help=(
+            "Cover / one-pager subject name (candidate, person, or org). "
+            "Default: infer from a storefront wrap, else the exploration topic."
+        ),
+    )
+    ap.add_argument(
+        "--subject-detail",
+        type=str,
+        default=None,
+        help="Optional cover subtitle (city, school, company, race extras).",
+    )
+    ap.add_argument(
         "--keep-graphics",
         action="store_true",
         help=(
@@ -504,6 +536,12 @@ def main(argv: list[str] | None = None) -> int:
         cfg.setdefault("extract", {})["workers"] = args.extract_workers
     if args.headline:
         cfg.setdefault("render", {})["headline"] = args.headline
+    if args.audience:
+        cfg.setdefault("render", {})["audience"] = args.audience
+    if args.display_topic:
+        cfg.setdefault("render", {})["display_topic"] = args.display_topic
+    if args.subject_detail:
+        cfg.setdefault("render", {})["subject_detail"] = args.subject_detail
     if args.include_remediation is not None:
         cfg.setdefault("render", {})["include_remediation"] = bool(
             args.include_remediation
@@ -553,11 +591,49 @@ def main(argv: list[str] | None = None) -> int:
     cluster_cfg = cfg.get("cluster") or {}
     score_cfg = cfg.get("score") or {}
     graphics_cfg = cfg.get("graphics") or {}
-    render_cfg = cfg.get("render") or {}
+    render_cfg = cfg.setdefault("render", {})
 
     chunks_path = run_dir / "chunks.jsonl"
     claims_path = run_dir / "claims.jsonl"
     report_data_path = run_dir / "report_data.json"
+
+    prior_report: dict = {}
+    if report_data_path.exists():
+        try:
+            prior_report = json.loads(report_data_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            prior_report = {}
+
+    cover_texts: list[str] = []
+    if exploration and exploration.exists():
+        cover_texts.append(topic_from_exploration(exploration))
+        cover_texts.extend(prompts_from_exploration(exploration))
+    voice = resolve_audience(
+        explicit=args.audience,
+        config=render_cfg.get("audience"),
+        prior=prior_report.get("audience"),
+        texts=cover_texts,
+    )
+    render_cfg["audience"] = voice
+    display_topic = resolve_cover_field(
+        key="display_topic",
+        explicit=args.display_topic,
+        config=render_cfg.get("display_topic"),
+        prior=prior_report.get("display_topic"),
+        texts=cover_texts,
+    )
+    if display_topic:
+        render_cfg["display_topic"] = display_topic
+    subject_detail = resolve_cover_field(
+        key="subject_detail",
+        explicit=args.subject_detail,
+        config=render_cfg.get("subject_detail"),
+        prior=prior_report.get("subject_detail"),
+        texts=cover_texts,
+    )
+    if subject_detail:
+        render_cfg["subject_detail"] = subject_detail
+    print(f"  report voice: {voice}", file=sys.stderr)
 
     chunks = []
     claims = []
@@ -662,22 +738,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if want("score"):
         print("[3] score → report_data.json", file=sys.stderr)
-        prior_report: dict = {}
-        if report_data_path.exists():
-            try:
-                prior_report = json.loads(report_data_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                prior_report = {}
         if exploration and exploration.exists():
             topic = topic_from_exploration(exploration)
             prompts = prompts_from_exploration(exploration)
         else:
             topic = run_id.replace("_", " ")
             prompts = [topic] if topic and topic != run_id else []
-        audience = (
-            str(render_cfg.get("audience") or "").strip()
-            or str(prior_report.get("audience") or "").strip()
-        )
+        audience = str(render_cfg.get("audience") or "").strip()
         report_data = score_report(
             claims,
             clusters,
@@ -705,8 +772,14 @@ def main(argv: list[str] | None = None) -> int:
             report_data["audience"] = audience
         if render_cfg.get("headline"):
             report_data["headline"] = render_cfg["headline"]
-        elif prior_report.get("headline"):
-            report_data["headline"] = prior_report["headline"]
+        else:
+            prior_headline = str(prior_report.get("headline") or "").strip()
+            same_voice = (
+                str(prior_report.get("audience") or "").strip().lower()
+                == str(audience or "").strip().lower()
+            )
+            if prior_headline and same_voice and prior_headline not in stock_headlines():
+                report_data["headline"] = prior_headline
         attach_explore_meta(
             report_data,
             exploration,

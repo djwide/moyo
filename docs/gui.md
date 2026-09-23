@@ -167,6 +167,13 @@ are documented in [`docs/embeddings.md`](embeddings.md). The default is
 
 Renders MOYO report products from an `exploration.md` via
 `reports/build_report.py`. Choose Exposure Snapshot, Basis Report, or both.
+**Report voice** is the same as the storefront scan: organization, personal,
+competitive, security, or opposition. **Auto** infers the voice from a
+storefront-style wrap in `exploration.md` (for example an opposition wrap
+starting with “Compile opposition research…”). Pick **Security** explicitly —
+it shares a wrap with competitive. Rebuild from **score** (or earlier) after
+changing the voice. Optional **Cover topic** is the name on the one-pager
+(candidate, person, or org); otherwise it is inferred from the wrap.
 Local builds also upload finished artifacts to
 `gs://senteguard-website-moyo-reports/reports/<storageFolder>/` by default
 (same object names as Cloud Run). Uncheck **Upload artifacts to GCS** or pass

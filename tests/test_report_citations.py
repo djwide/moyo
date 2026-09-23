@@ -75,6 +75,51 @@ def test_stored_url_absent_from_excerpt_is_dropped():
     assert citations == []
 
 
+def test_footer_url_matches_excerpt_by_name():
+    citations = resolve_claim_citations(
+        claim="OpenSecrets lists his top donors.",
+        excerpt="OpenSecrets lists his top donors for the 2024 cycle.",
+        chunk_citations=[
+            "https://www.opensecrets.org/members-of-congress/vicente-gonzalez/summary",
+            "https://clerk.house.gov/",
+            "https://www.fec.gov/data/candidate/H6TX15112/",
+        ],
+    )
+    assert citations == [
+        "https://www.opensecrets.org/members-of-congress/vicente-gonzalez/summary"
+    ]
+
+
+def test_named_outlet_without_matching_url_stays_unverified():
+    citations = resolve_claim_citations(
+        claim="Politico reported a harassment allegation.",
+        excerpt="In August 2021, Politico published a report detailing allegations.",
+        chunk_citations=[
+            "https://clerk.house.gov/",
+            "https://www.fec.gov/data/candidate/H6TX15112/",
+        ],
+    )
+    assert citations == []
+
+
+def test_numbered_marker_still_resolves_when_excerpt_contains_it():
+    citations = resolve_claim_citations(
+        claim="The disclosure lists outside income.",
+        excerpt="The disclosure lists outside income.[3]",
+        llm_citations=[],
+        chunk_citations=[
+            "https://clerk.house.gov/",
+            "https://www.opensecrets.org/members-of-congress/summary",
+        ],
+        reference_map={
+            "3": "House Clerk — https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2024/10056131.pdf"
+        },
+    )
+    assert citations == [
+        "House Clerk — https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2024/10056131.pdf"
+    ]
+
+
 def test_excerpt_url_is_kept():
     citations = resolve_claim_citations(
         claim="The filing is public.",

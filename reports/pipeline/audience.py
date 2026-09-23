@@ -7,6 +7,7 @@ and rename the top bands. Opposition and personal keep their own voices.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 ORGANIZATION = "organization"
@@ -14,6 +15,26 @@ OPPOSITION = "opposition"
 PERSONAL = "personal"
 COMPETITIVE = "competitive"
 SECURITY = "security"
+
+AUDIENCE_CHOICES = (ORGANIZATION, PERSONAL, COMPETITIVE, SECURITY, OPPOSITION)
+
+_OPPO_COVER_RE = re.compile(
+    r"compile opposition research from public sources on (?P<name>.+?)"
+    r"(?: as a candidate in (?P<race>.+?))?"
+    r"(?=\.\s*(?:report documented|disambiguate)|$)",
+    re.I | re.S,
+)
+_PERSONAL_COVER_RE = re.compile(
+    r"what personal, biographical, and lesser-known public information "
+    r"do ai systems associate with (?P<name>.+?)\?",
+    re.I | re.S,
+)
+_ORG_COVER_RE = re.compile(
+    r"what do ai systems already know about (?P<name>.+?) from public information\?",
+    re.I | re.S,
+)
+_NAME_DETAIL_RE = re.compile(r"^(?P<name>.+?)\s+\((?P<detail>[^)]+)\)\s*$")
+_TOPIC_PREFIX_RE = re.compile(r"^#\s*topic exploration:\s*", re.I)
 
 _BASIC_CLASS_TO_BIN = {
     "Security relevant": "security_relevant",
@@ -116,6 +137,111 @@ def normalize_audience(raw: Any) -> str:
     if text == SECURITY:
         return SECURITY
     return ORGANIZATION
+
+
+def _prompt_body(raw: Any) -> str:
+    text = str(raw or "").strip()
+    return _TOPIC_PREFIX_RE.sub("", text, count=1).strip()
+
+
+def infer_audience_from_text(raw: Any) -> str | None:
+    """Scan audience when ``raw`` looks like a storefront retrieval wrap.
+
+    Competitive and security share a wrap; this returns competitive for that
+    text. Pick ``security`` explicitly on the CLI or GUI to use that voice.
+    """
+    text = _prompt_body(raw)
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered.startswith("compile opposition research"):
+        return OPPOSITION
+    if lowered.startswith("what personal, biographical"):
+        return PERSONAL
+    if "unannounced or non-public product" in lowered:
+        return COMPETITIVE
+    if lowered.startswith("what do ai systems already know"):
+        return ORGANIZATION
+    return None
+
+
+def infer_cover_from_text(raw: Any) -> dict[str, str]:
+    """Best-effort audience, cover name, and subject detail from a wrap."""
+    text = _prompt_body(raw)
+    out: dict[str, str] = {}
+    audience = infer_audience_from_text(text)
+    if audience:
+        out["audience"] = audience
+    if not text:
+        return out
+
+    oppo = _OPPO_COVER_RE.search(text)
+    if oppo:
+        name = (oppo.group("name") or "").strip()
+        race = (oppo.group("race") or "").strip()
+        if name and race:
+            out["display_topic"] = f"{name} — {race}"
+        elif name:
+            out["display_topic"] = name
+        return out
+
+    personal = _PERSONAL_COVER_RE.search(text)
+    if personal:
+        name = (personal.group("name") or "").strip()
+        if name:
+            out["display_topic"] = name
+        return out
+
+    org = _ORG_COVER_RE.search(text)
+    if org:
+        blob = (org.group("name") or "").strip()
+        detail = _NAME_DETAIL_RE.match(blob)
+        if detail:
+            out["display_topic"] = detail.group("name").strip()
+            out["subject_detail"] = detail.group("detail").strip()
+        elif blob:
+            out["display_topic"] = blob
+    return out
+
+
+def resolve_audience(
+    *,
+    explicit: Any = None,
+    config: Any = None,
+    prior: Any = None,
+    texts: list[Any] | None = None,
+) -> str:
+    """CLI / config beat wrap inference; wrap beats a stale prior report."""
+    for raw in (explicit, config):
+        if str(raw or "").strip():
+            return normalize_audience(raw)
+    for raw in texts or []:
+        inferred = infer_audience_from_text(raw)
+        if inferred:
+            return inferred
+    if str(prior or "").strip():
+        return normalize_audience(prior)
+    return ORGANIZATION
+
+
+def resolve_cover_field(
+    *,
+    key: str,
+    explicit: Any = None,
+    config: Any = None,
+    prior: Any = None,
+    texts: list[Any] | None = None,
+) -> str:
+    """Resolve ``display_topic`` or ``subject_detail`` the same way as audience."""
+    for raw in (explicit, config):
+        text = str(raw or "").strip()
+        if text:
+            return text
+    for raw in texts or []:
+        inferred = infer_cover_from_text(raw).get(key, "").strip()
+        if inferred:
+            return inferred
+    return str(prior or "").strip()
 
 
 def base_disclosure_class(finding: dict) -> str:
@@ -260,6 +386,11 @@ def profile(audience: str = ORGANIZATION) -> dict[str, str]:
         "priority_label": "High-sensitivity",
         "headline": "What AI Systems Reveal",
     }
+
+
+def stock_headlines() -> set[str]:
+    """Default cover titles; do not treat these as editorial overrides."""
+    return {profile(name)["headline"] for name in AUDIENCE_CHOICES}
 
 
 def priority_count(findings: list[dict], audience: str = ORGANIZATION) -> int:

@@ -940,6 +940,10 @@ moyo-gather deliverable --dir <explore-dir> # summary+exploration -> deliverable
 python reports/build_report.py \
   --exploration projects/<slug>/public_sources/exploration.md \
   --run-id <slug> --report snapshot
+# Opposition / personal / competitive / security voice (same as the storefront):
+python reports/build_report.py -e path/to/exploration.md --audience opposition
+# Infer the voice from a storefront wrap in exploration.md (no --audience).
+# Cover name: --display-topic "Vicente Gonzalez Jr. — TX-34 2026"
 # Comprehensive Basis Report:
 python reports/build_report.py -e projects/<slug>/public_sources/exploration.md --report basis
 # With mitigations / remediations:

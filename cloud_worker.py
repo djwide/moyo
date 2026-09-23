@@ -1617,6 +1617,28 @@ def _write_explore_sidecars(prompt_dir: Path, result: Any) -> None:
     )
 
 
+def _opposition_web_search_ids(
+    spec: OrderSpec, model_ids: list[str] | None
+) -> set[str]:
+    """Opposition scans search the web unless a non-empty subset is chosen."""
+    explicit = {
+        str(x).strip()
+        for x in (spec.retrieval_web_search_models or [])
+        if str(x).strip()
+    }
+    if explicit or spec.scan_audience != "opposition":
+        return explicit
+    wanted = [str(x).strip() for x in (model_ids or []) if str(x).strip()]
+    if wanted:
+        return set(wanted)
+    from moyo.llm.registry import get_retrieval_specs, retrieval_model_id
+
+    return {
+        retrieval_model_id(item)
+        for item in get_retrieval_specs(include_optional=False)
+    }
+
+
 def run_rerun_models(
     spec: OrderSpec,
     *,
@@ -1641,7 +1663,7 @@ def run_rerun_models(
 
     llms = get_retrieval_llms(
         wanted,
-        web_search_model_ids=set(spec.retrieval_web_search_models or []),
+        web_search_model_ids=_opposition_web_search_ids(spec, wanted),
         require_match=True,
         timeout=RETRIEVAL_TIMEOUT_RERUN,
     )
@@ -1870,7 +1892,9 @@ def run_moyo(
 
     explore_kwargs["retrieval_llms"] = get_retrieval_llms(
         spec.retrieval_models or None,
-        web_search_model_ids=set(spec.retrieval_web_search_models or []),
+        web_search_model_ids=_opposition_web_search_ids(
+            spec, spec.retrieval_models or None
+        ),
         **snapshot_scan_deadlines(spec.product),
     )
     scan_llms = explore_kwargs["retrieval_llms"]

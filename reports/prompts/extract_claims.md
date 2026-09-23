@@ -20,7 +20,7 @@ report. Return **only** a JSON array of claim objects (no markdown fences).
   restatements.
 - Do not invent citations or source labels. When a claim is grounded in a named
   source or URL that appears in the chunk, put that string in `citations`.
-  The pipeline also attaches the chunk's Sources/References list automatically.
+  The pipeline keeps a footer URL only when this excerpt names that source, includes the URL, or contains its `[n]` marker. It does not copy the whole Sources list.
 - Return `[]` if the chunk is a refusal, safety hedge, or only meta-advice
   (e.g. "check FEC.gov", "I cannot provide…", "no public records known") with
   no concrete factual finding.
