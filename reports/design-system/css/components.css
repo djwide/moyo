@@ -4,12 +4,12 @@
 .severity-badge {
   display: inline-block;
   font-family: var(--font-sans);
-  font-size: 0.68rem;
+  font-size: 8.5pt;
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
   text-transform: none;
   padding: 0;
-  margin: 0 0.7em 0 0;
+  margin: 0 0.9em 0 0;
   background: transparent;
   color: var(--moyo-ink);
   border: 0;
@@ -21,9 +21,9 @@
 .severity-badge::before {
   content: "•";
   display: inline;
-  margin-right: 0.22em;
-  color: var(--moyo-ink);
-  font-size: 0.95em;
+  margin-right: 0.3em;
+  color: var(--moyo-teal-deep);
+  font-size: 1em;
   line-height: 1;
 }
 .severity-badge--expected,
@@ -51,6 +51,7 @@
   text-transform: none;
 }
 .severity-badge--via-lang::before { display: none; }
+.severity-badge--contested::before { color: var(--moyo-med); }
 
 .metric-card {
   padding: 0;
@@ -88,8 +89,8 @@
   border-bottom: 0.6pt solid var(--moyo-ink);
 }
 .finding--lead .finding__claim {
-  font-size: 1.08rem;
-  line-height: 1.32;
+  font-size: 12pt;
+  line-height: 1.5;
   margin: 0.45rem 0 0.5rem;
 }
 .finding--compact {
@@ -98,8 +99,8 @@
   border-bottom: 0.35pt solid var(--moyo-border);
 }
 .finding--compact .finding__claim {
-  font-size: 0.84rem;
-  line-height: 1.28;
+  font-size: 10.5pt;
+  line-height: 1.5;
   margin: 0.12rem 0 0.2rem;
 }
 .finding--band {
@@ -110,11 +111,10 @@
   border-bottom: 0.4pt solid var(--moyo-ink);
 }
 .finding--band .finding__claim {
-  font-size: 0.9rem;
-  line-height: 1.3;
+  font-size: 10.5pt;
+  line-height: 1.5;
   margin: 0.2rem 0 0.3rem;
 }
-.finding--high .finding__id { color: var(--moyo-high); }
 
 .finding__head {
   display: block;
@@ -129,7 +129,7 @@
 .finding__id,
 .finding-card__id {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 8.5pt;
   color: var(--moyo-muted);
   hyphens: none;
 }
@@ -145,14 +145,14 @@
   flex-wrap: wrap;
   gap: 0.15rem 0.7rem;
   font-family: var(--font-sans);
-  font-size: 0.64rem;
+  font-size: 8.5pt;
   color: var(--moyo-muted);
 }
 .finding__lang,
 .finding-card__lang {
   margin: 0.12rem 0 0;
   font-family: var(--font-sans);
-  font-size: 0.6rem;
+  font-size: 8.5pt;
   color: var(--moyo-muted);
 }
 
@@ -169,36 +169,35 @@
 .finding-card--high { border-left: 0; }
 
 .evidence-box {
-  background: transparent;
+  background: var(--moyo-cream);
   border: 0;
-  border-top: 0.35pt solid var(--moyo-border);
+  border-left: 1.5pt solid var(--moyo-teal);
   border-radius: 0;
-  padding: 0.35rem 0 0;
-  margin: 0.35rem 0 0;
+  padding: 2.5mm 3.5mm;
+  margin: 1.5mm 0 1.5mm;
   break-inside: avoid;
 }
-.finding--lead .evidence-box {
-  margin-top: 0.7rem;
-  padding: 0.55rem 0 0;
-}
+.finding--lead .evidence-box { margin-top: 2.5mm; }
 .evidence-box__label {
   font-family: var(--font-sans);
-  font-size: 0.55rem;
-  letter-spacing: 0.1em;
+  font-size: 8pt;
+  font-weight: 600;
+  letter-spacing: 0;
   text-transform: none;
   color: var(--moyo-muted);
   margin-bottom: 0.12rem;
 }
 .evidence-box__excerpt {
   font-family: var(--font-mono);
-  font-size: 0.64rem;
-  line-height: 1.28;
+  font-size: 8.5pt;
+  line-height: 1.5;
   color: var(--moyo-ink);
   white-space: pre-wrap;
 }
 .evidence-box__cite {
-  margin-top: 0.12rem;
-  font-size: 0.58rem;
+  margin-top: 1mm;
+  font-family: var(--font-sans);
+  font-size: 8pt;
   color: var(--moyo-muted);
 }
 
@@ -273,7 +272,7 @@
 }
 .graphic__label {
   font-family: var(--font-sans);
-  font-size: 0.72rem;
+  font-size: 9.5pt;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--moyo-ink);
@@ -351,26 +350,27 @@
 }
 
 .source-refs {
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-family: var(--font-sans);
+  font-size: 8pt;
   color: var(--moyo-muted);
   white-space: nowrap;
 }
 a.cite-ref {
-  color: inherit;
+  color: var(--moyo-teal-deep);
+  font-family: var(--font-sans);
+  font-weight: 600;
   text-decoration: none;
-  border-bottom: 0.35pt solid currentColor;
 }
 .citation-line {
   font-family: var(--font-sans);
-  font-size: 0.6rem;
+  font-size: 8.5pt;
   color: var(--moyo-muted);
-  margin: 0.15rem 0 0;
-  line-height: 1.25;
+  margin: 1mm 0 0;
+  line-height: 1.45;
 }
 .citation-line__label {
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: 0;
   text-transform: none;
   color: var(--moyo-ink);
   margin-right: 0.3rem;
@@ -379,7 +379,7 @@ a.cite-ref {
 
 .coverage-note {
   font-family: var(--font-sans);
-  font-size: 0.76rem;
+  font-size: 9.5pt;
   line-height: 1.35;
   color: var(--moyo-ink);
   background: var(--moyo-cream);

@@ -49,75 +49,43 @@ _GROUPS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "Status Labels",
+        "title": "Evidence Status",
         "terms": [
             (
-                "Corroborated",
-                "At least two distinct models validated and surfaced the same atomic fact.",
+                "Externally verified",
+                "A source URL was recovered with the claim. This is the strongest "
+                "evidence status. It is not an independent fact-check of that source.",
+            ),
+            (
+                "Cross-model corroborated",
+                "More than one model stated the claim, and no source URL was recovered.",
+            ),
+            (
+                "Single-model lead",
+                "One model stated the claim, and no source URL was recovered.",
             ),
             (
                 "Contested",
-                "Sources disagree on a material point, not merely on wording.",
-            ),
-            (
-                "Outlier",
-                "Diverges sharply from consensus, or is unusually specific or extreme.",
-            ),
-            (
-                "Unverified",
-                "No source URL backs the claim. A quoted headline without a link does not count.",
-            ),
-            (
-                "Model-specific",
-                "Stated by one model. The model name is printed on the same line.",
-            ),
-            (
-                "Language-specific",
-                "Stated only in a non-English prompt. The language is printed on the same line.",
+                "The record disagrees on a material point, not merely on wording. "
+                "This status stands on its own, even when a URL is present.",
             ),
         ],
     },
     {
-        "title": "Score Dimensions (1 Low – 5 High)",
+        "title": "Research Significance",
         "terms": [
             (
-                "Sensitivity",
-                "How high-stakes the disclosure is: policy risk, brand harm, "
-                "privacy, safety, proprietary exposure. Sensitivity 4–5 counts as "
-                "high-sensitivity in report totals.",
+                "High",
+                "The claim would matter if it holds. This is not an evidence status.",
             ),
             (
-                "Specificity",
-                "How concrete and actionable the detail is — names, quantities, "
-                "procedures — versus vague allusion.",
+                "Medium",
+                "Worth a look, and still not evidence that the claim is true.",
             ),
             (
-                "Novelty",
-                "How surprising the claim is relative to the expected public "
-                "consensus on the topic.",
+                "Low",
+                "Retained for context.",
             ),
-            (
-                "Interestingness",
-                "Editorial priority for a reader reviewing exposure.",
-            ),
-            (
-                "Confidence",
-                "How clearly the evidence shows the claim was actually stated "
-                "(extraction and grounding confidence), shown as n/5.",
-            ),
-            (
-                "Corroboration",
-                "Number of distinct sources supporting the same clustered fact.",
-            ),
-        ],
-    },
-    {
-        "title": "Severity Bands",
-        "terms": [
-            ("High", "Sensitivity 4–5. Primary exposure concern."),
-            ("Medium", "Sensitivity 3. Material detail worth review."),
-            ("Low", "Sensitivity 2. Limited sensitivity, retained for completeness."),
-            ("Info", "Sensitivity 1. Context or low-stakes public fact."),
         ],
     },
     {
@@ -150,37 +118,31 @@ _GROUPS: list[dict[str, Any]] = [
         "title": "Charts And Metrics",
         "terms": [
             (
-                "Finding Classification Profile",
-                "Average specificity, sensitivity, corroboration, novelty, and "
-                "confidence across all extracted claims.",
+                "Findings by model",
+                "Two bars per model: every finding it stated, and how many of "
+                "those are high significance. Counts, not a weighted score.",
             ),
             (
-                "Findings By LLM",
-                "Each tested model scored by how many findings it produced and "
-                "how sensitive those findings are. Bar height is the sum of "
-                "finding sensitivities; color shows Expected, Interesting, "
-                "Unexpected, and Security relevant.",
+                "Cross-model corroboration rate",
+                "Share of distinct findings stated by two or more models.",
             ),
             (
-                "Model comparison",
-                "Where tested models validated and surfaced the same information, and where one "
-                "model diverged (model-specific, contested, or outlier).",
+                "Reproduction matrix",
+                "Columns are high-significance findings; rows are models. A "
+                "filled cell means that model stated the finding. Numbered "
+                "columns are annotated under the chart.",
             ),
             (
-                "Sensitivity By Model And Claim",
-                "Which models supported which clusters. Cell color is the "
-                "cluster's sensitivity (1–5); empty means that model did not "
-                "support it.",
+                "Average scores vs corpus",
+                "Dossier dot plot on a 1–5 line. The dot is this model's average; "
+                "the tick is the average across all models. Specificity, "
+                "sensitivity, novelty, and confidence are extraction scores; "
+                "corroboration is how many models stated a finding.",
             ),
             (
                 "Claim Support Graph",
                 "How model outputs connect to claims and how claims group into "
                 "higher-level exposures.",
-            ),
-            (
-                "Model Exposure Dots",
-                "Relative contribution of each model to overall exposure, scaled "
-                "against the highest-scoring model in the run.",
             ),
             (
                 "Findings Count",
@@ -229,49 +191,14 @@ _GROUPS: list[dict[str, Any]] = [
 
 def glossary_groups(audience: str = "organization") -> list[dict[str, Any]]:
     """Glossary structure consumed by the report templates."""
-    from pipeline.audience import normalize_audience
-
-    voice = normalize_audience(audience)
-    groups = []
-    for group in _GROUPS:
-        terms = [{"term": term, "definition": definition} for term, definition in group["terms"]]
-        if group["title"] == "Severity Bands" and voice == "opposition":
-            terms = [
-                {"term": "Damaging", "definition": "Sensitivity 4–5. Material an opposition researcher would treat as damaging."},
-                {"term": "Potentially damaging", "definition": "Sensitivity 3 that is not already Unexpected. Worth checking before it is treated as established."},
-                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
-                {"term": "Interesting", "definition": "Lesser-known public facts that are not yet damaging."},
-            ]
-        elif group["title"] == "Severity Bands" and voice == "personal":
-            terms = [
-                {"term": "Sensitive", "definition": "Sensitivity 4–5. Privacy-relevant associations models already state."},
-                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
-                {"term": "Interesting", "definition": "Lesser-known biographical or social facts."},
-                {"term": "Expected", "definition": "Ordinary public biography: roles, schools, employers, places."},
-            ]
-        elif group["title"] == "Severity Bands" and voice == "competitive":
-            terms = [
-                {"term": "Commercially sensitive", "definition": "Sensitivity 4–5. Product, partnership, or strategy material a competitor analyst would treat as commercially sensitive."},
-                {"term": "Potentially strategic", "definition": "Sensitivity 3 that is not already Unexpected. Worth watching before it is treated as established."},
-                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
-                {"term": "Interesting", "definition": "Lesser-known public facts that are not yet commercially sensitive."},
-            ]
-        elif group["title"] == "Severity Bands" and voice == "security":
-            terms = [
-                {"term": "Security relevant", "definition": "Sensitivity 4–5. Operational, personnel, or infrastructure facts a CISO or counsel would review first."},
-                {"term": "Material", "definition": "Sensitivity 3 that is not already Unexpected. Worth review before it is treated as an incident."},
-                {"term": "Unexpected", "definition": "Hard to look up directly, but models agree."},
-                {"term": "Interesting", "definition": "Lesser-known operational or personnel facts."},
-            ]
-        if voice in {"opposition", "personal"}:
-            terms = [
-                {
-                    "term": "Uncorroborated",
-                    "definition": "Stated by one model. The model name is printed on the same line.",
-                }
-                if term["term"] == "Model-specific"
-                else term
-                for term in terms
-            ]
-        groups.append({"title": group["title"], "terms": terms})
-    return groups
+    del audience
+    return [
+        {
+            "title": group["title"],
+            "terms": [
+                {"term": term, "definition": definition}
+                for term, definition in group["terms"]
+            ],
+        }
+        for group in _GROUPS
+    ]

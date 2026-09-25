@@ -45,7 +45,7 @@
     </span>{% if not loop.last %}<span class="citation-line__sep">·</span>{% endif %}
     {%- endfor %}
     {%- else -%}
-    <span class="citation-line__empty">Unverified — no source URL.</span>
+    <span class="citation-line__empty">No external source.</span>
     {%- endif -%}
   </div>
 {%- endmacro %}
@@ -57,7 +57,6 @@
     <li>
       <span class="mono">{{ facet.claim_id }}</span>
       {{ facet.claim }}
-      {%- if facet.provenance %} — {{ facet.provenance }}{% endif %}
     </li>
     {%- endfor %}
   </ul>
@@ -71,20 +70,17 @@
 {%- endmacro %}
 
 {% macro finding_block(f, variant='compact') -%}
-  {%- set sens = (f.sensitivity or 0)|int -%}
-  {%- set sev = 'high' if sens >= 4 else ('medium' if sens == 3 else ('low' if sens == 2 else 'info')) -%}
-  <article class="finding finding--{{ variant }}{% if sev == 'high' %} finding--high{% endif %}">
+  {%- set sig = f.significance or 'Low' -%}
+  <article class="finding finding--{{ variant }}{% if sig == 'High' %} finding--high{% endif %}">
     <header class="finding__head">
       <span class="finding__id">{{ f.present_id or f.cluster_id or f.claim_id }}</span>
-      {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
-      {{ severity_badge(sev) }}
+      {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+      {{ severity_badge(sig) }}
       {{ language_badge(f.prompt_language) }}
     </header>
-    <p class="finding__claim">{{ f.claim | link_cites }}{% if f.provenance %} <span class="finding__provenance">{{ f.provenance }}</span>{% endif %}</p>
+    <p class="finding__claim">{{ f.claim | link_cites }}</p>
     <div class="finding__meta">
       <span>{{ source_cite(f) }}</span>
-      <span>Sens {{ f.sensitivity | format_score }} · Spec {{ f.specificity | format_score }}</span>
-      <span>Confidence {{ confidence(f.confidence) }}</span>
       {% if f.raw_start_line %}
       <span class="mono">lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}</span>
       {% endif %}
@@ -141,6 +137,29 @@
       <img src="{{ path }}" alt="{{ label or '' }}" />
     {% endif %}
   </div>
+{%- endmacro %}
+
+{% macro section_head(title, takeaway=None, lede=None) -%}
+  <h2>{{ title }}</h2>
+  {% if takeaway %}<p class="takeaway">{{ takeaway }}</p>{% endif %}
+  {% if lede %}<p class="section-lede">{{ lede | link_cites }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro toc_list(toc) -%}
+  <ol class="toc">
+    {% for item in toc %}
+    <li{% if item.part %} class="toc__part"{% endif %}>
+      {% if item.id %}<a href="#{{ item.id }}">{{ item.title }}</a>{% else %}<span>{{ item.title }}</span>{% endif %}
+      {% if item.children %}
+      <ol class="toc toc--sub">
+        {% for child in item.children %}
+        <li><a href="#{{ child.id }}">{{ child.title }}</a></li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
 {%- endmacro %}
 
 {% macro chart_caption(text) -%}

@@ -5,12 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from graphics.exposure_score import exposure_radar_svg, llm_findings_bars_svg
+from graphics.decision_charts import model_findings_bars_svg, reproduction_matrix_svg
+from graphics.exposure_score import exposure_radar_svg
 from graphics.heatmap import model_heatmap_svg
 from graphics.graph import evidence_graph_svg, snapshot_graph_findings
 from graphics.model_charts import generate_dossier_graphics
 from graphics.style import normalize_svg_for_embed
 from pipeline.model_dossiers import build_model_dossiers
+from pipeline.overview import model_rows, reproduction
 from pipeline.score import aggregate_findings_by_llm
 
 # Filenames under ``<run_dir>/assets/`` (editable before PDF rebuild).
@@ -162,11 +164,10 @@ def generate_graphics(
         if str(m).strip()
     ]
 
+    ranked = list(report_data.get("findings") or chart_findings)
     if "model_heatmap" in emit:
-        graphics["model_heatmap"] = model_heatmap_svg(
-            chart_findings,
-            aliases=aliases,
-            models_probed=probed or None,
+        graphics["model_heatmap"] = reproduction_matrix_svg(
+            reproduction(ranked, aliases, probed or None)
         )
 
     # Full-width companion (all clusters); always written next to PDF assets.
@@ -188,7 +189,9 @@ def generate_graphics(
             )
         else:
             rows = list(report_data.get("findings_by_llm") or [])
-        graphics["findings_by_llm"] = llm_findings_bars_svg(rows)
+        graphics["findings_by_llm"] = model_findings_bars_svg(
+            model_rows(ranked, aliases, probed or None)
+        )
         report_data["findings_by_llm"] = rows
 
     if "evidence_graph" in emit:
@@ -212,7 +215,7 @@ def generate_graphics(
         )
 
     dossiers = build_model_dossiers(
-        list(report_data.get("findings") or chart_findings),
+        ranked,
         corpus=list(report_data.get("response_corpus") or []),
         sources=list(report_data.get("sources") or []),
         radar_averages=report_data.get("radar_averages") or {},

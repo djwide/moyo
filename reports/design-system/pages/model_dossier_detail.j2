@@ -33,7 +33,7 @@
   <table class="findings-index dossier-table">
     <thead>
       <tr>
-        <th>ID</th><th>Claim</th><th>Status</th><th>Sens</th>
+        <th>ID</th><th>Claim</th><th>Evidence</th><th>Significance</th>
       </tr>
     </thead>
     <tbody>
@@ -41,8 +41,8 @@
       <tr>
         <td class="mono">{{ f.present_id or f.claim_id }}</td>
         <td>{{ f.claim | link_cites }}</td>
-        <td>{{ severity_badge(f.status_label or f.status) }}</td>
-        <td class="num">{{ f.sensitivity | format_score }}</td>
+        <td>{{ severity_badge(f.evidence_status or 'Single-model lead') }}</td>
+        <td>{{ severity_badge(f.significance or 'Low') }}</td>
       </tr>
       {% endfor %}
     </tbody>

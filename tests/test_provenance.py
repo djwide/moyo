@@ -23,19 +23,28 @@ def _claim(**kwargs):
     return base
 
 
-def test_model_and_language_labels_share_the_line():
+def test_evidence_status_is_the_reader_label():
     english = _claim()
-    assert provenance_label(english) == "MODEL-SPECIFIC · Qwen · UNVERIFIED"
-    assert provenance_label(english, "organization") == "MODEL-SPECIFIC · Qwen · UNVERIFIED"
-    assert provenance_label(english, "opposition") == "UNCORROBORATED · Qwen · UNVERIFIED"
-    assert provenance_label(english, "personal") == "UNCORROBORATED · Qwen · UNVERIFIED"
+    assert provenance_label(english) == "Single-model lead"
+    assert provenance_label(english, "opposition") == "Single-model lead"
     spanish = _claim(
         source_model="Qwen (Alibaba qwen3.8-max) (Spanish)",
         language="Spanish",
     )
-    assert provenance_label(spanish, "opposition") == (
-        "LANGUAGE-SPECIFIC · Spanish · UNCORROBORATED · Qwen · UNVERIFIED"
+    assert provenance_label(spanish, "opposition") == "Single-model lead"
+    sourced = _claim(
+        corroboration=2,
+        status="CORROBORATED",
+        citations=["House filing — https://disclosures-clerk.house.gov/"],
     )
+    assert provenance_label(sourced) == "Externally verified"
+    agreed = _claim(corroboration=2, status="CORROBORATED", citations=[])
+    assert provenance_label(agreed) == "Cross-model corroborated"
+    contested = _claim(
+        status="CONTESTED",
+        citations=["https://example.com/record"],
+    )
+    assert provenance_label(contested) == "Contested"
 
 
 def test_unsourced_single_model_damage_is_not_a_lead():

@@ -13,7 +13,7 @@ from typing import Any
 
 from graphics.style import short_model_name
 from pipeline.cluster import present_id
-from pipeline.audience import chart_order, disclosure_bin, normalize_audience
+from pipeline.provenance import evidence_status, research_significance, significance_band
 from pipeline.score import _source_models
 
 _RADAR_KEYS = (
@@ -101,8 +101,7 @@ def build_model_dossiers(
 ) -> list[dict[str, Any]]:
     """One dossier per scanned model, roster order."""
     aliases = aliases or {}
-    voice = normalize_audience(audience)
-    band_keys = chart_order(voice)
+    band_keys = ("high", "medium", "low")
     findings = list(findings or [])
     corpus = list(corpus or [])
     sources = list(sources or [])
@@ -144,6 +143,8 @@ def build_model_dossiers(
                 "present_id": present_id(finding),
                 "claim": _clip(finding.get("claim") or "", 180),
                 "status": finding.get("status") or "UNVERIFIED",
+                "evidence_status": finding.get("evidence_status") or evidence_status(finding),
+                "significance": finding.get("significance") or research_significance(finding),
                 "sensitivity": int(finding.get("sensitivity") or 0),
                 "specificity": int(finding.get("specificity") or 0),
                 "source_refs": list(finding.get("source_refs") or []),
@@ -152,7 +153,7 @@ def build_model_dossiers(
                 shared_rows.append(row)
             else:
                 unique_rows.append(row)
-            bands[disclosure_bin(finding, voice)] += 1
+            bands[significance_band(finding)] += 1
             status = str(finding.get("status") or "UNVERIFIED").upper()
             status_mix[status] += 1
             lang = str(finding.get("prompt_language") or "").strip()

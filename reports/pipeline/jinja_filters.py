@@ -33,10 +33,12 @@ def format_score(value: Any, max_score: int = 5) -> str:
 
 
 def display_status(value: Any) -> str:
-    """Sentence-style label: 'Model-specific', not 'MODEL-SPECIFIC' or a chip."""
+    """Sentence-style label. Phrases that already contain spaces stay phrases."""
     raw = str(value or "").strip().replace("_", "-")
     if not raw:
         return ""
+    if " " in raw and any(ch.islower() for ch in raw):
+        return raw
     parts = [p for p in raw.replace(" ", "-").split("-") if p]
     if not parts:
         return ""

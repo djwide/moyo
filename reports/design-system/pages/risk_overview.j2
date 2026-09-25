@@ -1,37 +1,46 @@
-<section class="page page--risk-overview" id="risk-overview">
-  <h2>{{ content.pages.risk_overview.title or "Model Exposure" }}</h2>
-  {% if content.pages.risk_overview.body %}
-  <p class="section-lede">{{ content.pages.risk_overview.body | link_cites }}</p>
+{% from "components/macros.j2" import section_head, svg_asset %}
+{% set page = content.pages.risk_overview %}
+{% set ov = content.overview or {} %}
+<section class="page page--risk-overview" id="exposure-overview">
+  {{ section_head(page.title or "Exposure Overview", page.takeaway, page.body) }}
+
+  {% if ov.stats %}
+  <dl class="stat-tiles">
+    {% for item in ov.stats %}
+    <div class="stat-tile">
+      <dt class="stat-tile__label">{{ item.label }}</dt>
+      <dd class="stat-tile__value">{{ item.value }}</dd>
+      <dd class="stat-tile__note">{{ item.note }}</dd>
+    </div>
+    {% endfor %}
+  </dl>
   {% endif %}
-  {% set caps = content.pages.risk_overview.chart_captions or {} %}
-  <table class="risk-pair">
+
+  <h3 class="chart-title">{{ page.chart_title or "Findings by model" }}</h3>
+  {{ svg_asset(content.assets.findings_by_llm, graphics.get('findings_by_llm'), 'wide') }}
+
+  {% if ov.rows %}
+  <table class="data-table overview-table">
     <thead>
       <tr>
-        <th>Findings By LLM</th>
-        <th>Exposure Radar</th>
+        <th>Model</th>
+        <th class="num">Findings</th>
+        <th class="num">High significance</th>
+        <th class="num">Also stated by another model</th>
+        <th class="num">Externally verified</th>
       </tr>
     </thead>
     <tbody>
-      <tr class="risk-pair__charts">
-        <td>
-          {% if graphics.get('findings_by_llm') %}
-            {{ graphics.findings_by_llm | safe }}
-          {% elif content.assets.findings_by_llm %}
-            <img src="{{ content.assets.findings_by_llm }}" alt="Findings By LLM" />
-          {% endif %}
-        </td>
-        <td>
-          {% if graphics.get('exposure_radar') %}
-            {{ graphics.exposure_radar | safe }}
-          {% elif content.assets.exposure_radar %}
-            <img src="{{ content.assets.exposure_radar }}" alt="Exposure Radar" />
-          {% endif %}
-        </td>
+      {% for row in ov.rows %}
+      <tr>
+        <td>{{ row.model }}</td>
+        <td class="num">{{ row.findings | format_int }}</td>
+        <td class="num">{{ row.high | format_int }}</td>
+        <td class="num">{{ row.corroborated_pct }}%</td>
+        <td class="num">{{ row.verified | format_int }} <span class="muted">({{ row.verified_pct }}%)</span></td>
       </tr>
-      <tr class="risk-pair__captions">
-        <td>{{ caps.get('findings_by_llm') or '' }}</td>
-        <td>{{ caps.get('exposure_radar') or '' }}</td>
-      </tr>
+      {% endfor %}
     </tbody>
   </table>
+  {% endif %}
 </section>

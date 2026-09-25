@@ -1,59 +1,48 @@
-{% from "components/macros.j2" import svg_asset, severity_badge %}
+{% from "components/macros.j2" import section_head, svg_asset %}
+{% set page = content.pages.model_comparison %}
 {% set contrast = content.model_contrast or {} %}
 <section class="page page--model-comparison" id="model-comparison">
-  <h2>{{ content.pages.model_comparison.title or "Model Comparison" }}</h2>
-  {% if content.pages.model_comparison.body or contrast.lede %}
-  <p class="section-lede">{{ (content.pages.model_comparison.body or contrast.lede) | link_cites }}</p>
-  {% endif %}
+  {{ section_head(page.title or "Cross-Model Comparison", page.takeaway, page.body or contrast.lede) }}
 
+  {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
+  {% if page.chart_caption %}<p class="chart-caption">{{ page.chart_caption }}</p>{% endif %}
+
+  {% set common = contrast.commonality_prose or [] %}
+  {% set diffs = contrast.differences_prose or [] %}
   <div class="contrast-split">
     <div class="contrast-col">
-      <h3>Commonality</h3>
+      <h3>Where the models agree</h3>
       <ul class="contrast-list">
-        {% if contrast.commonality_prose %}
-          {% for line in contrast.commonality_prose %}
-          <li>{{ line | link_cites }}</li>
-          {% endfor %}
+        {% if common %}
+          {% for line in common[:4] %}<li>{{ line | link_cites }}</li>{% endfor %}
         {% elif contrast.commonality %}
-          {% for row in contrast.commonality %}
+          {% for row in contrast.commonality[:4] %}
           <li>
-            {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
             {{ row.claim | link_cites }}
-            {% if row.models %}
-            <span class="contrast-models">{{ row.models | join(', ') }}</span>
-            {% endif %}
+            {% if row.models %}<span class="contrast-models">{{ row.models | join(', ') }}</span>{% endif %}
           </li>
           {% endfor %}
         {% else %}
-          <li class="empty">No models validated and surfaced the same information in this run.</li>
+          <li class="empty">No finding was stated by more than one model.</li>
         {% endif %}
       </ul>
     </div>
     <div class="contrast-col contrast-col--diff">
-      <h3>Differences</h3>
+      <h3>Where they differ</h3>
       <ul class="contrast-list">
-        {% if contrast.differences_prose %}
-          {% for line in contrast.differences_prose %}
-          <li>{{ line | link_cites }}</li>
-          {% endfor %}
+        {% if diffs %}
+          {% for line in diffs[:4] %}<li>{{ line | link_cites }}</li>{% endfor %}
         {% elif contrast.differences %}
-          {% for row in contrast.differences %}
+          {% for row in contrast.differences[:4] %}
           <li>
-            {% if row.present_id or row.claim_id %}<span class="mono">{{ row.present_id or row.claim_id }}</span>{% endif %}
-            {% if row.kind %}{{ severity_badge(row.kind) }}{% elif row.status %}{{ severity_badge(row.status) }}{% endif %}
             {{ row.claim | link_cites }}
-            {% if row.models %}
-            <span class="contrast-models">{{ row.models | join(', ') }}</span>
-            {% endif %}
+            {% if row.models %}<span class="contrast-models">{{ row.models | join(', ') }} · {{ row.evidence_status or row.kind }}</span>{% endif %}
           </li>
           {% endfor %}
         {% else %}
-          <li class="empty">No model-specific or contested disclosures in this run.</li>
+          <li class="empty">No single-model or contested leads in this run.</li>
         {% endif %}
       </ul>
     </div>
   </div>
-
-  <h3 class="contrast-heatmap-title">{{ content.pages.model_comparison.heatmap_title or "Sensitivity By Model And Claim" }}</h3>
-  {{ svg_asset(content.assets.model_heatmap, graphics.get('model_heatmap'), 'wide') }}
 </section>

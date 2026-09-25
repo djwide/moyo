@@ -9,6 +9,7 @@ from .style import (
     BAR_COLORS,
     BAR_LABELS,
     DISCLOSURE_CHART_ORDER,
+    band_legend_order,
     CREAM_DEEP,
     FONT,
     INK,
@@ -37,11 +38,11 @@ def exposure_radar_svg(
 ) -> str:
     """Radar of mean claim scores; axis labels sit inside a hairline panel."""
     axes = [
-        ("specificity", "Specificity"),
-        ("sensitivity", "Sensitivity"),
-        ("corroboration", "Corroboration"),
-        ("novelty", "Novelty"),
-        ("confidence", "Confidence"),
+        ("specificity", "Detail"),
+        ("sensitivity", "Significance"),
+        ("corroboration", "Models"),
+        ("novelty", "Surprise"),
+        ("confidence", "Grounding"),
     ]
     # Same canvas size as findings-by-llm so the risk-split pair scales evenly.
     height = size
@@ -152,30 +153,12 @@ def llm_findings_bars_svg(
     width: int = 520,
     height: int = PAIR_CHART_HEIGHT,
 ) -> str:
-    """Bar chart of test LLMs scored by finding quantity and sensitivity.
-
-    Bar height is the sum of finding sensitivities for that model. Stacks are
-    colored by sensitivity band so both volume and severity are visible.
-    """
+    """Bar chart of test LLMs. Stack color is research significance."""
     series = [dict(r) for r in (rows or []) if r.get("model")]
     series.sort(key=lambda r: (-_llm_row_score(r), str(r.get("model") or "")))
     sample = series[0].get("bands") if series else {}
     band_keys = set((sample or {}).keys()) if isinstance(sample, dict) else set()
-    if "damaging" in band_keys or "potentially_damaging" in band_keys:
-        legend_order = ("damaging", "potentially_damaging", "unexpected", "interesting")
-    elif "commercially_sensitive" in band_keys or "potentially_strategic" in band_keys:
-        legend_order = (
-            "commercially_sensitive",
-            "potentially_strategic",
-            "unexpected",
-            "interesting",
-        )
-    elif "material" in band_keys:
-        legend_order = ("security_relevant", "material", "unexpected", "interesting")
-    elif "sensitive" in band_keys and "security_relevant" not in band_keys:
-        legend_order = ("sensitive", "unexpected", "interesting", "expected")
-    else:
-        legend_order = DISCLOSURE_CHART_ORDER
+    legend_order = band_legend_order(band_keys)
     band_order = tuple(reversed(legend_order))  # bottom → top
     peak = max((_llm_row_score(r) for r in series), default=0.0) or 1.0
 

@@ -8,60 +8,46 @@
   <link rel="stylesheet" href="{{ css_href }}" />
 </head>
 <body>
+  {% set pages = content.pages %}
+  {% set plan = (content.next_steps or {}).snapshot or {} %}
+  {% set ns = namespace(parts=[
+    {"id": "inventory", "title": "A · " ~ (pages.appendix.claims_title or "Complete Claim Inventory")},
+  ]) %}
+  {% if content.model_dossiers %}
+    {% set ns.parts = ns.parts + [{"id": content.model_dossiers[0].id, "title": "B · " ~ ((pages.model_dossiers or {}).title or "Model Dossiers")}] %}
+  {% endif %}
+  {% set ns.parts = ns.parts + [
+    {"id": "sources", "title": "C · " ~ (pages.sources.title or "Cited Sources")},
+    {"id": "glossary", "title": "D · " ~ (pages.glossary.title or "Glossary")},
+  ] %}
+  {% set toc = [
+    {"id": "executive-summary", "title": pages.executive_summary.title or "Executive Summary"},
+    {"id": "exposure-overview", "title": pages.risk_overview.title or "Exposure Overview"},
+    {"id": "priority-leads", "title": (pages.brief_findings or {}).title or "Priority Leads"},
+    {"id": "evidence", "title": pages.evidence.title or "Evidence and Source Quality"},
+    {"id": "model-comparison", "title": pages.model_comparison.title or "Cross-Model Comparison"},
+    {"id": "next-steps", "title": plan.title or "Verification Plan"},
+    {"id": "methodology", "title": (pages.methodology or {}).title or "Methodology and Limitations"},
+    {"id": "appendix", "title": pages.appendix.title or "Technical Appendix", "part": true, "children": ns.parts},
+  ] %}
   {% include "pages/cover.j2" %}
-  {% set ns = namespace(toc=[
-    {"id": "executive-summary", "title": content.pages.executive_summary.title or "Disclosure Summary"},
-    {"id": "risk-overview", "title": content.pages.risk_overview.title or "Model Exposure"},
-    {"id": "evidence", "title": content.pages.evidence.title or "Verbatim Excerpts"},
-    {"id": "findings", "title": content.pages.findings.title or "Priority Findings"},
-    {"id": "model-comparison", "title": content.pages.model_comparison.title or "Model Comparison"},
-  ], model_kids=[]) %}
-  {% for d in content.model_dossiers or [] %}
-    {% set ns.model_kids = ns.model_kids + [{"id": d.id, "title": d.model}] %}
-  {% endfor %}
-  {% if content.unverified_findings %}
-    {% set ns.toc = ns.toc[:4] + [{"id": "unverified", "title": content.pages.unverified.title or "Single-model and unverified"}] + ns.toc[4:] %}
-  {% endif %}
-  {% if ns.model_kids %}
-    {% set ns.toc = ns.toc + [{
-      "id": ns.model_kids[0].id,
-      "title": (content.pages.model_dossiers or {}).title or "Model Dossiers",
-      "children": ns.model_kids,
-    }] %}
-  {% endif %}
-  {% set ns.toc = ns.toc + [
-    {"id": "appendix", "title": content.pages.appendix.claims_title or "Finding Index"},
-  ] %}
-  {% if content.next_steps and content.next_steps.snapshot %}
-    {% set ns.toc = ns.toc + [{
-      "id": "next-steps",
-      "title": content.next_steps.snapshot.title or "Recommended Next",
-    }] %}
-  {% endif %}
-  {% set ns.toc = ns.toc + [
-    {"id": "sources", "title": content.pages.sources.title or "Cited Sources"},
-    {"id": "glossary", "title": content.pages.glossary.title or "Score Glossary"},
-  ] %}
-  {% with toc = ns.toc %}
-  {% include "pages/contents.j2" %}
-  {% endwith %}
   {% include "pages/executive_summary.j2" %}
   {% include "pages/risk_overview.j2" %}
+  {% include "pages/brief_findings.j2" %}
   {% include "pages/evidence.j2" %}
-  {% include "pages/findings.j2" %}
-  {% include "pages/unverified.j2" %}
   {% include "pages/model_comparison.j2" %}
+  {% with section = plan %}
+  {% include "pages/next_steps.j2" %}
+  {% endwith %}
+  {% include "pages/methodology.j2" %}
+  {% with parts = ns.parts %}
+  {% include "pages/appendix.j2" %}
+  {% endwith %}
   {% for dossier in content.model_dossiers or [] %}
     {% with depth = "snapshot" %}
     {% include "pages/model_dossier.j2" %}
     {% endwith %}
   {% endfor %}
-  {% include "pages/appendix.j2" %}
-  {% if content.next_steps and content.next_steps.snapshot %}
-  {% with section = content.next_steps.snapshot %}
-  {% include "pages/next_steps.j2" %}
-  {% endwith %}
-  {% endif %}
   {% include "pages/sources.j2" %}
   {% include "pages/glossary.j2" %}
 </body>

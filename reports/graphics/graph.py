@@ -1,6 +1,6 @@
 """Evidence graph SVG: citations → model inference → claims → conclusions.
 
-Visual language matches how-it-works EvidenceGraph: teal bullseye nodes on every
+Visual language matches /methodology EvidenceGraph: teal bullseye nodes on every
 column, teal curves only, ink/muted labels (no teal text).
 """
 
@@ -234,7 +234,7 @@ def evidence_graph_svg(
     max_height: float = PRINT_MAX_HEIGHT,
     include_conclusions: bool = True,
 ) -> str:
-    """Print evidence graph matching /how-it-works EvidenceGraph columns."""
+    """Print evidence graph matching /methodology EvidenceGraph columns."""
     aliases = aliases or {}
     all_findings = list(findings)
     by_id = {f.get("claim_id"): f for f in all_findings if f.get("claim_id")}

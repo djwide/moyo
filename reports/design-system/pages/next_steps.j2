@@ -1,16 +1,36 @@
+{% from "components/macros.j2" import section_head, severity_badge %}
 {# Expects ``section`` = content.next_steps.snapshot | content.next_steps.basis #}
 <section class="page page--next-steps" id="next-steps">
-  <h2>{{ section.title or "Recommended Next" }}</h2>
-  {% if section.lede %}
-  <p class="section-lede">{{ section.lede | link_cites }}</p>
-  {% endif %}
+  {{ section_head(section.title or "Verification Plan", section.takeaway, section.lede) }}
 
   <ol class="next-steps-list">
     {% for item in section['items'] or [] %}
-    <li class="next-step{% if loop.first or loop.index % 3 == 0 %} next-step--spacious{% endif %}">
-      <h3 class="next-step__title">{{ item.title }}</h3>
-      <p class="next-step__body">{{ item.body | link_cites }}</p>
+    <li class="next-step{% if item.exceptional %} next-step--exceptional{% endif %}">
+      <span class="next-step__count">{% if item.count is defined %}{{ item.count | format_int }}{% else %}{{ loop.index }}{% endif %}</span>
+      <div class="next-step__text">
+        <h3 class="next-step__title">{{ item.title }}</h3>
+        <p class="next-step__body">{{ item.body | link_cites }}</p>
+      </div>
     </li>
     {% endfor %}
   </ol>
+
+  {% if section.targets %}
+  <h3>{{ section.targets_title or "Findings to source next" }}</h3>
+  <table class="data-table targets-table">
+    <thead>
+      <tr><th>ID</th><th>Finding</th><th>Models</th><th>Evidence status</th></tr>
+    </thead>
+    <tbody>
+      {% for row in section.targets %}
+      <tr>
+        <td class="mono">{{ row.id }}</td>
+        <td>{{ row.claim }}</td>
+        <td>{{ row.models }}</td>
+        <td>{{ row.evidence_status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </section>

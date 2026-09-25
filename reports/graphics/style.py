@@ -68,11 +68,42 @@ BAR_LABELS = {
     "unexpected": "Unexpected",
     "interesting": "Interesting",
     "expected": "Expected",
-    "high": "Security relevant",
-    "medium": "Interesting",
-    "low": "Interesting",
-    "informational": "Expected",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "informational": "Low",
 }
+
+
+def band_legend_order(keys: set[str]) -> tuple[str, ...]:
+    """Reader-facing stacks are high / medium / low. Older JSON keeps its legend."""
+    if keys & {"high", "medium", "low"} and not (
+        keys
+        & {
+            "damaging",
+            "unexpected",
+            "interesting",
+            "sensitive",
+            "security_relevant",
+            "commercially_sensitive",
+            "material",
+        }
+    ):
+        return ("high", "medium", "low")
+    if "damaging" in keys or "potentially_damaging" in keys:
+        return ("damaging", "potentially_damaging", "unexpected", "interesting")
+    if "commercially_sensitive" in keys or "potentially_strategic" in keys:
+        return (
+            "commercially_sensitive",
+            "potentially_strategic",
+            "unexpected",
+            "interesting",
+        )
+    if "material" in keys:
+        return ("security_relevant", "material", "unexpected", "interesting")
+    if "sensitive" in keys and "security_relevant" not in keys:
+        return ("sensitive", "unexpected", "interesting", "expected")
+    return DISCLOSURE_CHART_ORDER
 
 DISCLOSURE_CHART_ORDER = ("security_relevant", "unexpected", "interesting", "expected")
 

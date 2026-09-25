@@ -1,77 +1,43 @@
-{% from "components/macros.j2" import quote_box %}
+{% from "components/macros.j2" import section_head %}
+{% set page = content.pages.executive_summary %}
 <section class="page page--executive-summary" id="executive-summary">
-  <h2>{{ content.pages.executive_summary.title or "Disclosure Summary" }}</h2>
-  <p class="run-stamp">
-    {{ content.meta.report_date }}
-  </p>
-  <p class="section-lede">{{ content.pages.executive_summary.body | link_cites }}</p>
-  {% if content.pages.executive_summary.pull_quote %}
-    {{ quote_box(content.pages.executive_summary.pull_quote) }}
+  {{ section_head(page.title or "Executive Summary", page.takeaway) }}
+  {% set blocks = page.blocks or [] %}
+  {% if blocks %}
+  <div class="exec-blocks">
+    {% for block in blocks %}
+    <section class="exec-block">
+      <h3>{{ block.title }}</h3>
+      <p>{{ block.body | link_cites }}</p>
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="section-lede">{{ page.body | link_cites }}</p>
   {% endif %}
 
-  <dl class="stat-strip">
-    <div class="stat-strip__lead">
-      <span class="stat-strip__value">{{ content.meta.counts.high_sensitivity | format_int }}</span>
-      <span class="stat-strip__label">{{ content.meta.priority_label or "High-sensitivity" }}</span>
+  {% set brief = content.meta.brief or {} %}
+  {% if brief.kpis %}
+  <dl class="kpi-row">
+    {% for item in brief.kpis %}
+    <div>
+      <span class="kpi-row__value">{{ item.value | format_int }}</span>
+      <span class="kpi-row__label">{{ item.label }}</span>
     </div>
-    <div class="stat-strip__item">
-      <span class="stat-strip__value">{{ content.meta.counts.findings | format_int }}</span>
-      <span class="stat-strip__label">Findings</span>
-    </div>
-    <div class="stat-strip__item">
-      <span class="stat-strip__value">{{ content.meta.counts.llms_tested | format_int }}</span>
-      <span class="stat-strip__label">Models</span>
-    </div>
-    <div class="stat-strip__item">
-      <span class="stat-strip__value">{{ content.meta.counts.chains | format_int }}</span>
-      <span class="stat-strip__label">Chains</span>
-    </div>
-    {% if content.meta.counts.languages %}
-    <div class="stat-strip__item">
-      <span class="stat-strip__value">{{ content.meta.counts.languages | format_int }}</span>
-      <span class="stat-strip__label">Languages</span>
-    </div>
-    {% endif %}
+    {% endfor %}
   </dl>
-
-  <div class="exec-layout">
-    <div class="exec-layout__main">
-      {% if content.pages.executive_summary.why_it_matters %}
-      <aside class="impact-band">{{ content.pages.executive_summary.why_it_matters | link_cites }}</aside>
-      {% endif %}
-
-      {% if content.pages.executive_summary.public_sources %}
-      <p class="exec-meta">
-        <strong>Named in the answers.</strong>
-        {{ content.pages.executive_summary.public_sources | join('; ') | link_cites }}.
-      </p>
-      {% endif %}
-
-      {% if content.pages.executive_summary.confidence_label or content.pages.executive_summary.confidence_rationale %}
-      <p class="exec-meta">
-        <strong>Confidence {{ content.pages.executive_summary.confidence_label or "unrated" }}{% if content.pages.executive_summary.confidence_score %} · {{ content.pages.executive_summary.confidence_score | format_score }}{% endif %}.</strong>
-        {{ content.pages.executive_summary.confidence_rationale | link_cites }}
-      </p>
-      {% endif %}
-
-      {% if content.pages.executive_summary.defensive_action %}
-      <p class="exec-prose">{{ content.pages.executive_summary.defensive_action | link_cites }}</p>
-      {% endif %}
-
-      {% if content.pages.executive_summary.exposure_teaser %}
-      <p class="exec-prose">{{ content.pages.executive_summary.exposure_teaser | link_cites }}</p>
-      {% endif %}
+  {% endif %}
+  {% if brief.secondary %}
+  <dl class="kpi-tier">
+    {% for item in brief.secondary %}
+    <div>
+      <span class="kpi-tier__value">{{ item.value | format_int }}</span>
+      <span class="kpi-tier__label">{{ item.label }}</span>
     </div>
-
-    {% if content.pages.executive_summary.inference_chain %}
-    <aside class="exec-layout__rail">
-      <p class="chain-rail__title">Evidence Chain</p>
-      <ol class="chain-rail">
-        {% for step in content.pages.executive_summary.inference_chain %}
-        <li>{{ step | link_cites }}</li>
-        {% endfor %}
-      </ol>
-    </aside>
-    {% endif %}
-  </div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+  {% if content.meta.models_tested %}
+  <p class="models-line">{{ content.meta.models_tested | join(' · ') }}</p>
+  {% endif %}
 </section>

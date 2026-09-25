@@ -1,9 +1,30 @@
-<section class="page page--methodology">
-  <h2>{{ content.pages.methodology.title or "How This Run Was Built" }}</h2>
-  <p class="section-lede">{{ content.pages.methodology.body }}</p>
-  <ol class="methodology-list">
-    {% for step in content.pages.methodology.steps %}
-    <li>{{ step }}</li>
+{% from "components/macros.j2" import section_head %}
+{% set page = content.pages.methodology or {} %}
+<section class="page page--methodology" id="methodology">
+  {{ section_head(page.title or "Methodology and Limitations", page.takeaway, page.body) }}
+
+  {% if page.facts %}
+  <dl class="fact-list">
+    {% for fact in page.facts %}
+    <div class="fact-list__row">
+      <dt>{{ fact.label }}</dt>
+      <dd>{{ fact.value }}</dd>
+    </div>
     {% endfor %}
+  </dl>
+  {% endif %}
+
+  {% if page.steps %}
+  <h3>How the run worked</h3>
+  <ol class="methodology-list">
+    {% for step in page.steps %}<li>{{ step }}</li>{% endfor %}
   </ol>
+  {% endif %}
+
+  {% if page.limitations %}
+  <h3>Limitations</h3>
+  <ul class="methodology-list methodology-list--limits">
+    {% for item in page.limitations %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+  {% endif %}
 </section>

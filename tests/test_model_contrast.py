@@ -30,9 +30,9 @@ def test_build_model_contrast_splits_shared_and_unique():
     assert contrast["unique_count"] == 1
     assert contrast["commonality"][0]["claim_id"] == "C0001"
     kinds = {row["kind"] for row in contrast["differences"]}
-    assert "contested" in kinds
-    assert "model-specific" in kinds
-    assert "corroborated" in contrast["lede"].lower() or "across models" in contrast["lede"]
+    assert "Contested" in kinds
+    assert "Single-model lead" in kinds
+    assert "cross-model corroborated" in contrast["lede"].lower()
 
 
 def test_score_report_includes_model_contrast():
@@ -107,7 +107,7 @@ def test_content_doc_exposes_model_contrast_page():
         },
         report_date="20 Sep 2026",
     )
-    assert doc["pages"]["model_comparison"]["title"] == "Model Comparison"
+    assert doc["pages"]["model_comparison"]["title"] == "Cross-Model Comparison"
     assert doc["model_contrast"]["shared_count"] == 1
     assert doc["model_contrast"]["unique_count"] == 1
     assert doc["pages"]["model_comparison"]["body"]

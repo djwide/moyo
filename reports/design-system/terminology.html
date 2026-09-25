@@ -317,9 +317,8 @@
       <ol>
         <li><a href="#overview">Overview</a></li>
         <li><a href="#findings">Findings &amp; IDs</a></li>
-        <li><a href="#status">Status labels</a></li>
-        <li><a href="#scores">Score dimensions</a></li>
-        <li><a href="#severity">Severity bands</a></li>
+        <li><a href="#status">Evidence status</a></li>
+        <li><a href="#severity">Research significance</a></li>
         <li><a href="#sources">Sources &amp; citations</a></li>
         <li><a href="#graphics">Charts &amp; graphics</a></li>
         <li><a href="#exposure">Exposure metrics</a></li>
@@ -410,10 +409,11 @@
       </section>
 
       <section id="status">
-        <h2>Status labels</h2>
+        <h2>Evidence status</h2>
         <p class="prose">
-          Status describes how a finding sits relative to other sources — not whether
-          it is “true” in the outside world.
+          Every finding has one evidence status. The ladder runs from a recovered
+          source URL, to agreement across models, to a single model, with disagreement
+          as its own status.
         </p>
         <table class="ref">
           <thead>
@@ -424,131 +424,53 @@
           </thead>
           <tbody>
             <tr>
-              <td><span class="badge badge-corroborated">Corroborated</span></td>
-              <td>At least two distinct models (or language-tagged instances treated as sources) agree on the same atomic fact.</td>
+              <td><span class="badge badge-corroborated">Externally verified</span></td>
+              <td>A source URL was recovered with the claim. This is not an independent fact-check of that source.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-corroborated">Cross-model corroborated</span></td>
+              <td>More than one model stated the claim, and no source URL was recovered.</td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-model-specific">Single-model lead</span></td>
+              <td>One model stated the claim, and no source URL was recovered.</td>
             </tr>
             <tr>
               <td><span class="badge badge-contested">Contested</span></td>
-              <td>Sources disagree on a material point (not just wording).</td>
-            </tr>
-            <tr>
-              <td><span class="badge badge-outlier">Outlier</span></td>
-              <td>Diverges sharply from consensus, or is unusually specific / extreme.</td>
-            </tr>
-            <tr>
-              <td><span class="badge badge-unverified">Unverified</span></td>
-              <td>Plausible but weakly grounded; limited support in the exploration.</td>
-            </tr>
-            <tr>
-              <td><span class="badge badge-model-specific">Model-specific</span></td>
-              <td>Distinctive to one model family (or one language-tagged run of that family).</td>
+              <td>The record disagrees on a material point. This status stands on its own, even when a URL is present.</td>
             </tr>
           </tbody>
         </table>
       </section>
 
-      <section id="scores">
-        <h2>Score dimensions</h2>
-        <p class="prose">
-          Unless noted, dimensions are integers from <strong>1</strong> (low) to
-          <strong>5</strong> (high). They are analyst / extractor judgments used for
-          ranking and charts — not probability percentages.
-        </p>
-        <div class="scale" aria-hidden="true">
-          <div class="s1">1</div>
-          <div class="s2">2</div>
-          <div class="s3">3</div>
-          <div class="s4">4</div>
-          <div class="s5">5</div>
-        </div>
-        <dl class="terms">
-          <div>
-            <dt>Sensitivity</dt>
-            <dd>
-              How sensitive or high-stakes the disclosure is (policy risk, brand harm,
-              privacy, safety, proprietary exposure).
-              <span class="note">Findings with sensitivity ≥ 4 typically count as “high-sensitivity” in report totals.</span>
-            </dd>
-          </div>
-          <div>
-            <dt>Specificity</dt>
-            <dd>
-              How concrete and actionable the detail is (names, formulas, quantities,
-              procedures) versus vague allusion.
-            </dd>
-          </div>
-          <div>
-            <dt>Novelty</dt>
-            <dd>
-              How surprising the claim is relative to the expected public consensus for
-              the topic.
-            </dd>
-          </div>
-          <div>
-            <dt>Interestingness</dt>
-            <dd>
-              Editorial priority for the snapshot: salience for a human reader reviewing
-              exposure, not scientific importance alone.
-            </dd>
-          </div>
-          <div>
-            <dt>Confidence</dt>
-            <dd>
-              How clearly the evidence supports that this finding was actually stated
-              (extraction / grounding confidence), shown as n/5 in finding cards.
-            </dd>
-          </div>
-          <div>
-            <dt>Corroboration</dt>
-            <dd>
-              Count of distinct sources supporting the same clustered fact. Often starts
-              at 1 at extraction time and is updated after clustering.
-            </dd>
-          </div>
-        </dl>
-      </section>
-
       <section id="severity">
-        <h2>Severity bands</h2>
+        <h2>Research significance</h2>
         <p class="prose">
-          For distribution charts and badges, sensitivity is often rolled into four bands:
+          The second label is how much the claim would matter if it holds.
+          It is not an evidence status.
         </p>
         <table class="ref">
           <thead>
             <tr>
-              <th>Band</th>
-              <th>Typical sensitivity</th>
+              <th>Label</th>
               <th>Role in the report</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td><span class="badge badge-high">High</span></td>
-              <td>4–5</td>
-              <td>Primary exposure concern; drives “high-sensitivity” counts and highlights.</td>
+              <td>The claim would matter if it holds.</td>
             </tr>
             <tr>
               <td><span class="badge badge-medium">Medium</span></td>
-              <td>3</td>
-              <td>Material detail worth review; not the top severity tier.</td>
+              <td>Worth a look. Still not evidence that the claim is true.</td>
             </tr>
             <tr>
               <td><span class="badge badge-low">Low</span></td>
-              <td>2</td>
-              <td>Limited sensitivity; still retained for completeness.</td>
-            </tr>
-            <tr>
-              <td><span class="badge badge-info">Info</span></td>
-              <td>1 (informational)</td>
-              <td>Context or low-stakes public fact; kept for the audit trail.</td>
+              <td>Retained for context.</td>
             </tr>
           </tbody>
         </table>
-        <p class="prose">
-          Snapshot badges such as <span class="badge badge-high">High</span> and
-          <span class="badge badge-specific">Specific</span> flag top findings that
-          clear configured thresholds (commonly sensitivity ≥ 4 and specificity ≥ 4).
-        </p>
       </section>
 
       <section id="sources">
@@ -588,25 +510,21 @@
           <div>
             <dt>Exposure radar</dt>
             <dd>
-              Pentagon chart of average scores across specificity, sensitivity,
-              corroboration, novelty, and confidence (scale 1–5).
+              Internal score profile. Read findings by evidence status and research significance.
             </dd>
           </div>
           <div>
             <dt>Findings by LLM</dt>
             <dd>
-              Bar chart of tested models scored by how many findings they produced
-              and how sensitive those findings are. Bar height is the sum of finding
-              sensitivities; stack color shows the high / medium / low / informational mix.
+              Bar chart of tested models. Color is research significance: high, medium, or low.
             </dd>
           </div>
           <div>
-            <dt>Sensitivity by model and claim</dt>
+            <dt>Research significance by model and claim</dt>
             <dd>
               Matrix of clusters × models. A filled cell means that model supported
-              the cluster; color encodes the cluster’s sensitivity (1–5). Empty cells
-              mean no support from that model in the displayed set. A color key
-              sits under the matrix.
+              the cluster; color is research significance. Empty cells mean no support
+              from that model in the displayed set.
             </dd>
           </div>
           <div>

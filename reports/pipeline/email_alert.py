@@ -6,6 +6,7 @@ from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
+from .provenance import evidence_status, research_significance
 from .textclean import plain_text
 
 
@@ -88,8 +89,9 @@ def build_alert_email(
     bullets_txt = []
     for f in impact:
         cite = f.get("source_cite") or f.get("source_short") or ""
-        sens = f.get("sensitivity")
-        tip = f" (sens {sens})" if sens is not None else ""
+        tip = ""
+        if f.get("sensitivity") is not None:
+            tip = f" ({research_significance(f)}; {evidence_status(f)})"
         src = f" — {cite}" if cite else ""
         claim = plain_text(f.get("claim") or f.get("text"))
         cited = _cited_labels(f)
@@ -105,7 +107,7 @@ def build_alert_email(
     full_bits = [
         "complete finding index",
         "evidence excerpts with line references",
-        "sensitivity heatmap",
+        "a research-significance heatmap",
         "cited real-world sources",
     ]
     if include_remediation:
@@ -120,7 +122,7 @@ def build_alert_email(
             "",
             f"We received substantive answers from {n_substantive} of {n_attempted} models "
             f"and retained {n_findings} findings "
-            f"({n_high} {(meta.get('priority_label') or 'high-sensitivity').lower()}).",
+            f"({n_high} high significance).",
             "",
             "Highest-impact claims from this run:",
             *bullets_txt,
@@ -141,8 +143,8 @@ def build_alert_email(
         meta_bits = []
         if f.get("claim_id"):
             meta_bits.append(str(f["claim_id"]))
-        if sens is not None:
-            meta_bits.append(f"sens {sens}")
+        if f.get("sensitivity") is not None:
+            meta_bits.append(f"{research_significance(f)} · {evidence_status(f)}")
         if cite:
             meta_bits.append(str(cite))
         meta_line = html_escape(" · ".join(meta_bits))
@@ -208,7 +210,7 @@ def build_alert_email(
               We received substantive answers from <strong>{n_substantive}</strong> of
               <strong>{n_attempted}</strong> models and retained
               <strong>{n_findings}</strong> findings
-              (<strong>{n_high}</strong> {(meta.get('priority_label') or 'high-sensitivity').lower()}). Below are the
+              (<strong>{n_high}</strong> high significance). Below are the
               highest-impact claims from this run.
             </p>
             <ol style="margin:0;padding-left:18px;">

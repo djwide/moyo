@@ -1,4 +1,4 @@
-"""Compact per-model charts: fingerprint, sensitivity mix, probes, overlap.
+"""Compact per-model charts: score dot plot, significance mix, probes, overlap.
 
 These are not the cross-model bars / corpus radar / heatmap already in the
 risk and comparison pages.
@@ -9,10 +9,11 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
+from .decision_charts import model_dotplot_svg
 from .style import (
     BAR_COLORS,
     BAR_LABELS,
-    DISCLOSURE_CHART_ORDER,
+    band_legend_order,
     FONT,
     FONT_MONO,
     INK,
@@ -25,97 +26,15 @@ from .style import (
     svg_root,
 )
 
-_AXES = (
-    ("specificity", "Spec"),
-    ("sensitivity", "Sens"),
-    ("corroboration", "Corr"),
-    ("novelty", "Nov"),
-    ("confidence", "Conf"),
-)
-
-
-def model_fingerprint_svg(
-    model_avgs: Mapping[str, float] | None,
-    corpus_avgs: Mapping[str, float] | None,
-    *,
-    width: int = 280,
-    height: int = 248,
-) -> str:
-    """Overlay this model's mean scores on the corpus mean (hairline)."""
-    cx, cy = width / 2.0, 128.0
-    r_max = 74.0
-    n = len(_AXES)
-
-    def _pt(i: int, level: float) -> tuple[float, float]:
-        ang = -math.pi / 2 + (2 * math.pi * i / n)
-        rr = r_max * (max(0.0, min(5.0, level)) / 5.0)
-        return cx + rr * math.cos(ang), cy + rr * math.sin(ang)
-
-    rings = []
-    for level in (1, 3, 5):
-        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (_pt(i, level) for i in range(n)))
-        rings.append(
-            f'<polygon points="{pts}" fill="none" stroke="{RULE}" stroke-width="0.8"/>'
-        )
-
-    def _poly(avgs: Mapping[str, float] | None, fill: str, stroke: str, opacity: str) -> str:
-        values = [float((avgs or {}).get(k, 0) or 0) for k, _ in _AXES]
-        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in (_pt(i, values[i]) for i in range(n)))
-        return (
-            f'<polygon points="{pts}" fill="{fill}" fill-opacity="{opacity}" '
-            f'stroke="{stroke}" stroke-width="1.6"/>'
-        )
-
-    labels = []
-    for i, (_, label) in enumerate(_AXES):
-        ang = -math.pi / 2 + (2 * math.pi * i / n)
-        lx = cx + (r_max + 16) * math.cos(ang)
-        ly = cy + (r_max + 16) * math.sin(ang)
-        labels.append(
-            f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" '
-            f'font-family="{FONT}" font-size="9" fill="{INK}">'
-            f"{escape_xml(label)}</text>"
-        )
-
-    legend = (
-        f'<rect x="8" y="6" width="10" height="6" fill="{TEAL}" fill-opacity="0.45" '
-        f'stroke="{TEAL_DEEP}" stroke-width="1"/>'
-        f'<text x="22" y="12" font-family="{FONT}" font-size="9" fill="{INK}">This model</text>'
-        f'<rect x="92" y="6" width="10" height="6" fill="none" stroke="{MUTED}" stroke-width="1.4"/>'
-        f'<text x="106" y="12" font-family="{FONT}" font-size="9" fill="{INK}">Corpus mean</text>'
-    )
-
-    body = f"""  {"".join(rings)}
-  {_poly(corpus_avgs, "none", MUTED, "0")}
-  {_poly(model_avgs, TEAL, TEAL_DEEP, "0.38")}
-  {"".join(labels)}
-  {legend}"""
-    return svg_root(width, height, body)
-
-
 def model_mix_svg(
     bands: Mapping[str, Any] | None,
     *,
     width: int = 280,
     height: int = 112,
 ) -> str:
-    """100% stacked bar of this model's disclosure mix."""
+    """100% stacked bar of this model's research significance."""
     keys = set((bands or {}).keys())
-    if "damaging" in keys or "potentially_damaging" in keys:
-        order = ("damaging", "potentially_damaging", "unexpected", "interesting")
-    elif "commercially_sensitive" in keys or "potentially_strategic" in keys:
-        order = (
-            "commercially_sensitive",
-            "potentially_strategic",
-            "unexpected",
-            "interesting",
-        )
-    elif "material" in keys:
-        order = ("security_relevant", "material", "unexpected", "interesting")
-    elif "sensitive" in keys and "security_relevant" not in keys:
-        order = ("sensitive", "unexpected", "interesting", "expected")
-    else:
-        order = DISCLOSURE_CHART_ORDER
+    order = band_legend_order(keys)
     counts = [max(0, int((bands or {}).get(k) or 0)) for k in order]
     total = sum(counts) or 1
     x, y, bar_h = 8, 28, 22
@@ -148,7 +67,7 @@ def model_mix_svg(
                 f'fill="{INK}">{escape_xml(BAR_LABELS[key])}</text>'
             )
             lx += 136
-    body = f"""  <text x="8" y="16" font-family="{FONT}" font-size="9" font-weight="600" fill="{MUTED}">Disclosure mix</text>
+    body = f"""  <text x="8" y="16" font-family="{FONT}" font-size="9" font-weight="600" fill="{MUTED}">Significance</text>
   {"".join(chunks)}
   {"".join(legend)}"""
     return svg_root(width, height, body)
@@ -255,7 +174,7 @@ def generate_dossier_graphics(dossiers: Sequence[Mapping[str, Any]]) -> dict[str
         charts = row.get("charts") if isinstance(row.get("charts"), Mapping) else {}
         fp = charts.get("fingerprint")
         if fp:
-            graphics[str(fp)] = model_fingerprint_svg(
+            graphics[str(fp)] = model_dotplot_svg(
                 row.get("radar") or {},
                 row.get("corpus_radar") or {},
             )

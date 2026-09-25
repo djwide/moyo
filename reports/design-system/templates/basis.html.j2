@@ -8,53 +8,55 @@
   <link rel="stylesheet" href="{{ css_href }}" />
 </head>
 <body>
-  {% include "pages/basis_cover.j2" %}
-  {% set ns = namespace(toc=[
-    {"id": "executive-summary", "title": content.pages.executive_summary.title or "Disclosure Summary"},
-    {"id": "risk-overview", "title": content.pages.risk_overview.title or "Model Exposure"},
-    {"id": "model-comparison", "title": content.pages.model_comparison.title or "Model Comparison"},
-    {"id": "inventory", "title": content.pages.inventory.title or "Cluster Inventory"},
-    {"id": "findings", "title": (content.pages.basis_findings or {}).title or "Cluster Transcripts"},
-    {"id": "exposure", "title": (content.pages.exposure or {}).title or "Exposure Chains"},
-  ], model_kids=[]) %}
-  {% for d in content.model_dossiers or [] %}
-    {% set ns.model_kids = ns.model_kids + [{"id": d.id, "title": d.model}] %}
-  {% endfor %}
-  {% if content.unverified_findings %}
-    {% set ns.toc = ns.toc[:5] + [{"id": "unverified", "title": content.pages.unverified.title or "Single-model and unverified"}] + ns.toc[5:] %}
-  {% endif %}
-  {% if ns.model_kids %}
-    {% set ns.toc = ns.toc + [{
-      "id": ns.model_kids[0].id,
-      "title": (content.pages.model_dossiers or {}).title or "Model Dossiers",
-      "children": ns.model_kids,
-    }] %}
+  {% set pages = content.pages %}
+  {% set plan = (content.next_steps or {}).basis or {} %}
+  {% set ns = namespace(parts=[
+    {"id": "inventory", "title": pages.appendix.claims_title or "Complete Claim Inventory"},
+    {"id": "findings", "title": (pages.basis_findings or {}).title or "Cluster Transcripts"},
+    {"id": "exposure", "title": (pages.exposure or {}).title or "Exposure Chains"},
+  ]) %}
+  {% if content.model_dossiers %}
+    {% set ns.parts = ns.parts + [{"id": content.model_dossiers[0].id, "title": (pages.model_dossiers or {}).title or "Model Dossiers"}] %}
   {% endif %}
   {% if content.meta.include_remediation %}
-    {% set ns.toc = ns.toc + [{"id": "remediation", "title": (content.pages.remediation or {}).title or "Matching Controls"}] %}
+    {% set ns.parts = ns.parts + [{"id": "remediation", "title": (pages.remediation or {}).title or "Matching Controls"}] %}
   {% endif %}
-  {% if content.next_steps and content.next_steps.basis %}
-    {% set ns.toc = ns.toc + [{
-      "id": "next-steps",
-      "title": content.next_steps.basis.title or "Follow-Up Plan",
-    }] %}
-  {% endif %}
-  {% set ns.toc = ns.toc + [
-    {"id": "sources", "title": content.pages.sources.title or "Cited Sources"},
-    {"id": "glossary", "title": content.pages.glossary.title or "Score Glossary"},
-    {"id": "appendix", "title": (content.pages.appendix or {}).title or "Appendix", "children": [
-      {"id": "appendix-method", "title": (content.pages.appendix or {}).method_title or "Collection Method"},
-    ]},
+  {% set ns.parts = ns.parts + [
+    {"id": "sources", "title": pages.sources.title or "Cited Sources"},
+    {"id": "glossary", "title": pages.glossary.title or "Glossary"},
+    {"id": "appendix-method", "title": pages.appendix.method_title or "Collection Method"},
   ] %}
-  {% with toc = ns.toc %}
-  {% include "pages/contents.j2" %}
+  {% set lettered = [] %}
+  {% for part in ns.parts %}
+    {% set _ = lettered.append({"id": part.id, "title": "ABCDEFGHIJ"[loop.index0] ~ " · " ~ part.title}) %}
+  {% endfor %}
+  {% set ns.parts = lettered %}
+  {% set toc = [
+    {"id": "executive-summary", "title": pages.executive_summary.title or "Executive Summary"},
+    {"id": "exposure-overview", "title": pages.risk_overview.title or "Exposure Overview"},
+    {"id": "priority-leads", "title": (pages.brief_findings or {}).title or "Priority Leads"},
+    {"id": "evidence", "title": pages.evidence.title or "Evidence and Source Quality"},
+    {"id": "model-comparison", "title": pages.model_comparison.title or "Cross-Model Comparison"},
+    {"id": "next-steps", "title": plan.title or "Verification Plan"},
+    {"id": "methodology", "title": (pages.methodology or {}).title or "Methodology and Limitations"},
+    {"id": "appendix", "title": pages.appendix.title or "Technical Appendix", "part": true, "children": ns.parts},
+  ] %}
+  {% with cover_kicker = "Basis record" %}
+  {% include "pages/cover.j2" %}
   {% endwith %}
   {% include "pages/executive_summary.j2" %}
   {% include "pages/risk_overview.j2" %}
+  {% include "pages/brief_findings.j2" %}
+  {% include "pages/evidence.j2" %}
   {% include "pages/model_comparison.j2" %}
-  {% include "pages/basis_inventory.j2" %}
+  {% with section = plan %}
+  {% include "pages/next_steps.j2" %}
+  {% endwith %}
+  {% include "pages/methodology.j2" %}
+  {% with parts = ns.parts %}
+  {% include "pages/appendix.j2" %}
+  {% endwith %}
   {% include "pages/basis_findings.j2" %}
-  {% include "pages/unverified.j2" %}
   {% include "pages/basis_exposure.j2" %}
   {% for dossier in content.model_dossiers or [] %}
     {% with depth = "basis" %}
@@ -64,11 +66,6 @@
   {% endfor %}
   {% if content.meta.include_remediation %}
   {% include "pages/basis_remediation.j2" %}
-  {% endif %}
-  {% if content.next_steps and content.next_steps.basis %}
-  {% with section = content.next_steps.basis %}
-  {% include "pages/next_steps.j2" %}
-  {% endwith %}
   {% endif %}
   {% include "pages/sources.j2" %}
   {% include "pages/glossary.j2" %}

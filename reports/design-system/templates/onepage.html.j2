@@ -24,67 +24,59 @@
       </div>
     </header>
 
+    {% set brief = content.meta.brief or {} %}
     <div class="snap-masthead">
-      <div class="snap-masthead__stat">
-        <div class="snap-masthead__value">{{ content.meta.counts.high_sensitivity | format_int }}</div>
-        <div class="snap-masthead__label">{{ content.meta.priority_label or "High-sensitivity" }}</div>
-      </div>
       <div class="snap-masthead__copy">
-        <p class="eyebrow">{{ content.meta.eyebrow or "Exposure snapshot" }}</p>
-        <h1 class="headline">{{ content.meta.headline or "What the models disclosed" }}</h1>
-        <p class="prompt-line">
-          “{{ content.meta.display_topic or content.meta.topic or (content.meta.prompts[0] if content.meta.prompts else '') }}”
-        </p>
-        <p class="date-line">
-          {{ content.meta.report_date }}
-          {% if content.meta.subject_detail %} · {{ content.meta.subject_detail }}{% endif %}
-        </p>
-        {% if content.meta.models_tested %}
-        <p class="models-line">
-          {{ content.meta.models_tested | join(' · ') }}
-        </p>
+        <p class="eyebrow">AI Exposure Assessment</p>
+        <h1 class="headline">{{ content.meta.display_topic or content.meta.topic }}</h1>
+        <p class="date-line">{{ content.meta.report_date }}</p>
+        {% if brief.scan_line %}
+        <p class="models-line">{{ brief.scan_line }}</p>
+        {% elif content.meta.models_tested %}
+        <p class="models-line">{{ content.meta.models_tested | join(' · ') }}</p>
         {% endif %}
       </div>
     </div>
 
+    {% if brief.kpis %}
+    <div class="metrics">
+      {% for item in brief.kpis %}
+      <div class="metric">
+        <div class="value">{{ item.value | format_int }}</div>
+        <div class="label">{{ item.label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
     <div class="metrics">
       <div class="metric">
         <div class="value">{{ content.meta.counts.findings | format_int }}</div>
-        <div class="label">Findings</div>
+        <div class="label">Extracted leads</div>
       </div>
       <div class="metric">
         <div class="value">{{ content.meta.counts.llms_tested | format_int }}</div>
-        <div class="label">LLMs tested</div>
+        <div class="label">Models tested</div>
       </div>
-      {% if content.meta.counts.chains %}
-      <div class="metric">
-        <div class="value">{{ content.meta.counts.chains | format_int }}</div>
-        <div class="label">Chains</div>
-      </div>
-      {% endif %}
-      {% if content.meta.counts.languages %}
-      <div class="metric">
-        <div class="value">{{ content.meta.counts.languages | format_int }}</div>
-        <div class="label">Languages</div>
-      </div>
-      {% endif %}
     </div>
+    {% endif %}
 
     {% if content.meta.audience == 'opposition' %}
     <div class="snap-split">
       <section class="snap-split__col">
-        <h2>Verified</h2>
+        <h2>Externally verified</h2>
         {% if content.onepage_verified %}
         {% set lead = content.onepage_verified[0] %}
-        <p class="lead-finding">{{ lead.claim }}{% if lead.provenance %} — {{ lead.provenance }}{% endif %}</p>
+        <p class="lead-finding">{{ lead.claim }}</p>
         <ul class="specific-list">
           {% for f in content.onepage_verified[1:] %}
           <li>
             <div class="snap-item__title">
               <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+              {{ severity_badge(f.significance or 'Low') }}
+              {{ language_badge(f.prompt_language) }}
             </div>
-            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+            <p class="specific-claim">{{ f.claim }}</p>
           </li>
           {% endfor %}
         </ul>
@@ -96,15 +88,17 @@
         <h2>Requires further verification</h2>
         {% if content.onepage_needs_verification %}
         {% set lead = content.onepage_needs_verification[0] %}
-        <p class="lead-finding">{{ lead.claim }}{% if lead.provenance %} — {{ lead.provenance }}{% endif %}</p>
+        <p class="lead-finding">{{ lead.claim }}</p>
         <ul class="specific-list">
           {% for f in content.onepage_needs_verification[1:] %}
           <li>
             <div class="snap-item__title">
               <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+              {{ severity_badge(f.significance or 'Low') }}
+              {{ language_badge(f.prompt_language) }}
             </div>
-            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+            <p class="specific-claim">{{ f.claim }}</p>
           </li>
           {% endfor %}
         </ul>
@@ -117,13 +111,12 @@
     <div class="snap-body">
       <section class="snap-body__lead">
         <h2>
-          Lead Disclosure
-          {% for b in content.top_finding.badges or [] %}
-            {{ severity_badge(b) }}
-          {% endfor %}
+          Lead finding
+          {% if content.top_finding.evidence_status %}{{ severity_badge(content.top_finding.evidence_status) }}{% endif %}
+          {{ severity_badge(content.top_finding.significance or 'Low') }}
           {{ language_badge(content.top_finding.prompt_language) }}
         </h2>
-        <p class="lead-finding">{{ content.top_finding.text }}{% if content.top_finding.provenance %} — {{ content.top_finding.provenance }}{% endif %}</p>
+        <p class="lead-finding">{{ content.top_finding.text }}</p>
         {% if content.pages.executive_summary.public_sources %}
         <p class="panel-sources">
           Cited: {{ content.pages.executive_summary.public_sources | join('; ') }}
@@ -132,19 +125,20 @@
       </section>
 
       <section class="snap-body__rail">
-        <h2>Highest-Specificity Claims</h2>
+        <h2>Highest significance</h2>
         <ul class="specific-list">
           {% for f in content.specific_findings[:4] %}
           <li>
             <div class="snap-item__title">
               <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {{ severity_badge('SPECIFIC') }}
-              {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+              {{ severity_badge(f.significance or 'Low') }}
+              {{ language_badge(f.prompt_language) }}
             </div>
-            <p class="specific-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+            <p class="specific-claim">{{ f.claim }}</p>
           </li>
           {% else %}
-          <li class="empty">No sourced corroborated findings in this run.</li>
+          <li class="empty">No externally verified findings in this run.</li>
           {% endfor %}
         </ul>
       </section>
@@ -158,9 +152,10 @@
         <li>
           <div class="snap-item__title">
             <span class="mono">{{ f.present_id or f.claim_id }}</span>
-            {% if f.status_label or f.status %}{{ severity_badge(f.status_label or f.status) }}{% endif %}
+            {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+            {{ severity_badge(f.significance or 'Low') }}
           </div>
-          <p class="snap-more-claim">{{ f.claim }}{% if f.provenance %} — {{ f.provenance }}{% endif %}</p>
+          <p class="snap-more-claim">{{ f.claim }}</p>
         </li>
         {% endfor %}
       </ul>

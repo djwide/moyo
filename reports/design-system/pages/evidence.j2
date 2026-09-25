@@ -1,14 +1,61 @@
-{% from "components/macros.j2" import svg_asset, evidence_box %}
+{% from "components/macros.j2" import section_head, evidence_box, citation_line, severity_badge %}
+{% set page = content.pages.evidence %}
+{% set ev = content.evidence_summary or {} %}
 <section class="page page--evidence" id="evidence">
-  <h2>{{ content.pages.evidence.title or "Verbatim Excerpts" }}</h2>
-  {{ svg_asset(content.assets.evidence_graph_snapshot or content.assets.evidence_graph, graphics.get('evidence_graph_snapshot') or graphics.get('evidence_graph'), 'compact', 'Evidence Graph') }}
-  {% set listed = content.evidence_findings if content.evidence_findings is defined else content.abridged_findings %}
-  {% for f in listed %}
-      <h3 class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}{% if f.raw_start_line %} · lines {{ f.raw_start_line }}–{{ f.raw_end_line or f.raw_start_line }}{% endif %}</h3>
-      {% if f.raw_excerpt %}
-      {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
-      {% else %}
-      <p>{{ f.claim | link_cites }}</p>
-      {% endif %}
+  {{ section_head(page.title or "Evidence and Source Quality", page.takeaway, page.body) }}
+
+  {% if ev.ladder %}
+  <table class="data-table ladder-table">
+    <thead>
+      <tr><th>Evidence status</th><th class="num">Findings</th><th class="ladder-table__bar-head">Share of all findings</th></tr>
+    </thead>
+    <tbody>
+      {% for step in ev.ladder %}
+      <tr{% if step.label == 'Contested' and step.count %} class="is-exceptional"{% endif %}>
+        <td>{{ step.label }}</td>
+        <td class="num">{{ step.count | format_int }}</td>
+        <td class="ladder-table__bar">
+          <span class="ladder-bar"><span class="ladder-bar__fill" style="width: {{ step.pct }}%"></span></span>
+          <span class="ladder-bar__pct">{{ step.pct }}%</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if ev.sources %}
+  <h3>Most-cited sources</h3>
+  <p class="section-note">{{ ev.source_count }} sources with a URL, from {{ ev.domain_count }} domains. Full list in the appendix.</p>
+  <table class="data-table source-summary">
+    <thead>
+      <tr><th>Ref</th><th>Source</th><th class="num">Findings</th></tr>
+    </thead>
+    <tbody>
+      {% for s in ev.sources %}
+      <tr>
+        <td class="mono">{{ s.ref }}</td>
+        <td>{{ s.label }}{% if s.domain and s.domain != s.label %}<span class="source-summary__domain">{{ s.domain }}</span>{% endif %}</td>
+        <td class="num">{{ s.cited_by | format_int }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if content.evidence_findings %}
+  <h3 class="exhibits-title">In the models' words</h3>
+  {% for f in content.evidence_findings %}
+  <article class="exhibit">
+    <div class="exhibit__head">
+      <span class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}</span>
+      {{ severity_badge(f.evidence_status or 'Single-model lead') }}
+      {{ severity_badge(f.significance or 'Low') }}
+    </div>
+    <p class="exhibit__claim">{{ f.claim | link_cites }}</p>
+    {{ evidence_box(f.raw_excerpt, f.raw_start_line, f.raw_end_line, f.source_cite or f.source_model) }}
+    {{ citation_line(f.citations_display) }}
+  </article>
   {% endfor %}
+  {% endif %}
 </section>

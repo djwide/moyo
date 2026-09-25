@@ -25,6 +25,8 @@ def test_display_status_title_cases_labels():
     assert display_status("UNVERIFIED") == "Unverified"
     assert display_status("model-specific") == "Model-specific"
     assert display_status("high") == "High"
+    assert display_status("Externally verified") == "Externally verified"
+    assert display_status("Cross-model corroborated") == "Cross-model corroborated"
     assert display_status("SPECIFIC") == "Specific"
 
 
@@ -93,9 +95,15 @@ def test_build_content_doc_uses_action_titles():
         "Claude (Anthropic Sonnet)",
     ]
     assert "GPT" not in doc["meta"]["models_tested"]
-    assert doc["pages"]["executive_summary"]["title"] == "Disclosure Summary"
-    assert doc["pages"]["findings"]["title"] == "Priority Findings"
-    assert doc["pages"]["risk_overview"]["title"] == "Model Exposure"
+    assert doc["pages"]["executive_summary"]["title"] == "Executive Summary"
+    assert doc["meta"]["brief"]["kpis"][0]["label"] == "Extracted leads"
+    assert "Damaging" not in doc["meta"]["brief"]["scan_line"]
+    assert doc["pages"]["brief_findings"]["title"] == "Priority Leads"
+    assert doc["pages"]["risk_overview"]["title"] == "Exposure Overview"
+    assert doc["pages"]["risk_overview"]["takeaway"]
+    assert doc["pages"]["executive_summary"]["takeaway"]
+    assert doc["pages"]["methodology"]["title"] == "Methodology and Limitations"
+    assert doc["next_steps"]["snapshot"]["title"] == "Verification Plan"
     assert doc["pages"]["sources"]["title"] == "Cited Sources"
     assert "Overview" not in doc["pages"]["executive_summary"]["title"]
     assert "reputational and compliance risk" not in (
@@ -186,20 +194,36 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
                 "title": "Disclosure Summary",
                 "body": "The formula appears in S21.",
             },
-            "risk_overview": {"title": "Model Exposure"},
-            "findings": {"title": "Priority Findings"},
-            "evidence": {"title": "Verbatim Excerpts"},
-            "model_comparison": {"title": "Model Comparison"},
+            "risk_overview": {"title": "Exposure Overview", "takeaway": "GPT surfaced the most findings."},
+            "brief_findings": {"title": "Priority Leads"},
+            "evidence": {"title": "Evidence and Source Quality"},
+            "model_comparison": {"title": "Cross-Model Comparison"},
+            "methodology": {
+                "title": "Methodology and Limitations",
+                "takeaway": "This is a map, not a fact-check.",
+                "facts": [{"label": "Models queried", "value": "GPT"}],
+                "steps": ["Prompted."],
+                "limitations": ["Models repeat each other."],
+            },
             "appendix": {
-                "title": "Appendix",
-                "claims_title": "Finding Index",
+                "title": "Technical Appendix",
+                "claims_title": "Complete Claim Inventory",
                 "method_title": "Collection Method",
                 "corpus_title": "Normalized Responses",
             },
-            "inventory": {"title": "Cluster Inventory"},
             "sources": {"title": "Cited Sources"},
-            "glossary": {"title": "Score Glossary"},
+            "glossary": {"title": "Glossary"},
         },
+        "inventory": [
+            {
+                "id": "CL001",
+                "claim": "See the named source.",
+                "evidence_status": "Externally verified",
+                "significance": "Medium",
+                "models": "GPT",
+                "source_refs": ["S21"],
+            }
+        ],
         "assets": {},
         "abridged_findings": [
             {
@@ -315,26 +339,34 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
         favicon_uri="",
         css_href="css/basis.css",
     )
-    assert 'class="page page--contents"' in snap
-    assert 'class="page page--contents"' in basis
+    assert "cover-contents" in snap
+    assert "cover-contents" in basis
     assert 'href="#evidence"' in snap
     assert 'id="evidence"' in snap
+    assert 'href="#inventory"' in snap
     assert 'href="#inventory"' in basis
     assert 'id="inventory"' in basis
     assert "Contents" in snap
     assert "Contents" in basis
     assert "Disclosure Summary" in snap
-    assert "Model Exposure" in snap
-    assert "Verbatim Excerpts" in snap
-    assert "Priority Findings" in snap
-    assert "Model Comparison" in snap
-    assert "Finding Index" in snap
+    assert "AI Exposure Assessment" in snap
+    assert "Priority Leads" in snap
+    assert "Exposure Overview" in snap
+    assert '<p class="takeaway">GPT surfaced the most findings.</p>' in snap
+    assert "Evidence and Source Quality" in snap
+    assert "Cross-Model Comparison" in snap
+    assert "Methodology and Limitations" in snap
+    assert "Complete Claim Inventory" in snap
     assert "Cited Sources" in snap
-    assert "Score Glossary" in snap
-    assert "Cluster Inventory" in basis
+    assert "Glossary" in snap
+    for gone in ("Priority Findings", "Finding Index", "Verbatim Excerpts", "Exposure Radar"):
+        assert gone not in snap
+    core_end = snap.index('id="methodology"')
+    assert snap.index('id="exposure-overview"') < snap.index('id="priority-leads"') < core_end
+    assert core_end < snap.index('id="appendix"') < snap.index('id="model-gpt"') < snap.index('id="sources"')
     assert "Cluster Transcripts" in basis
     assert "Exposure Chains" in basis
-    assert "Appendix" in basis
+    assert "Technical Appendix" in basis
     assert "Collection Method" in basis
     assert "Normalized Responses" not in basis
     assert 'id="appendix-method"' in basis
@@ -343,13 +375,14 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
     assert "SNAPSHOT_MUST_OMIT_THIS_CORPUS" not in snap
     assert "Normalized Responses" not in snap
     assert 'id="appendix-responses"' not in snap
-    assert "Unverified — no source URL." in basis
+    assert "No external source." in basis
     assert "toc--sub" in basis
     assert 'id="model-gpt"' in snap
     assert 'id="model-gpt"' in basis
     assert 'id="model-gpt-detail"' in basis
     assert 'id="model-gpt-detail"' not in snap
-    assert "Score Fingerprint" in snap
+    assert "Average scores vs corpus" in snap
+    assert "Score Fingerprint" not in snap
     assert "Exclusive vs Shared" in basis
     assert "model-exposure-list" not in snap
     assert 'id="cite-S21"' in snap

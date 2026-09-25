@@ -14,39 +14,18 @@ from .textclean import plain_text
 from .cluster import dedupe_findings_by_group, present_id
 
 
-def _severity_label(finding: dict[str, Any], audience: str = "organization") -> str:
-    from .score import disclosure_class
-
-    return disclosure_class(finding, audience)
-
-
 def _rationale(f: dict[str, Any], audience: str = "organization") -> str:
-    """Plain-English severity rationale from the scored dimensions."""
-    sens = int(f.get("sensitivity") or 0)
-    spec = int(f.get("specificity") or 0)
-    nov = int(f.get("novelty") or 0)
-    corr = int(f.get("corroboration") or 1)
-    status = (f.get("status") or "UNVERIFIED").upper()
-    sev = _severity_label(f, audience)
+    """One sentence in the two reader-facing labels."""
+    del audience
+    from .provenance import evidence_status, research_significance
 
-    detail_bits = []
-    if spec >= 4:
-        detail_bits.append("concrete, specific detail")
-    elif spec <= 2:
-        detail_bits.append("low specificity")
-    if nov >= 4:
-        detail_bits.append("novel relative to consensus")
-    detail = "; ".join(detail_bits) if detail_bits else "moderate specificity"
-
-    if corr >= 2:
-        corr_note = f"corroborated across {corr} model outputs"
-    else:
-        corr_note = "single-model disclosure"
-
-    return (
-        f"{sev} (sensitivity {sens}/5, specificity {spec}/5, "
-        f"novelty {nov}/5). {detail.capitalize()}; status {status}; {corr_note}."
+    category = plain_text(f.get("category") or "").replace("_", " ").strip()
+    sentence = (
+        f"{research_significance(f)} significance. {evidence_status(f)}."
     )
+    if category:
+        sentence += f" Category: {category}."
+    return sentence
 
 
 _CATEGORY_SCENARIOS: dict[str, str] = {
@@ -153,8 +132,12 @@ def build_basis_section(
         row = dict(f)
         row["claim"] = plain_text(f.get("claim"))
         row["present_id"] = present_id(f)
-        row["severity"] = _severity_label(f, audience)
-        row["disclosure_class"] = row["severity"]
+        from .provenance import evidence_status, research_significance
+
+        row["evidence_status"] = f.get("evidence_status") or evidence_status(f)
+        row["significance"] = f.get("significance") or research_significance(f)
+        row["severity"] = str(row["significance"]).lower()
+        row["disclosure_class"] = row["significance"]
         row["rationale"] = _rationale(f, audience)
         findings_full.append(row)
 

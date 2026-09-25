@@ -71,7 +71,7 @@ def _format_date(raw: str | None) -> str:
             return raw
     else:
         d = datetime.now()
-    return d.strftime("%-d %b %Y")
+    return d.strftime("%-d %B %Y")
 
 
 def _design_system_root(cfg: dict) -> Path:
@@ -180,7 +180,9 @@ def render_pdfs(
 
     render_cfg = cfg.get("render") or {}
     ds_root = _design_system_root(cfg)
-    report_date = _format_date(render_cfg.get("report_date"))
+    report_date = _format_date(
+        render_cfg.get("report_date") or report_data.get("generated_at")
+    )
     isvf_path = _resolve_isvf_path(cfg) if include_remediation else None
     logo_src = REPORTS_ROOT / (
         render_cfg.get("logo") or "assets/branding/moyo-logo-wordmark.svg"

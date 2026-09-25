@@ -92,32 +92,50 @@ def language_specific(finding: dict[str, Any]) -> str:
     return first
 
 
-def provenance_label(finding: dict[str, Any], audience: str | None = None) -> str:
-    """Same-line label: language, model, and unverified when those apply.
+def evidence_status(finding: dict[str, Any]) -> str:
+    """Reader-facing evidence ladder. One label per finding.
 
-    Personal and opposition reports say UNCORROBORATED for a single-model
-    claim. Other audiences keep MODEL-SPECIFIC.
+    Externally verified → Cross-model corroborated → Single-model lead → Contested.
+    A source URL is the top rung. Disagreement is its own rung, not a weaker score.
     """
-    from pipeline.audience import OPPOSITION, PERSONAL, normalize_audience
-
-    parts: list[str] = []
-    lang = language_specific(finding)
-    if lang:
-        parts.append(f"LANGUAGE-SPECIFIC · {lang}")
+    status = str(finding.get("status") or "").upper().replace("_", "-").replace(" ", "-")
+    if status == "CONTESTED":
+        return "Contested"
+    if has_source_url(finding):
+        return "Externally verified"
     try:
         n_models = int(finding.get("corroboration") or 1)
     except (TypeError, ValueError):
         n_models = 1
-    status = str(finding.get("status") or "").upper()
-    if status == "MODEL-SPECIFIC" or n_models <= 1:
-        names = _model_names(finding)
-        model = _short_model(names[0] if names else "")
-        voice = normalize_audience(audience) if audience else ""
-        word = "UNCORROBORATED" if voice in {PERSONAL, OPPOSITION} else "MODEL-SPECIFIC"
-        parts.append(f"{word} · {model}")
-    if not has_source_url(finding):
-        parts.append("UNVERIFIED")
-    return " · ".join(parts)
+    if n_models >= 2:
+        return "Cross-model corroborated"
+    return "Single-model lead"
+
+
+def research_significance(finding: dict[str, Any]) -> str:
+    """Reader-facing stakes: High, Medium, or Low.
+
+    Collapses the internal sensitivity score. It is not an evidence status.
+    """
+    try:
+        sens = int(finding.get("sensitivity") or 0)
+    except (TypeError, ValueError):
+        sens = 0
+    if sens >= 4:
+        return "High"
+    if sens >= 3:
+        return "Medium"
+    return "Low"
+
+
+def significance_band(finding: dict[str, Any]) -> str:
+    return research_significance(finding).lower()
+
+
+def provenance_label(finding: dict[str, Any], audience: str | None = None) -> str:
+    """Same-line evidence status. Language stays on its own badge."""
+    del audience
+    return evidence_status(finding)
 
 
 def page_eligible(finding: dict[str, Any], audience: str | None = None) -> bool:
@@ -136,7 +154,7 @@ def page_eligible(finding: dict[str, Any], audience: str | None = None) -> bool:
     return True
 
 
-def _tokens(text: str) -> set[str]:
+def claim_tokens(text: str) -> set[str]:
     words = re.findall(r"[a-z0-9]+", (text or "").lower())
     return {word for word in words if len(word) > 2 and word not in _STOP}
 
@@ -178,7 +196,7 @@ def group_episodes(findings: list[dict[str, Any]]) -> list[list[dict[str, Any]]]
     for earlier, later in zip(misconduct, misconduct[1:]):
         union(earlier, later)
 
-    token_sets = {key: _tokens(str(by_key[key].get("claim") or "")) for key in keys}
+    token_sets = {key: claim_tokens(str(by_key[key].get("claim") or "")) for key in keys}
     for index, left in enumerate(keys):
         left_tokens = token_sets[left]
         if len(left_tokens) < 4:

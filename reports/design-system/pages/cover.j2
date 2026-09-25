@@ -1,4 +1,4 @@
-{% from "components/macros.j2" import severity_badge %}
+{% from "components/macros.j2" import toc_list %}
 <section class="page page--cover">
   <header class="cover-header">
     <div class="cover-header__slot cover-header__slot--left">
@@ -14,78 +14,20 @@
   </header>
 
   <div class="cover-body">
-    <p class="cover-kicker">{{ content.meta.kicker or "Exposure assessment" }}</p>
-
-    <div class="cover-lead">
-      <p class="cover-prompt-label">Topic</p>
-      <p class="cover-prompt">
-        “{{ content.meta.display_topic or content.meta.topic or (content.meta.prompts[0] if content.meta.prompts else '') }}”
-      </p>
-      <p class="cover-date">{{ content.meta.report_date }}{% if content.meta.subject_detail %} · {{ content.meta.subject_detail }}{% endif %}</p>
-    </div>
-
-    <h1 class="cover-title">{{ content.meta.headline or "What the models disclosed" }}</h1>
-
-    <div class="cover-meta">
-      <section class="cover-meta__block">
-        {% set cov = content.meta.coverage or {} %}
-        {% set c = content.meta.counts %}
-        {% set attempted = cov.attempted if cov.attempted is number else (c.llms_attempted if c.llms_attempted is number else c.llms_tested) %}
-        {% set received = cov.response_received if cov.response_received is number else c.llms_response_received %}
-        {% set substantive = cov.substantive_response if cov.substantive_response is number else (c.llms_substantive if c.llms_substantive is number else c.llms_tested) %}
-        {% set contributed = cov.claims_contributed if cov.claims_contributed is number else c.llms_claims_contributed %}
-        <h2 class="cover-meta__title">
-          {{ substantive | format_int }} of {{ attempted | format_int }} models answered
-        </h2>
-        <p class="cover-meta__coverage">
-          Attempted {{ attempted | format_int }}
-          · received {{ received | format_int }}
-          · substantive {{ substantive | format_int }}
-          · claims {{ contributed | format_int }}
-        </p>
-        <ul class="cover-meta__list">
-          {% for m in content.meta.models_tested %}
-          <li>{{ m }}</li>
-          {% else %}
-          <li>{{ content.meta.counts.llms_tested | format_int }} models</li>
-          {% endfor %}
-        </ul>
-      </section>
-      <section class="cover-meta__block cover-meta__block--aside">
-        <h2 class="cover-meta__title">Techniques</h2>
-        <p class="cover-meta__techniques">
-          {% for s in content.meta.strategies %}
-            {{ s | sentence_case }}{% if not loop.last %} · {% endif %}
-          {% endfor %}
-        </p>
-        {% if content.meta.fuzz_mode %}
-        <p class="cover-meta__note">Fuzz mode {{ content.meta.fuzz_mode | sentence_case }}</p>
-        {% endif %}
-      </section>
-    </div>
+    {% if cover_kicker %}<p class="cover-kicker">{{ cover_kicker }}</p>{% endif %}
+    <h1 class="cover-title">AI Exposure Assessment</h1>
+    <p class="cover-subject">{{ content.meta.display_topic or content.meta.topic }}</p>
+    <p class="cover-date">{{ content.meta.report_date }}</p>
+    {% set brief = content.meta.brief or {} %}
+    {% if brief.scan_line %}
+    <p class="cover-scanline">{{ brief.scan_line }}</p>
+    {% endif %}
   </div>
 
-  <footer class="cover-footer">
-    <div class="cover-footer__stats">
-      <span><strong>{{ content.meta.counts.findings | format_int }}</strong> findings</span>
-      <span><strong>{{ (content.meta.coverage.substantive_response if content.meta.coverage.substantive_response is number else content.meta.counts.llms_tested) | format_int }}</strong> substantive</span>
-      {% if content.meta.counts.high_sensitivity %}
-      <span><strong>{{ content.meta.counts.high_sensitivity | format_int }}</strong> {{ (content.meta.priority_label or "high-sensitivity") | lower }}</span>
-      {% endif %}
-      {% if content.meta.counts.chains %}
-      <span><strong>{{ content.meta.counts.chains | format_int }}</strong> chains</span>
-      {% endif %}
-      {% if content.meta.counts.languages %}
-      <span><strong>{{ content.meta.counts.languages | format_int }}</strong> languages</span>
-      {% endif %}
-    </div>
-    <div class="cover-footer__badges">
-      {% if content.meta.counts.outliers %}
-        {{ severity_badge('outlier') }} {{ content.meta.counts.outliers | format_int }} outliers
-      {% endif %}
-      {% if content.meta.counts.contested %}
-        · {{ severity_badge('contested') }} {{ content.meta.counts.contested | format_int }} contested
-      {% endif %}
-    </div>
-  </footer>
+  {% if toc %}
+  <nav class="page--contents cover-contents">
+    <h2 class="cover-contents__title">Contents</h2>
+    {{ toc_list(toc) }}
+  </nav>
+  {% endif %}
 </section>

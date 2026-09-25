@@ -17,6 +17,7 @@ from .audience import (
     sort_key,
 )
 from .language import looks_like_english
+from .provenance import evidence_status, significance_band
 from .cluster import dedupe_findings_by_group, present_id
 from .provenance import page_eligible
 
@@ -117,12 +118,14 @@ def build_model_contrast(
             "status": status,
         }
         n_models = len(models)
+        label = evidence_status(claim)
+        item["evidence_status"] = label
         if status in {"CONTESTED", "OUTLIER"}:
-            contested.append({**item, "kind": status.lower()})
+            contested.append({**item, "kind": label})
         elif n_models >= 2 or status == "CORROBORATED":
             shared.append(item)
         elif n_models == 1 or status == "MODEL-SPECIFIC":
-            unique.append({**item, "kind": "model-specific"})
+            unique.append({**item, "kind": label})
 
     shared_count = len(shared)
     unique_count = len(unique)
@@ -144,10 +147,10 @@ def build_model_contrast(
     else:
         lede = (
             f"{n_models} models answered the same investigation. "
-            f"{shared_count} claim{'s' if shared_count != 1 else ''} "
-            f"{'were' if shared_count != 1 else 'was'} corroborated across models. "
-            f"{unique_count} disclosure{'s' if unique_count != 1 else ''} "
-            f"{'are' if unique_count != 1 else 'is'} unique to a single model."
+            f"{shared_count} finding{'s' if shared_count != 1 else ''} "
+            f"{'are' if shared_count != 1 else 'is'} cross-model corroborated. "
+            f"{unique_count} {'are' if unique_count != 1 else 'is'} "
+            "a single-model lead."
         )
 
     return {
@@ -178,10 +181,9 @@ def aggregate_findings_by_llm(
 ) -> list[dict[str, Any]]:
     """Score each test LLM by finding quantity and sensitivity.
 
-    Bar height (``score``) is the sum of finding sensitivities attributed to
-    that model, so more findings and more sensitive findings both rank higher.
-    ``bands`` splits that score (and the raw counts) into high / medium / low /
-    informational so the chart can stack by sensitivity.
+    Bar height (``score``) is the sum of finding stakes attributed to that
+    model. ``bands`` splits that score into high, medium, and low research
+    significance.
 
     When ``models_probed`` is set, the result includes every probed model
     (roster order, then models with scores). Silent models get a zero row so
@@ -189,12 +191,11 @@ def aggregate_findings_by_llm(
     dropped.
     """
     aliases = aliases or {}
-    voice = normalize_audience(audience)
-    band_keys = chart_order(voice)
+    band_keys = ("high", "medium", "low")
     rows: dict[str, dict[str, Any]] = {}
     for claim in claims or []:
         sens = int(claim.get("sensitivity", 0) or 0)
-        band = disclosure_bin(claim, voice)
+        band = significance_band(claim)
         for name in _source_models(claim, aliases):
             row = rows.get(name)
             if row is None:

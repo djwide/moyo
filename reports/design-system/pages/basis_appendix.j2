@@ -1,14 +1,4 @@
 {% set app = content.pages.appendix or {} %}
-<section class="page page--appendix" id="appendix">
-  <h2>{{ app.title or "Appendix" }}</h2>
-  <p class="basis-lede">
-    {{ app.lede or "Supporting material for this run: how answers were collected." }}
-  </p>
-  <ol class="appendix-outline">
-    <li><a href="#appendix-method">{{ app.method_title or "Collection Method" }}</a></li>
-  </ol>
-</section>
-
 <section class="page page--appendix-method" id="appendix-method">
   <h2>{{ app.method_title or "Collection Method" }}</h2>
   <p>{{ app.method_body }}</p>

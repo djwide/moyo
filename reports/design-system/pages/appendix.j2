@@ -1,30 +1,44 @@
-{% from "components/macros.j2" import remediation_box, severity_badge, source_refs %}
+{% from "components/macros.j2" import severity_badge, source_refs %}
+{# Expects ``parts`` = appendix TOC entries #}
+{% set app = content.pages.appendix or {} %}
 <section class="page page--appendix" id="appendix">
-  <h2>{{ content.pages.appendix.claims_title or "Finding Index" }}</h2>
-  {% if content.meta.include_remediation %}
-  <h3>Run-Specific Follow-Ups</h3>
-  {% for item in content.followups %}
-    {{ remediation_box(item) }}
-  {% endfor %}
+  <h2>{{ app.title or "Technical Appendix" }}</h2>
+  {% if app.lede %}<p class="section-lede">{{ app.lede }}</p>{% endif %}
+  {% if parts %}
+  <ol class="appendix-outline">
+    {% for part in parts %}
+    <li><a href="#{{ part.id }}">{{ part.title }}</a></li>
+    {% endfor %}
+  </ol>
   {% endif %}
 
-  <table class="findings-index">
+  <h3 class="appendix-part" id="inventory">{{ app.claims_title or "Complete Claim Inventory" }}</h3>
+  {% if app.claims_body %}<p class="section-note">{{ app.claims_body }}</p>{% endif %}
+  <table class="data-table inventory-table">
+    <colgroup>
+      <col class="col-id" />
+      <col class="col-claim" />
+      <col class="col-evidence" />
+      <col class="col-sig" />
+      <col class="col-models" />
+    </colgroup>
     <thead>
       <tr>
-        <th>ID</th><th>Claim</th><th>Status</th><th>Sens</th><th>Source</th>
+        <th>ID</th>
+        <th>Claim</th>
+        <th>Evidence</th>
+        <th>Significance</th>
+        <th>Models</th>
       </tr>
     </thead>
     <tbody>
-      {% for f in content.abridged_findings %}
-      <tr{% if loop.first %} class="is-priority"{% endif %}>
-        <td class="mono">{{ f.present_id or f.cluster_id or f.claim_id }}</td>
-        <td>{{ f.claim | link_cites }}</td>
-        <td>{{ severity_badge(f.status_label or f.status) }}</td>
-        <td class="num">{{ f.sensitivity | format_score }}</td>
-        <td>
-          <span class="source-cite">{{ f.source_cite or f.source_model }}</span>
-          {{ source_refs(f.source_refs) }}
-        </td>
+      {% for row in content.inventory or [] %}
+      <tr>
+        <td class="mono">{{ row.id }}</td>
+        <td class="claim-cell">{{ row.claim | link_cites }} {{ source_refs(row.source_refs) }}</td>
+        <td>{{ row.evidence_status }}</td>
+        <td>{{ row.significance }}</td>
+        <td>{{ row.models }}</td>
       </tr>
       {% endfor %}
     </tbody>

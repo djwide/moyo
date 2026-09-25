@@ -11,19 +11,19 @@
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.unique | format_int }}</span>
-      <span class="stat-strip__label">Exclusive</span>
+      <span class="stat-strip__label">Only this model</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.high | format_int }}</span>
-      <span class="stat-strip__label">Security</span>
+      <span class="stat-strip__label">High significance</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.overlap_pct | format_number }}%</span>
-      <span class="stat-strip__label">Overlap</span>
+      <span class="stat-strip__label">Shared</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.exclusive_citation_count | format_int }}</span>
-      <span class="stat-strip__label">Orig. cites</span>
+      <span class="stat-strip__label">Own sources</span>
     </div>
     <div class="stat-strip__item">
       <span class="stat-strip__value">{{ dossier.probes.answered | format_int }}/{{ dossier.probes.attempted | format_int }}</span>
@@ -33,11 +33,11 @@
 
   <div class="dossier-charts">
     <div class="dossier-charts__item">
-      {{ svg_asset('', graphics.get(dossier.charts.fingerprint), 'compact', 'Score Fingerprint') }}
+      {{ svg_asset('', graphics.get(dossier.charts.fingerprint), 'compact', 'Average scores vs corpus') }}
     </div>
     <div class="dossier-charts__stack">
-      {{ svg_asset('', graphics.get(dossier.charts.mix), 'compact', 'Disclosure mix') }}
-      {{ svg_asset('', graphics.get(dossier.charts.probes), 'compact', 'Probe Outcomes') }}
+      {{ svg_asset('', graphics.get(dossier.charts.mix), 'compact') }}
+      {{ svg_asset('', graphics.get(dossier.charts.probes), 'compact') }}
     </div>
   </div>
 
@@ -48,7 +48,8 @@
     <li>
       <div class="snap-item__title">
         <span class="mono">{{ f.present_id or f.claim_id }}</span>
-        {{ severity_badge(f.status_label or f.status) }}
+        {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
+        {{ severity_badge(f.significance or 'Low') }}
       </div>
       <p>{{ f.claim | link_cites }}</p>
     </li>

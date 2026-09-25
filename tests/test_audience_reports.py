@@ -124,10 +124,10 @@ def test_personal_onepager_includes_sensitive_findings():
     assert "S1" not in onepage
     assert "S1" in parked
     assert doc["meta"]["priority_label"] == "Sensitive"
-    assert doc["next_steps"]["snapshot"]["title"] == "What Is Already Public"
+    assert doc["next_steps"]["snapshot"]["title"] == "Verification Plan"
 
 
-def test_opposition_closes_on_what_to_verify():
+def test_opposition_closes_on_verification_plan():
     findings = [
         {
             "claim_id": "C3",
@@ -153,7 +153,10 @@ def test_opposition_closes_on_what_to_verify():
         },
         report_date="23 Sep 2026",
     )
-    assert doc["next_steps"]["snapshot"]["title"] == "What to Verify"
+    assert doc["next_steps"]["snapshot"]["title"] == "Verification Plan"
+    plan_text = " ".join(item["body"] for item in doc["next_steps"]["snapshot"]["items"])
+    assert "damaging" not in plan_text.lower()
+    assert doc["next_steps"]["snapshot"]["items"][0]["count"] == 0
     assert doc["meta"]["priority_label"] == "Damaging"
     assert doc["meta"]["kicker"] == "Opposition research"
 
@@ -247,8 +250,8 @@ def test_competitive_onepager_reserves_commercially_sensitive_findings():
     assert doc["meta"]["priority_label"] == "Commercially sensitive"
     assert doc["meta"]["kicker"] == "Competitive intelligence"
     assert doc["meta"]["subject_detail"] == "Duff Cola, Austin, Texas"
-    assert doc["next_steps"]["snapshot"]["title"] == "What to Watch"
-    assert doc["next_steps"]["basis"]["title"] == "What to Watch"
+    assert doc["next_steps"]["snapshot"]["title"] == "Verification Plan"
+    assert doc["next_steps"]["basis"]["title"] == "Verification Plan"
     assert "Red-team" not in " ".join(item["title"] for item in doc["next_steps"]["basis"]["items"])
 
 
@@ -276,7 +279,7 @@ def test_security_basis_adds_red_team_and_snapshot_does_not():
         },
         report_date="23 Sep 2026",
     )
-    assert doc["next_steps"]["snapshot"]["title"] == "What to Review"
+    assert doc["next_steps"]["snapshot"]["title"] == "Verification Plan"
     assert doc["meta"]["priority_label"] == "Security relevant"
     snap_titles = [item["title"] for item in doc["next_steps"]["snapshot"]["items"]]
     basis_titles = [item["title"] for item in doc["next_steps"]["basis"]["items"]]

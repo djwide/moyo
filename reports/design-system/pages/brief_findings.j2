@@ -1,0 +1,32 @@
+{% from "components/macros.j2" import section_head %}
+{% set page = content.pages.brief_findings or {} %}
+{% set rows = (content.meta.brief or {}).rows or [] %}
+<section class="page page--brief-findings" id="priority-leads">
+  {{ section_head(page.title or "Priority Leads", page.takeaway, page.body) }}
+  {% if rows %}
+  <table class="brief-table">
+    <thead>
+      <tr>
+        <th>Finding</th>
+        <th>Why it matters</th>
+        <th>Evidence status</th>
+        <th>Models</th>
+        <th>Next verification step</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="brief-table__finding">{{ row.finding }}</td>
+        <td>{{ row.why }}</td>
+        <td>{{ row.evidence }}</td>
+        <td>{{ row.models }}</td>
+        <td>{{ row.next_step }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="section-lede">No lead finding is available for this run.</p>
+  {% endif %}
+</section>

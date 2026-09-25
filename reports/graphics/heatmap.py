@@ -285,19 +285,17 @@ def model_heatmap_svg(
             )
         )
 
-    # Color key: empty + sensitivity 1–5.
+    # Color key: empty + research significance.
     key_y = top + n_models * cell_h + 20
     key_items = [
         (0, "Empty"),
-        (1, "1"),
-        (2, "2"),
-        (3, "3"),
-        (4, "4"),
-        (5, "5"),
+        (2, "Low"),
+        (3, "Medium"),
+        (5, "High"),
     ]
     legend = [
         f'<text x="{left:.1f}" y="{key_y:.1f}" font-family="{FONT}" font-size="9" '
-        f'font-weight="600" fill="{INK}">Sensitivity</text>'
+        f'font-weight="600" fill="{INK}">Significance</text>'
     ]
     swatch_y = key_y + 8
     lx = left
@@ -309,8 +307,8 @@ def model_heatmap_svg(
             f'<text x="{lx + 16:.1f}" y="{swatch_y + 10:.1f}" font-family="{FONT}" '
             f'font-size="9" fill="{MUTED}">{escape_xml(label)}</text>'
         )
-        lx += 52 if level == 0 else 36
-    note = "Filled = model supported this cluster · color = that cluster's sensitivity"
+        lx += 70
+    note = "Filled = model supported this cluster · color = research significance"
     if full:
         note += f" · all {n_claims} clusters"
     elif len(grouped) > n_claims:
