@@ -51,6 +51,6 @@ def test_overview_and_plan_are_computed_not_fixed():
     assert ov["totals"]["corroborated_pct"] == 33
     plan = verification_plan(findings)
     counts = {item["title"]: item["count"] for item in plan["items"]}
-    assert counts["Confirm the sourced high-significance findings"] == 1
+    assert counts["Confirm the source-linked high-significance findings"] == 1
     assert counts["Resolve contested findings"] == 1
     assert plan["items"][-1]["exceptional"] is True

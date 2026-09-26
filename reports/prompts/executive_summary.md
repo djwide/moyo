@@ -42,7 +42,7 @@ Rules:
 - `public_sources` must be real outlets/filings named in the findings. Exactly 3 when possible.
 - `inference_chain` is **one** evidence-backed chain (3–5 short steps).
 - Narrate each episode once. Facets of one allegation (the charge, the denial, the inquiry, the outcome) are steps inside that episode, not additional findings. A `facets` list on a finding is the same episode.
-- Lead only with findings that have a source URL and, for opposition, are not single-model damaging claims. Claims in `unverified_findings` stay out of the headline and the inference chain.
+- Lead only with findings that have a source URL and, for opposition, are not single-model damaging claims. Claims in `unverified_findings` (unvalidated inferences) stay out of the headline and the inference chain.
 - If another model says there is no such scandal, or contradicts the episode, put that disagreement in `confidence_rationale`. Do not treat the contradiction as a second finding.
 - `model_commonality` and `model_differences` contrast the tested models.
   Commonality is corroborated facts. Differences are unique, contested, or

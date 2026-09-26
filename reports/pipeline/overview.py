@@ -6,10 +6,10 @@ from collections import Counter
 from typing import Any
 from urllib.parse import urlparse
 
-from .provenance import evidence_status, has_source_url, research_significance
+from .provenance import SOURCE_LINKED, evidence_status, has_source_url, research_significance
 
 EVIDENCE_ORDER = (
-    "Externally verified",
+    SOURCE_LINKED,
     "Cross-model corroborated",
     "Single-model lead",
     "Contested",
@@ -139,7 +139,7 @@ def exposure_overview(
         "stats": [
             {"value": f"{rate}%", "label": "Cross-model corroboration rate",
              "note": f"{corroborated} of {total} findings stated by 2+ models"},
-            {"value": str(verified), "label": "Externally verified findings",
+            {"value": str(verified), "label": "Source-linked findings",
              "note": f"{_pct(verified, total)}% cite a source URL"},
             {"value": str(high), "label": "High-significance findings",
              "note": f"of {total} distinct findings"},
@@ -271,10 +271,10 @@ def evidence_quality(
         key=lambda s: (-int(s.get("cited_by") or 0), str(s.get("ref") or "")),
     )
     domains = Counter(_domain(s.get("url")) for s in sources or [] if s.get("url"))
-    verified = counts.get("Externally verified", 0)
+    verified = counts.get(SOURCE_LINKED, 0)
     single = counts.get("Single-model lead", 0)
     takeaway = (
-        f"{verified} of {total} findings cite an external source. "
+        f"{verified} of {total} findings are source-linked. "
         + (
             f"{single} rest on a single model with no source."
             if single
@@ -307,10 +307,10 @@ def verification_plan(
     """Verification order built from the evidence ladder. Numbers only, no voice copy."""
     status = {id(f): evidence_status(f) for f in findings}
     high = [f for f in findings if research_significance(f) == "High"]
-    high_sourced = [f for f in high if status[id(f)] == "Externally verified"]
+    high_sourced = [f for f in high if status[id(f)] == SOURCE_LINKED]
     other_sourced = sum(
         1 for f in findings
-        if status[id(f)] == "Externally verified" and research_significance(f) != "High"
+        if status[id(f)] == SOURCE_LINKED and research_significance(f) != "High"
     )
     cross = sum(1 for f in findings if status[id(f)] == "Cross-model corroborated")
     single = sum(1 for f in findings if status[id(f)] == "Single-model lead")
@@ -318,19 +318,19 @@ def verification_plan(
 
     items = [
         {
-            "title": "Confirm the sourced high-significance findings",
+            "title": "Confirm the source-linked high-significance findings",
             "count": len(high_sourced),
             "body": (
                 f"{len(high_sourced)} high-significance {_plural(len(high_sourced), 'finding')} "
-                "cite an external source. Open each citation and confirm it "
+                "name an external source. Open each citation and confirm it "
                 "states the claim, not only the topic."
             ),
         },
         {
-            "title": "Check the other sourced findings",
+            "title": "Check the other source-linked findings",
             "count": other_sourced,
             "body": (
-                f"{other_sourced} more {_plural(other_sourced, 'finding')} cite a source. "
+                f"{other_sourced} more {_plural(other_sourced, 'finding')} name a source. "
                 "Check them in significance order."
             ),
         },
@@ -366,7 +366,7 @@ def verification_plan(
         )
     items = [item for item in items if item["count"] or item is items[0]]
 
-    unsourced_high = [f for f in high if status[id(f)] != "Externally verified"]
+    unsourced_high = [f for f in high if status[id(f)] != SOURCE_LINKED]
     unsourced_high.sort(key=lambda f: (-model_count(f, aliases), -int(f.get("sensitivity") or 0)))
     rows = [
         {
@@ -380,7 +380,7 @@ def verification_plan(
     if high_sourced:
         takeaway = (
             f"Start with the {len(high_sourced)} high-significance "
-            f"{_plural(len(high_sourced), 'finding')} that already cite a source."
+            f"{_plural(len(high_sourced), 'finding')} that are source-linked."
         )
     elif high:
         takeaway = (

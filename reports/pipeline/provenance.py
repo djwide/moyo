@@ -92,17 +92,24 @@ def language_specific(finding: dict[str, Any]) -> str:
     return first
 
 
+# A URL means the model named a source. Moyo does not confirm the source states the claim.
+SOURCE_LINKED = "Source-linked"
+UNVALIDATED_INFERENCE = "Unvalidated inference"
+UNVALIDATED_INFERENCES = "Unvalidated inferences"
+
+
 def evidence_status(finding: dict[str, Any]) -> str:
     """Reader-facing evidence ladder. One label per finding.
 
-    Externally verified → Cross-model corroborated → Single-model lead → Contested.
-    A source URL is the top rung. Disagreement is its own rung, not a weaker score.
+    Source-linked → Cross-model corroborated → Single-model lead → Contested.
+    Source-linked means the model supplied a URL. It is not a fact-check.
+    Findings without that URL are unvalidated inferences: cross-model or single-model.
     """
     status = str(finding.get("status") or "").upper().replace("_", "-").replace(" ", "-")
     if status == "CONTESTED":
         return "Contested"
     if has_source_url(finding):
-        return "Externally verified"
+        return SOURCE_LINKED
     try:
         n_models = int(finding.get("corroboration") or 1)
     except (TypeError, ValueError):
@@ -232,7 +239,7 @@ def presentation_rows(
     findings: list[dict[str, Any]],
     audience: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split episodes into sourced lead rows and single-model / unverified rows.
+    """Split episodes into sourced lead rows and single-model / unvalidated rows.
 
     Each returned row is one episode. ``facets`` holds the other claims in it.
     """

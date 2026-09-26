@@ -27,6 +27,8 @@ from pipeline.audience import (
 )
 from .provenance import (
     claim_tokens,
+    SOURCE_LINKED,
+    UNVALIDATED_INFERENCES,
     evidence_status,
     has_source_url,
     presentation_rows,
@@ -513,19 +515,19 @@ def _brief_package(
         material = "No lead finding was ranked for this run."
     brief_rows = _brief_rows(rows, aliases)
     n_rows = len(brief_rows)
-    rows_verified = sum(1 for row in brief_rows if row["evidence"] == "Externally verified")
+    rows_verified = sum(1 for row in brief_rows if row["evidence"] == SOURCE_LINKED)
     rows_high = sum(1 for row in brief_rows if row["why"].startswith("High"))
     if not n_rows:
-        leads_takeaway = "No lead in this run cites a source yet."
+        leads_takeaway = "No lead in this run is source-linked yet."
     elif rows_verified == n_rows:
         leads_takeaway = (
-            f"All {number_word(n_rows)} top leads are externally verified"
+            f"All {number_word(n_rows)} top leads are source-linked"
             + (" and high significance." if rows_high == n_rows else ".")
         )
     else:
         leads_takeaway = (
             f"{number_word(rows_verified).capitalize()} of the {number_word(n_rows)} "
-            "top leads are externally verified."
+            "top leads are source-linked."
         )
     return {
         "scan_line": scan_line,
@@ -543,8 +545,8 @@ def _brief_package(
         ],
         "secondary": [
             {"value": high, "label": "High significance"},
-            {"value": verified, "label": "Externally verified"},
-            {"value": pending, "label": "Verification pending"},
+            {"value": verified, "label": "Source-linked"},
+            {"value": pending, "label": UNVALIDATED_INFERENCES},
         ],
         "blocks": [
             {
@@ -562,9 +564,9 @@ def _brief_package(
             {
                 "title": "What requires verification",
                 "body": (
-                    f"{pending} findings are not externally verified. "
-                    f"{high} are high significance; that label is not an "
-                    "evidence status. Start with externally verified, "
+                    f"{pending} findings are unvalidated inferences: no source has been "
+                    f"confirmed. {high} are high significance; that label is not an "
+                    "evidence status. Start with source-linked, "
                     "cross-model leads, then check the rest against the record."
                 ),
             },
@@ -618,9 +620,11 @@ def _methodology_page(
     missing = max(0, n_attempted - n_substantive)
     limitations = [
         "Models repeat each other. Cross-model agreement raises confidence "
-        "that a claim is widely stated, not that it is true.",
+        "that a claim is widely stated, not that it is true. Unsourced "
+        "findings remain unvalidated inferences.",
         "A source URL means the model named a source. It does not mean the "
-        "source says what the model says. Verification is still required.",
+        "source says what the model says. Validation against the record is "
+        "still required.",
         "Research significance is a rubric score assigned during extraction. "
         "It describes stakes if true, not likelihood.",
         "Results reflect these prompts, these models, and this date. Other "
@@ -658,7 +662,7 @@ def _methodology_page(
             "prompting language, in original and reworded form.",
             "Every answer was split into individual claims. Claims that say "
             "the same thing were clustered into one finding.",
-            "Each finding got one evidence status (externally verified, "
+            "Each finding got one evidence status (source-linked, "
             "cross-model corroborated, single-model lead, or contested) and "
             "one research significance (high, medium, or low).",
             "Findings were ranked by significance and evidence. The core "
@@ -835,7 +839,7 @@ def _build_executive_page(
         )
 
     return {
-        "body": strip_markdown(body),
+        "body": _say_unvalidated_inference(strip_markdown(body)),
         "pull_quote": plain_text(pull),
         "public_sources": public_sources[:3],
         "inference_chain": [plain_text(step) for step in inference if str(step).strip()],
@@ -847,11 +851,178 @@ def _build_executive_page(
         "exposure_teaser": plain_text(teaser),
         "title": "Disclosure Summary",
         "model_commonality": [
-            plain_text(x) for x in (fields.get("model_commonality") or []) if str(x).strip()
+            _say_unvalidated_inference(plain_text(x))
+            for x in (fields.get("model_commonality") or [])
+            if str(x).strip()
         ][:5],
         "model_differences": [
-            plain_text(x) for x in (fields.get("model_differences") or []) if str(x).strip()
+            _say_unvalidated_inference(plain_text(x))
+            for x in (fields.get("model_differences") or [])
+            if str(x).strip()
         ][:5],
+    }
+
+
+def _say_unvalidated_inference(text: str) -> str:
+    """Normalize leftover unverified / model-inferred wording in prose."""
+
+    def _cap(match: re.Match[str], phrase: str) -> str:
+        return phrase[0].upper() + phrase[1:] if match.group(0)[:1].isupper() else phrase
+
+    out = re.sub(
+        r"\bunverified findings\b",
+        lambda m: _cap(m, "unvalidated inferences"),
+        text,
+        flags=re.IGNORECASE,
+    )
+    out = re.sub(
+        r"\band unverified\b",
+        lambda m: _cap(m, "and an unvalidated inference"),
+        out,
+        flags=re.IGNORECASE,
+    )
+    out = re.sub(
+        r"\bunverified\b",
+        lambda m: _cap(m, "unvalidated inference"),
+        out,
+        flags=re.IGNORECASE,
+    )
+    out = re.sub(
+        r"\bmodel[ -]?inferred\b",
+        lambda m: _cap(m, "unvalidated inference"),
+        out,
+        flags=re.IGNORECASE,
+    )
+    return out
+
+
+def _clip_claim(text: str, limit: int = 220) -> str:
+    words = " ".join(str(text or "").split())
+    if len(words) <= limit:
+        return words
+    cut = words[:limit].rsplit(" ", 1)[0].rstrip(".,;:")
+    return (cut or words[:limit]).rstrip() + "…"
+
+
+def _onepage_row(finding: dict[str, Any]) -> dict[str, Any]:
+    n = _model_count(finding)
+    return {
+        "claim": _clip_claim(plain_text(finding.get("claim") or "")),
+        "evidence": evidence_status(finding),
+        "significance": research_significance(finding),
+        "models": n,
+        "models_label": "1 model" if n == 1 else f"{n} models",
+    }
+
+
+def _take_onepage_rows(
+    findings: list[dict[str, Any]],
+    pred,
+    limit: int = 4,
+    seen: list[set[str]] | None = None,
+) -> tuple[list[dict[str, Any]], list[set[str]]]:
+    chosen: list[dict[str, Any]] = []
+    chosen_tokens = list(seen or [])
+    for finding in findings:
+        if not pred(finding):
+            continue
+        claim = plain_text(finding.get("claim") or "")
+        tokens = claim_tokens(claim)
+        if len(tokens) >= 4 and any(
+            len(tokens & other) / min(len(tokens), len(other)) >= 0.4
+            for other in chosen_tokens
+            if other
+        ):
+            continue
+        chosen.append(_onepage_row(finding))
+        chosen_tokens.append(tokens)
+        if len(chosen) >= limit:
+            break
+    return chosen, chosen_tokens
+
+
+def _onepage_sheet(
+    findings: list[dict[str, Any]],
+    *,
+    audience: str,
+    models: int,
+    languages: list[str],
+    report_date: str,
+    display_topic: str,
+    n_attempted: int,
+    n_substantive: int,
+) -> dict[str, Any]:
+    ranked = sorted(findings, key=lambda finding: sort_key(finding, audience))
+    distinct = len(findings)
+    high = sum(1 for finding in findings if research_significance(finding) == "High")
+    linked = sum(1 for finding in findings if evidence_status(finding) == SOURCE_LINKED)
+    cross = sum(1 for finding in findings if _model_count(finding) >= 2)
+    cross_open = sum(
+        1 for finding in findings
+        if evidence_status(finding) == "Cross-model corroborated"
+    )
+    single_open = sum(
+        1 for finding in findings
+        if evidence_status(finding) == "Single-model lead"
+    )
+    leads = _extracted_lead_count(findings)
+    lang = _language_phrase(languages)
+    models_word = "One model" if models == 1 else f"{number_word(models).capitalize()} models"
+    responded = n_substantive or models
+    attempted = n_attempted or models
+    priority, seen = _take_onepage_rows(
+        ranked,
+        lambda finding: (
+            evidence_status(finding) == SOURCE_LINKED
+            and research_significance(finding) == "High"
+        ),
+    )
+    if len(priority) < 4:
+        more, seen = _take_onepage_rows(
+            ranked,
+            lambda finding: (
+                evidence_status(finding) == SOURCE_LINKED
+                and research_significance(finding) == "Medium"
+            ),
+            limit=4 - len(priority),
+            seen=seen,
+        )
+        priority.extend(more)
+    return {
+        "headline": (
+            f"{models_word} surfaced {distinct} distinct findings; "
+            f"{high} meet the report's high-significance threshold"
+        ),
+        "subject": display_topic,
+        "meta_line": f"{report_date} · {models} models · {lang}",
+        "volume_line": f"{leads} raw leads · {models} models · {lang} · {report_date}",
+        "kpis": [
+            {"value": distinct, "label": "Distinct findings"},
+            {"value": high, "label": "High significance"},
+            {"value": linked, "label": "Source-linked"},
+            {"value": cross, "label": "Cross-model corroborated"},
+        ],
+        "priority": priority,
+        "queue": _take_onepage_rows(
+            ranked,
+            lambda finding: (
+                research_significance(finding) == "High"
+                and evidence_status(finding) != SOURCE_LINKED
+            ),
+        )[0],
+        "profile": (
+            f"Source-linked {linked} · "
+            f"Cross\u2011model, no source {cross_open} · "
+            f"Single\u2011model, no source {single_open}"
+        ),
+        "coverage": f"{responded}/{attempted} models responded · {lang}",
+        "method": (
+            "Moyo maps what AI systems surface about a subject. "
+            "Findings without confirmed source support are unvalidated "
+            "inferences. Model agreement is not factual validation; "
+            "source-linked claims should still be checked against the "
+            "underlying record before reliance."
+        ),
     }
 
 
@@ -1103,6 +1274,16 @@ def build_content_doc(
         "snapshot": plan,
         "basis": {**plan, "items": list(plan["items"]) + basis_extra},
     }
+    onepage = _onepage_sheet(
+        findings,
+        audience=voice,
+        models=n_models,
+        languages=prompt_languages,
+        report_date=report_date,
+        display_topic=display_topic or str(report_data.get("topic") or ""),
+        n_attempted=n_attempted,
+        n_substantive=n_substantive or n_models,
+    )
     inventory = _claim_inventory(findings, alias_dict)
     methodology = _methodology_page(
         models_tested=models_tested,
@@ -1250,7 +1431,7 @@ def build_content_doc(
                 ),
                 "empty": (
                     "No claim in this run cited a source URL. Unsourced "
-                    "claims are listed as unverified and attributed to the "
+                    "claims are listed as unvalidated inferences and attributed to the "
                     "model that produced them."
                 ),
             },
@@ -1276,6 +1457,7 @@ def build_content_doc(
         "basis": basis_section,
         "next_steps": next_steps,
         "specific_findings": specific_findings,
+        "onepage": onepage,
         "onepage_more": onepage_more,
         "onepage_verified": onepage_verified,
         "onepage_needs_verification": onepage_needs_verification,
@@ -1366,7 +1548,7 @@ def render_report_md(content: dict[str, Any]) -> str:
         lines.append(
             f"- {row['model']}: {row['findings']} findings, {row['high']} high "
             f"significance, {row['corroborated_pct']}% corroborated, "
-            f"{row['verified']} externally verified"
+            f"{row['verified']} source-linked"
         )
     lines.append("")
     lines += _section("brief_findings", "Priority Leads")

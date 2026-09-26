@@ -52,17 +52,25 @@ _GROUPS: list[dict[str, Any]] = [
         "title": "Evidence Status",
         "terms": [
             (
-                "Externally verified",
-                "A source URL was recovered with the claim. This is the strongest "
-                "evidence status. It is not an independent fact-check of that source.",
+                "Source-linked",
+                "The model supplied an external source. Moyo has not confirmed "
+                "that the source supports the claim.",
+            ),
+            (
+                "Unvalidated inferences",
+                "Findings without confirmed source support. Includes "
+                "cross-model corroborated and single-model leads. Cross-model "
+                "repetition is not factual validation.",
             ),
             (
                 "Cross-model corroborated",
-                "More than one model stated the claim, and no source URL was recovered.",
+                "More than one model stated the claim, and no source URL was recovered. "
+                "An unvalidated inference until checked against the record.",
             ),
             (
                 "Single-model lead",
-                "One model stated the claim, and no source URL was recovered.",
+                "One model stated the claim, and no source URL was recovered. "
+                "An unvalidated inference that requires independent research.",
             ),
             (
                 "Contested",

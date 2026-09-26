@@ -37,7 +37,7 @@ def test_evidence_status_is_the_reader_label():
         status="CORROBORATED",
         citations=["House filing — https://disclosures-clerk.house.gov/"],
     )
-    assert provenance_label(sourced) == "Externally verified"
+    assert provenance_label(sourced) == "Source-linked"
     agreed = _claim(corroboration=2, status="CORROBORATED", citations=[])
     assert provenance_label(agreed) == "Cross-model corroborated"
     contested = _claim(

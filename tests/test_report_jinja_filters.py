@@ -25,7 +25,7 @@ def test_display_status_title_cases_labels():
     assert display_status("UNVERIFIED") == "Unverified"
     assert display_status("model-specific") == "Model-specific"
     assert display_status("high") == "High"
-    assert display_status("Externally verified") == "Externally verified"
+    assert display_status("Source-linked") == "Source-linked"
     assert display_status("Cross-model corroborated") == "Cross-model corroborated"
     assert display_status("SPECIFIC") == "Specific"
 
@@ -218,7 +218,7 @@ def test_snapshot_and_basis_templates_include_table_of_contents():
             {
                 "id": "CL001",
                 "claim": "See the named source.",
-                "evidence_status": "Externally verified",
+                "evidence_status": "Source-linked",
                 "significance": "Medium",
                 "models": "GPT",
                 "source_refs": ["S21"],

@@ -10,6 +10,7 @@
 </head>
 <body>
   {# PDF snapshot: no hyperlinks — CTAs are plain text only. #}
+  {% set sheet = content.onepage if content.onepage is defined and content.onepage else {} %}
   <article class="onepage">
     <header class="brand-bar">
       <div class="brand-bar__slot brand-bar__slot--left">
@@ -24,144 +25,86 @@
       </div>
     </header>
 
-    {% set brief = content.meta.brief or {} %}
     <div class="snap-masthead">
-      <div class="snap-masthead__copy">
-        <p class="eyebrow">AI Exposure Assessment</p>
-        <h1 class="headline">{{ content.meta.display_topic or content.meta.topic }}</h1>
-        <p class="date-line">{{ content.meta.report_date }}</p>
-        {% if brief.scan_line %}
-        <p class="models-line">{{ brief.scan_line }}</p>
-        {% elif content.meta.models_tested %}
-        <p class="models-line">{{ content.meta.models_tested | join(' · ') }}</p>
-        {% endif %}
-      </div>
+      <p class="eyebrow">AI Exposure Assessment</p>
+      <h1 class="headline">{{ sheet.headline or content.meta.headline or content.meta.topic }}</h1>
+      <p class="subject">{{ sheet.subject or content.meta.display_topic or content.meta.topic }}</p>
+      {% if sheet.meta_line %}
+      <p class="models-line">{{ sheet.meta_line }}</p>
+      {% else %}
+      <p class="models-line">{{ content.meta.report_date }}{% if content.meta.models_tested %} · {{ content.meta.models_tested | join(' · ') }}{% endif %}</p>
+      {% endif %}
+      {% if sheet.volume_line %}
+      <p class="volume-line">{{ sheet.volume_line }}</p>
+      {% endif %}
     </div>
 
-    {% if brief.kpis %}
+    {% if sheet.kpis %}
     <div class="metrics">
-      {% for item in brief.kpis %}
+      {% for item in sheet.kpis %}
       <div class="metric">
         <div class="value">{{ item.value | format_int }}</div>
         <div class="label">{{ item.label }}</div>
       </div>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="metrics">
-      <div class="metric">
-        <div class="value">{{ content.meta.counts.findings | format_int }}</div>
-        <div class="label">Extracted leads</div>
-      </div>
-      <div class="metric">
-        <div class="value">{{ content.meta.counts.llms_tested | format_int }}</div>
-        <div class="label">Models tested</div>
-      </div>
-    </div>
     {% endif %}
 
-    {% if content.meta.audience == 'opposition' %}
     <div class="snap-split">
       <section class="snap-split__col">
-        <h2>Externally verified</h2>
-        {% if content.onepage_verified %}
-        {% set lead = content.onepage_verified[0] %}
-        <p class="lead-finding">{{ lead.claim }}</p>
-        <ul class="specific-list">
-          {% for f in content.onepage_verified[1:] %}
+        <h2>Priority findings with source support</h2>
+        <ul class="finding-rows">
+          {% for f in sheet.priority or [] %}
           <li>
-            <div class="snap-item__title">
-              <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
-              {{ severity_badge(f.significance or 'Low') }}
-              {{ language_badge(f.prompt_language) }}
-            </div>
-            <p class="specific-claim">{{ f.claim }}</p>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="empty">No verified findings in this run.</p>
-        {% endif %}
-      </section>
-      <section class="snap-split__col snap-split__col--verify">
-        <h2>Requires further verification</h2>
-        {% if content.onepage_needs_verification %}
-        {% set lead = content.onepage_needs_verification[0] %}
-        <p class="lead-finding">{{ lead.claim }}</p>
-        <ul class="specific-list">
-          {% for f in content.onepage_needs_verification[1:] %}
-          <li>
-            <div class="snap-item__title">
-              <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
-              {{ severity_badge(f.significance or 'Low') }}
-              {{ language_badge(f.prompt_language) }}
-            </div>
-            <p class="specific-claim">{{ f.claim }}</p>
-          </li>
-          {% endfor %}
-        </ul>
-        {% else %}
-        <p class="empty">No claims require further verification.</p>
-        {% endif %}
-      </section>
-    </div>
-    {% else %}
-    <div class="snap-body">
-      <section class="snap-body__lead">
-        <h2>
-          Lead finding
-          {% if content.top_finding.evidence_status %}{{ severity_badge(content.top_finding.evidence_status) }}{% endif %}
-          {{ severity_badge(content.top_finding.significance or 'Low') }}
-          {{ language_badge(content.top_finding.prompt_language) }}
-        </h2>
-        <p class="lead-finding">{{ content.top_finding.text }}</p>
-        {% if content.pages.executive_summary.public_sources %}
-        <p class="panel-sources">
-          Cited: {{ content.pages.executive_summary.public_sources | join('; ') }}
-        </p>
-        {% endif %}
-      </section>
-
-      <section class="snap-body__rail">
-        <h2>Highest significance</h2>
-        <ul class="specific-list">
-          {% for f in content.specific_findings[:4] %}
-          <li>
-            <div class="snap-item__title">
-              <span class="mono">{{ f.present_id or f.claim_id }}</span>
-              {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
-              {{ severity_badge(f.significance or 'Low') }}
-              {{ language_badge(f.prompt_language) }}
-            </div>
-            <p class="specific-claim">{{ f.claim }}</p>
+            <p class="chips">
+              <span class="chip">{{ f.evidence }}</span>
+              <span class="chip chip--sig">{{ f.significance }}</span>
+              <span class="chip chip--models">{{ f.models_label }}</span>
+            </p>
+            <p class="row-claim">{{ f.claim }}</p>
           </li>
           {% else %}
-          <li class="empty">No externally verified findings in this run.</li>
+          <li class="empty">No source-linked findings meet the significance threshold.</li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="snap-split__col snap-split__col--queue">
+        <h2>Research queue</h2>
+        <ul class="finding-rows">
+          {% for f in sheet.queue or [] %}
+          <li>
+            <p class="chips">
+              <span class="chip">{{ f.evidence }}</span>
+              <span class="chip chip--sig">{{ f.significance }}</span>
+              <span class="chip chip--models">{{ f.models_label }}</span>
+            </p>
+            <p class="row-claim">{{ f.claim }}</p>
+          </li>
+          {% else %}
+          <li class="empty">No high-significance findings are still unvalidated inferences.</li>
           {% endfor %}
         </ul>
       </section>
     </div>
 
-    {% if content.onepage_more %}
-    <section class="snap-more">
-      <h2>Further Disclosures</h2>
-      <ul class="snap-more-list">
-        {% for f in content.onepage_more[:6] %}
-        <li>
-          <div class="snap-item__title">
-            <span class="mono">{{ f.present_id or f.claim_id }}</span>
-            {% if f.evidence_status %}{{ severity_badge(f.evidence_status) }}{% endif %}
-            {{ severity_badge(f.significance or 'Low') }}
-          </div>
-          <p class="snap-more-claim">{{ f.claim }}</p>
-        </li>
-        {% endfor %}
-      </ul>
-    </section>
-    {% endif %}
-    {% endif %}
+    <footer class="snap-foot">
+      <div class="snap-foot__col">
+        <h2>Evidence profile</h2>
+        <p>{{ sheet.profile }}</p>
+      </div>
+      <div class="snap-foot__col">
+        <h2>Coverage</h2>
+        <p>{{ sheet.coverage }}</p>
+        {% if content.meta.models_tested %}
+        <p class="foot-models">{{ content.meta.models_tested | join(' · ') }}</p>
+        {% endif %}
+      </div>
+      <div class="snap-foot__col">
+        <h2>Important limitation</h2>
+        <p>Unvalidated inferences are not factual validation.</p>
+      </div>
+      <p class="method-note">{{ sheet.method }}</p>
+    </footer>
   </article>
 </body>
 </html>
