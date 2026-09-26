@@ -447,10 +447,14 @@ def is_raw_product(spec: OrderSpec) -> bool:
 
 
 def stop_after_for(spec: OrderSpec) -> str | None:
-    """MoyoMap retrieval stops once labelled findings exist; products still render."""
-    if spec.generation_mode == "moyomap_extract":
-        return "score"
-    if spec.source == "moyomap" and spec.generation_mode == "full":
+    """MoyoMap scans stop once findings are scored.
+
+    Synthesize, graphics, and render run only for an actual report build
+    (storefront products, or generationMode=moyomap_report).
+    """
+    if spec.generation_mode == "moyomap_report":
+        return None
+    if spec.generation_mode == "moyomap_extract" or spec.source == "moyomap":
         return "score"
     return None
 
@@ -2295,7 +2299,11 @@ def run_moyomap_report(
     progress: Callable[[str], None] | None = None,
     set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
-    """Build a full report from an immutable graph snapshot without retrieval."""
+    """Score the frozen graph, then synthesize, draw graphics, and render.
+
+    Claim generation has already stopped after scoring. This path is the only
+    MoyoMap job that continues into synthesize, graphics, and render.
+    """
     from reports.build_report import main as build_report_main
 
     if spec.generation_mode != "moyomap_report":
@@ -2340,7 +2348,7 @@ def run_moyomap_report(
     if set_stage:
         set_stage("generating_report")
     cfg_path = _write_report_config(prompt_dir, spec, run_id)
-    plan = RebuildPlan(from_stage="cluster", keep_graphics=False, keep_content=False)
+    plan = RebuildPlan(from_stage="score", keep_graphics=False, keep_content=False)
     argv = rebuild_build_argv(
         spec,
         plan,

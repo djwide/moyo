@@ -724,7 +724,9 @@ def test_moyomap_report_builds_from_cluster_without_retrieval(
         bucket=SimpleNamespace(name="senteguard-website-moyo-reports"),
         work=tmp_path,
     )
-    assert seen_argv[seen_argv.index("--from-stage") + 1] == "cluster"
+    assert seen_argv[seen_argv.index("--from-stage") + 1] == "score"
+    assert "--stop-after" not in seen_argv
+    assert cw.stop_after_for(spec) is None
     assert "report.pdf" in runs[0].artifacts
     claims = [
         json.loads(line)
