@@ -142,6 +142,16 @@ MOYOMAP_SCAN_ARTIFACTS = (
     "report.json",
 )
 
+# A document extract starts from the uploaded PDF, Word, or markdown file.
+# It reuses extract, cluster, and score, and does not query retrieval models,
+# so the scan sidecars are not part of this contract.
+MOYOMAP_EXTRACT_ARTIFACTS = (
+    "claims.jsonl",
+    "report_data.json",
+    "evidence.json",
+    "report.json",
+)
+
 REBUILD_ARTIFACTS = ("report.md", "report.html", "report.pdf", "report.json")
 
 PIPELINE_STAGES = (
@@ -463,7 +473,7 @@ def required_artifacts(spec: OrderSpec) -> tuple[str, ...]:
     if spec.generation_mode == "moyomap_report":
         return REBUILD_ARTIFACTS
     if spec.generation_mode == "moyomap_extract":
-        return MOYOMAP_SCAN_ARTIFACTS
+        return MOYOMAP_EXTRACT_ARTIFACTS
     if spec.generation_mode in REBUILD_MODES:
         return REBUILD_ARTIFACTS
     if spec.source == "moyomap" and spec.generation_mode == "full":
@@ -2442,7 +2452,7 @@ def run_moyomap_extract(
     progress: Callable[[str], None] | None = None,
     set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
-    """Extract, cluster, and score an imported note. No retrieval."""
+    """Extract, cluster, and score claims from an uploaded document. No retrieval."""
     from reports.build_report import main as build_report_main
 
     if spec.generation_mode != "moyomap_extract":

@@ -813,8 +813,6 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
         (run_dir / "claims.jsonl").write_text('{"claim":"Acme exists."}\n', encoding="utf-8")
         (run_dir / "report_data.json").write_text("{}", encoding="utf-8")
         prompt_dir = Path(argv[argv.index("--exploration") + 1]).parent
-        (prompt_dir / "normalized_responses.json").write_text("[]", encoding="utf-8")
-        (prompt_dir / "provider_responses.jsonl").write_text("", encoding="utf-8")
         (prompt_dir / "report.json").write_text("{}", encoding="utf-8")
         return 0
 
@@ -841,9 +839,20 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
     assert seen_argv[seen_argv.index("--from-stage") + 1] == "extract"
     assert seen_argv[seen_argv.index("--stop-after") + 1] == "score"
     assert "claims.jsonl" in runs[0].artifacts
+    assert "normalized_responses.json" not in runs[0].artifacts
+    assert "provider_responses.jsonl" not in runs[0].artifacts
     exploration = runs[0].artifacts["exploration.md"].read_text(encoding="utf-8")
     assert "#### Query 1: Acme" in exploration
-    assert cw.required_artifacts(spec) == cw.MOYOMAP_SCAN_ARTIFACTS
+    assert cw.required_artifacts(spec) == cw.MOYOMAP_EXTRACT_ARTIFACTS
+    scan = cw.OrderSpec(
+        order_id="ord_map_scan",
+        prompts=["Enron"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+    )
+    assert cw.required_artifacts(scan) == cw.MOYOMAP_SCAN_ARTIFACTS
 
 
 def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkeypatch):
@@ -882,8 +891,6 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
             encoding="utf-8",
         )
         prompt_dir = Path(argv[argv.index("--exploration") + 1]).parent
-        (prompt_dir / "normalized_responses.json").write_text("[]", encoding="utf-8")
-        (prompt_dir / "provider_responses.jsonl").write_text("", encoding="utf-8")
         (prompt_dir / "report.json").write_text("{}", encoding="utf-8")
         return 0
 
