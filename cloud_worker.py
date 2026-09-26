@@ -746,11 +746,12 @@ def normalize_moyomap_extract_context(raw: Any) -> dict[str, Any]:
     topic = str(raw.get("topic") or "").strip()
     text_path = str(raw.get("textPath") or "").strip()
     text_sha256 = str(raw.get("textSha256") or "").strip().lower()
+    content_type = str(raw.get("contentType") or raw.get("content_type") or "").strip()
     if (
         not project_id
         or not run_id
         or not topic
-        or not re.fullmatch(r"gs://[^/]+/moyomap-notes/[^/]+/[^/]+\.md", text_path)
+        or not re.fullmatch(r"gs://[^/]+/moyomap-notes/[^/]+/[^/]+\.(?:md|txt|pdf|docx)", text_path)
         or not re.fullmatch(r"[0-9a-f]{64}", text_sha256)
     ):
         return {}
@@ -760,6 +761,8 @@ def normalize_moyomap_extract_context(raw: Any) -> dict[str, Any]:
         "topic": topic[:1000],
         "textPath": text_path,
         "textSha256": text_sha256,
+        "contentType": content_type[:120],
+        "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
     }
 
 
@@ -2409,7 +2412,9 @@ def wrap_moyomap_note(topic: str, text: str) -> str:
 
 
 def download_moyomap_note(bucket, context: dict[str, Any], dest: Path) -> str:
-    """Download and checksum the exact note referenced by an extract order."""
+    """Download and checksum the document referenced by an extract order."""
+    from reports.pipeline.documents import document_to_text
+
     if not context:
         raise ValueError("MoyoMap extract order is missing a valid note context.")
     match = re.fullmatch(r"gs://([^/]+)/(.+)", str(context.get("textPath") or ""))
@@ -2419,14 +2424,14 @@ def download_moyomap_note(bucket, context: dict[str, Any], dest: Path) -> str:
     if bucket_name != bucket.name:
         raise ValueError("MoyoMap note bucket does not match the reports bucket.")
     raw = bucket.blob(object_path).download_as_bytes()
-    if not raw or len(raw) > 1_000_000:
-        raise ValueError("MoyoMap note is empty or exceeds 1 MB.")
-    actual = hashlib.sha256(raw).hexdigest()
+    actual = hashlib.sha256(raw or b"").hexdigest()
     if not hmac.compare_digest(actual, str(context.get("textSha256") or "")):
         raise ValueError("MoyoMap note checksum does not match the order.")
+    suffix = Path(object_path).suffix.lower()
+    text = document_to_text(raw, suffix)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(raw)
-    return raw.decode("utf-8")
+    dest.write_text(text, encoding="utf-8")
+    return text
 
 
 def run_moyomap_extract(
@@ -2480,6 +2485,12 @@ def run_moyomap_extract(
     if rc != 0:
         raise RuntimeError(f"MoyoMap note extraction exited with {rc}.")
 
+    from reports.pipeline.organize import apply_document_graph
+
+    apply_document_graph(
+        run_dir,
+        auto_label=bool(spec.moyomap_extract_context.get("autoLabel")),
+    )
     evidence = build_evidence(run_dir, prompt=prompt)
     evidence["moyomap_extract"] = {
         "projectId": spec.moyomap_extract_context.get("projectId"),

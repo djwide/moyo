@@ -1,5 +1,6 @@
 # Cloud Run worker only: Firestore order → explore APIs → report PDFs → GCS.
 # Does not ship torch / FAISS / GUI / ingest. Desktop corpus work stays local.
+# PDF and Word text extraction is included for MoyoMap document import.
 
 # Stage 1: install Python deps (no compilers leaked into the runtime image)
 FROM python:3.11-slim AS builder
@@ -18,7 +19,7 @@ COPY cloud_worker.py report_validation.py ./
 
 RUN python -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir ".[reports,cloud]"
+    /opt/venv/bin/pip install --no-cache-dir ".[reports,cloud,documents]"
 
 # Stage 2: WeasyPrint system libs + installed venv + worker source
 FROM python:3.11-slim AS runner

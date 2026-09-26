@@ -53,6 +53,10 @@ reports = [
     "google-cloud-storage>=2.14.0",
     "google-auth>=2.0.0",
 ]
+documents = [
+    "pdfminer.six>=20221105",
+    "python-docx>=0.8.11",
+]
 cloud = [
     "firebase-admin>=6.5.0",
     "google-auth>=2.0.0",

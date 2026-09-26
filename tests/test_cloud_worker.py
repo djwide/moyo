@@ -333,7 +333,7 @@ def test_dockerfile_is_lean_cloud_worker():
         for line in text.splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     )
-    assert '".[reports,cloud]"' in code
+    assert '".[reports,cloud,documents]"' in code
     assert "AS builder" in code
     assert "AS runner" in code
     lowered = code.lower()
@@ -844,6 +844,107 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
     exploration = runs[0].artifacts["exploration.md"].read_text(encoding="utf-8")
     assert "#### Query 1: Acme" in exploration
     assert cw.required_artifacts(spec) == cw.MOYOMAP_SCAN_ARTIFACTS
+
+
+def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkeypatch):
+    import yaml
+    from moyo.publicside.gatherpublicsources import explorer
+    from reports import build_report
+    from reports.pipeline import organize
+
+    context = {
+        "projectId": "project_1",
+        "runId": "run_1",
+        "topic": "Acme",
+        "textPath": "gs://senteguard-website-moyo-reports/moyomap-notes/project_1/run_1.md",
+        "textSha256": "b" * 64,
+        "autoLabel": False,
+    }
+
+    def fail_retrieval(*_args, **_kwargs):
+        raise AssertionError("MoyoMap note extraction must not run retrieval")
+
+    def fake_build(argv):
+        cfg = yaml.safe_load(Path(argv[argv.index("--config") + 1]).read_text())
+        run_id = argv[argv.index("--run-id") + 1]
+        run_dir = Path(cfg["output"]["dir"]) / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "claims.jsonl").write_text('{"claim":"Acme exists."}\n', encoding="utf-8")
+        (run_dir / "report_data.json").write_text(
+            json.dumps(
+                {
+                    "findings_all": [
+                        {"claim_id": "C0001", "claim": "Acme exists."},
+                        {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        prompt_dir = Path(argv[argv.index("--exploration") + 1]).parent
+        (prompt_dir / "normalized_responses.json").write_text("[]", encoding="utf-8")
+        (prompt_dir / "provider_responses.jsonl").write_text("", encoding="utf-8")
+        (prompt_dir / "report.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(explorer, "explore_and_save", fail_retrieval)
+    monkeypatch.setattr(cw, "download_moyomap_note", lambda *_args, **_kwargs: "Acme opened an office.")
+    monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_report, "main", fake_build)
+
+    def unavailable():
+        raise RuntimeError("utility model down")
+
+    monkeypatch.setattr(organize, "get_utility_llm", unavailable, raising=False)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", unavailable)
+
+    spec = cw.OrderSpec(
+        order_id="ord_map_extract_group",
+        prompts=["Extract claims about Acme from the supplied note."],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="moyomap_extract",
+        source="moyomap",
+        display_topic="Acme",
+        moyomap_extract_context=context,
+    )
+    runs = cw.run_moyomap_extract(
+        spec,
+        bucket=SimpleNamespace(name="senteguard-website-moyo-reports"),
+        work=tmp_path,
+    )
+    saved = json.loads(runs[0].artifacts["report_data.json"].read_text(encoding="utf-8"))
+    assert [row["claim"] for row in saved["findings_all"]] == [
+        "Acme exists.",
+        "Acme hired a treasurer.",
+    ]
+    assert saved["sections"] == []
+
+
+def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():
+    context = cw.normalize_moyomap_extract_context(
+        {
+            "projectId": "project_1",
+            "runId": "run_1",
+            "topic": "Acme",
+            "textPath": "gs://bucket/moyomap-notes/project_1/run_1.pdf",
+            "textSha256": "a" * 64,
+            "contentType": "application/pdf",
+        }
+    )
+    assert context["textPath"].endswith(".pdf")
+    assert context["autoLabel"] is False
+    assert cw.normalize_moyomap_extract_context(
+        {
+            "projectId": "project_1",
+            "runId": "run_1",
+            "topic": "Acme",
+            "textPath": "gs://bucket/moyomap-notes/project_1/run_1.html",
+            "textSha256": "a" * 64,
+        }
+    ) == {}
 
 
 def test_wrap_moyomap_note_keeps_existing_query_headings():
