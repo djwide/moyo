@@ -467,6 +467,13 @@ def is_raw_product(spec: OrderSpec) -> bool:
     return spec.product_id == "moyo_snapshot_raw"
 
 
+def is_moyomap_map_pipeline(spec: OrderSpec) -> bool:
+    """Jobs that only produce map ingest artifacts (GCS), not storefront PDF delivery."""
+    if spec.generation_mode in {"moyomap_extract", "moyomap_organize"}:
+        return True
+    return spec.source == "moyomap" and spec.generation_mode == "full"
+
+
 def stop_after_for(spec: OrderSpec) -> str | None:
     """MoyoMap scans stop once findings are scored.
 
@@ -475,7 +482,7 @@ def stop_after_for(spec: OrderSpec) -> str | None:
     """
     if spec.generation_mode == "moyomap_report":
         return None
-    if spec.generation_mode in {"moyomap_extract", "moyomap_organize"} or spec.source == "moyomap":
+    if is_moyomap_map_pipeline(spec):
         return "score"
     return None
 
@@ -1458,7 +1465,9 @@ def _job_launch_clear_value() -> Any:
 
 
 def should_auto_validate(spec: OrderSpec) -> bool:
-    """Coverage/section checks gate auto-email, not human-QC drafts or rebuilds."""
+    """Coverage/section checks gate Exposure Data auto-email, not map ingest or QC drafts."""
+    if is_moyomap_map_pipeline(spec):
+        return False
     return (not spec.qc_required) and spec.generation_mode == "full"
 
 

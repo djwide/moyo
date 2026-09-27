@@ -33,7 +33,7 @@ def _claim_payload(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     seen: set[str] = set()
     for row in rows:
         claim_id = str(row.get("claim_id") or "").strip()
-        claim = " ".join(str(row.get("claim") or "").split())
+        claim = " ".join(str(row.get("claim") or row.get("text") or "").split())
         if not claim_id or not claim or claim_id in seen:
             continue
         seen.add(claim_id)

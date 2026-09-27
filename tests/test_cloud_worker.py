@@ -634,6 +634,20 @@ def test_full_build_argv_renders_one_pager_for_raw(tmp_path: Path):
     assert "--no-upload" in argv
 
 
+def test_moyomap_map_pipeline_skips_exposure_data_validation():
+    spec = cw.OrderSpec(
+        order_id="ord_map",
+        prompts=["Enron"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+        qc_required=False,
+    )
+    assert cw.is_moyomap_map_pipeline(spec) is True
+    assert cw.should_auto_validate(spec) is False
+
+
 def test_moyomap_scan_stops_after_score_without_pdf_contract(tmp_path: Path):
     spec = cw.OrderSpec(
         order_id="ord_map",
