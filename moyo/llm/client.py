@@ -1136,6 +1136,22 @@ class LLMClient:
         provider = self.spec.provider
 
         try:
+            from moyo.llm.prompt_log import record_llm_prompt
+
+            record_llm_prompt(
+                prompt=prompt,
+                system=system,
+                provider=provider,
+                model=self.spec.model,
+                label=self.label,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                meta={"web_search": bool(self.spec.web_search)},
+            )
+        except Exception:
+            logger.debug("prompt log write skipped", exc_info=True)
+
+        try:
             from moyo.llm.testing import is_test_mode
             if provider == "echo" or is_test_mode():
                 text = self._echo(prompt, system)

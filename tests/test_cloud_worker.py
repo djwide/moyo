@@ -943,6 +943,7 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
         "Acme hired a treasurer.",
     ]
     assert saved["sections"] == []
+    assert saved.get("claim_parents") == {}
 
 
 def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():

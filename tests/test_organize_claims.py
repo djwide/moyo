@@ -9,9 +9,11 @@ from reports.pipeline.documents import document_to_text
 from reports.pipeline.organize import (
     apply_document_graph,
     organize_claims,
+    parse_claim_parents,
     parse_review_labels,
     parse_sections,
     suggest_review_labels,
+    tree_claims,
 )
 
 
@@ -55,6 +57,52 @@ def test_bad_json_falls_back_to_no_sections():
     ) == []
 
 
+def test_claim_parents_accept_confident_links_and_reject_cycles():
+    text = json.dumps(
+        {
+            "parents": [
+                {"claim_id": "C0002", "parent_claim_id": "C0001"},
+                {"claim_id": "C0003", "parent_claim_id": "C0002"},
+            ]
+        }
+    )
+    assert parse_claim_parents(text, KNOWN) == {"C0002": "C0001", "C0003": "C0002"}
+    assert (
+        parse_claim_parents(
+            json.dumps(
+                {
+                    "parents": [
+                        {"claim_id": "C0001", "parent_claim_id": "C0002"},
+                        {"claim_id": "C0002", "parent_claim_id": "C0001"},
+                    ]
+                }
+            ),
+            KNOWN,
+        )
+        is None
+    )
+    assert (
+        parse_claim_parents(
+            json.dumps({"parents": [{"claim_id": "C0001", "parent_claim_id": "C0001"}]}),
+            KNOWN,
+        )
+        is None
+    )
+
+
+def test_tree_claims_skips_bad_batches():
+    assert (
+        tree_claims(
+            [
+                {"claim_id": "C0001", "claim": "Acme opened an office."},
+                {"claim_id": "C0002", "claim": "The office is in Cayman."},
+            ],
+            client=type("Boom", (), {"complete": staticmethod(lambda _prompt: "{")})(),
+        )
+        == {}
+    )
+
+
 def test_review_labels_skip_useful_and_unknowns():
     text = json.dumps(
         {
@@ -86,9 +134,10 @@ def test_apply_document_graph_keeps_claims_when_grouping_fails(tmp_path: Path):
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["findings_all"] == report["findings_all"]
     assert saved["sections"] == []
+    assert saved["claim_parents"] == {}
 
 
-def test_apply_document_graph_writes_sections_and_optional_labels(tmp_path: Path):
+def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path: Path):
     report = {
         "findings_all": [
             {"claim_id": "C0001", "claim": "Acme opened a Bank of China account."},
@@ -98,14 +147,21 @@ def test_apply_document_graph_writes_sections_and_optional_labels(tmp_path: Path
     }
     path = tmp_path / "report_data.json"
     path.write_text(json.dumps(report), encoding="utf-8")
-    calls = {"n": 0}
 
     class Scripted:
         def complete(self, prompt: str) -> str:
-            calls["n"] += 1
             if "Suggest a review label" in prompt:
                 return json.dumps(
-                    {"labels": [{"claim_id": "C0003", "label": "not_relevant"}, {"claim_id": "C0001", "label": "useful"}]}
+                    {
+                        "labels": [
+                            {"claim_id": "C0003", "label": "not_relevant"},
+                            {"claim_id": "C0001", "label": "useful"},
+                        ]
+                    }
+                )
+            if "Nest extracted claims" in prompt or "parent_claim_id" in prompt:
+                return json.dumps(
+                    {"parents": [{"claim_id": "C0002", "parent_claim_id": "C0001"}]}
                 )
             return json.dumps(
                 {"sections": [{"title": "Bank account", "claim_ids": ["C0001", "C0002"]}]}
@@ -116,6 +172,7 @@ def test_apply_document_graph_writes_sections_and_optional_labels(tmp_path: Path
     assert unlabeled["sections"] == [
         {"title": "Bank account", "claim_ids": ["C0001", "C0002"]}
     ]
+    assert unlabeled["claim_parents"] == {"C0002": "C0001"}
     assert "customerLabels" not in unlabeled["findings_all"][0]
 
     apply_document_graph(tmp_path, auto_label=True, client=Scripted())
@@ -123,10 +180,23 @@ def test_apply_document_graph_writes_sections_and_optional_labels(tmp_path: Path
     by_id = {row["claim_id"]: row for row in labeled["findings_all"]}
     assert by_id["C0003"]["customerLabels"] == ["not_relevant"]
     assert "customerLabels" not in by_id["C0001"]
-    assert suggest_review_labels(
-        [{"claim_id": "C0001", "claim": "A fact."}],
-        client=type("UsefulOnly", (), {"complete": staticmethod(lambda _prompt: json.dumps({"labels": [{"claim_id": "C0001", "label": "useful"}]}))})(),
-    ) == {}
+    assert (
+        suggest_review_labels(
+            [{"claim_id": "C0001", "claim": "A fact."}],
+            client=type(
+                "UsefulOnly",
+                (),
+                {
+                    "complete": staticmethod(
+                        lambda _prompt: json.dumps(
+                            {"labels": [{"claim_id": "C0001", "label": "useful"}]}
+                        )
+                    )
+                },
+            )(),
+        )
+        == {}
+    )
 
 
 def test_document_to_text_rejects_empty_and_reads_notes():

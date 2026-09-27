@@ -118,6 +118,7 @@ CONTRACT_ARTIFACTS = (
     "report.json",
     "normalized_responses.json",
     "provider_responses.jsonl",
+    "llm_prompts.jsonl",
     "evidence.json",
 )
 
@@ -129,6 +130,7 @@ RAW_CONTRACT_ARTIFACTS = (
     "one-page.pdf",
     "normalized_responses.json",
     "provider_responses.jsonl",
+    "llm_prompts.jsonl",
     "evidence.json",
     "report.json",
 )
@@ -138,6 +140,7 @@ MOYOMAP_SCAN_ARTIFACTS = (
     "report_data.json",
     "normalized_responses.json",
     "provider_responses.jsonl",
+    "llm_prompts.jsonl",
     "evidence.json",
     "report.json",
 )
@@ -1623,6 +1626,11 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         provider = run_dir / "provider_responses.jsonl"
     if provider.exists():
         found["provider_responses.jsonl"] = provider
+    prompts_log = work / "llm_prompts.jsonl"
+    if not prompts_log.exists():
+        prompts_log = run_dir / "llm_prompts.jsonl"
+    if prompts_log.exists():
+        found["llm_prompts.jsonl"] = prompts_log
     evidence = work / "evidence.json"
     if evidence.exists():
         found["evidence.json"] = evidence
@@ -1644,6 +1652,7 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         "extract_issues.json": run_dir / "extract_issues.json",
         "extract_done.jsonl": run_dir / "extract_done.jsonl",
         "report.yaml": run_dir / "report.yaml",
+        "llm_prompts.jsonl": work / "llm_prompts.jsonl",
     }
     for name, path in extras.items():
         if path.exists() and name not in found:
@@ -1733,7 +1742,40 @@ def _run_one_prompt(
     run_id = f"{spec.order_id}__{slug}"
     prompt_dir = work / slug
     prompt_dir.mkdir(parents=True, exist_ok=True)
+    from moyo.llm.prompt_log import prompt_log_path
 
+    with prompt_log_path(prompt_dir / "llm_prompts.jsonl"):
+        return _run_one_prompt_logged(
+            spec,
+            prompt=prompt,
+            index=index,
+            slug=slug,
+            prompt_dir=prompt_dir,
+            run_id=run_id,
+            explore_kwargs=explore_kwargs,
+            test_mode=test_mode,
+            progress=progress,
+            set_stage=set_stage,
+            explore_and_save=explore_and_save,
+            build_report_main=build_report_main,
+        )
+
+
+def _run_one_prompt_logged(
+    spec: OrderSpec,
+    *,
+    prompt: str,
+    index: int,
+    slug: str,
+    prompt_dir: Path,
+    run_id: str,
+    explore_kwargs: dict[str, Any],
+    test_mode: bool,
+    progress: Callable[[str], None],
+    set_stage: Callable[[str], None] | None,
+    explore_and_save: Any,
+    build_report_main: Any,
+) -> PromptRun:
     def _stage(name: str) -> None:
         if set_stage:
             set_stage(name)

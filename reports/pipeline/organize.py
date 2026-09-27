@@ -1,4 +1,4 @@
-"""Group scored claims into document sections, and optionally suggest review labels."""
+"""Group scored claims into document sections and claim trees, and optionally suggest review labels."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 REPORTS_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ORGANIZE_PROMPT = REPORTS_ROOT / "prompts" / "organize_claims.md"
+DEFAULT_TREE_PROMPT = REPORTS_ROOT / "prompts" / "tree_claims.md"
 DEFAULT_LABEL_PROMPT = REPORTS_ROOT / "prompts" / "label_claims.md"
 REVIEW_LABELS = ("known", "known_to_be_wrong", "investigate", "not_relevant")
 BATCH_SIZE = 40
@@ -91,6 +92,46 @@ def parse_sections(text: str, known_ids: set[str]) -> list[dict[str, Any]] | Non
     return sections
 
 
+def _has_cycle(parents: dict[str, str]) -> bool:
+    """True when following parent links loops."""
+    for start in parents:
+        seen: set[str] = set()
+        current = start
+        while current in parents:
+            if current in seen:
+                return True
+            seen.add(current)
+            current = parents[current]
+    return False
+
+
+def parse_claim_parents(text: str, known_ids: set[str]) -> dict[str, str] | None:
+    """Map child claim id → parent claim id. None means the payload was unusable."""
+    data = _load_json_object(text)
+    if data is None or not isinstance(data.get("parents"), list):
+        return None
+    parents: dict[str, str] = {}
+    for item in data["parents"]:
+        if not isinstance(item, dict):
+            return None
+        child = str(item.get("claim_id") or item.get("claimId") or "").strip()
+        parent = str(
+            item.get("parent_claim_id") or item.get("parentClaimId") or item.get("parent_id") or ""
+        ).strip()
+        if not child or not parent:
+            return None
+        if child not in known_ids or parent not in known_ids:
+            continue
+        if child == parent:
+            return None
+        if child in parents and parents[child] != parent:
+            return None
+        parents[child] = parent
+    if _has_cycle(parents):
+        return None
+    return parents
+
+
 def parse_review_labels(text: str, known_ids: set[str]) -> dict[str, str] | None:
     """Map claim id to one review label. None means the payload was unusable."""
     data = _load_json_object(text)
@@ -148,6 +189,38 @@ def organize_claims(claims: list[dict[str, str]], *, client: Any) -> list[dict[s
     return kept
 
 
+def tree_claims(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
+    """Return child→parent claim ids, or {} when the model output cannot be trusted."""
+    if len(claims) < 2:
+        return {}
+    known_ids = {row["claim_id"] for row in claims}
+    parents: dict[str, str] = {}
+    try:
+        for start in range(0, len(claims), BATCH_SIZE):
+            batch = claims[start : start + BATCH_SIZE]
+            if len(batch) < 2:
+                continue
+            text = client.complete(_render_prompt(DEFAULT_TREE_PROMPT, batch))
+            parsed = parse_claim_parents(text or "", {row["claim_id"] for row in batch})
+            if parsed is None:
+                # Discard this batch only; keep earlier confident links.
+                continue
+            for child, parent in parsed.items():
+                if child in parents and parents[child] != parent:
+                    continue
+                if child == parent or child not in known_ids or parent not in known_ids:
+                    continue
+                parents[child] = parent
+                if _has_cycle(parents):
+                    del parents[child]
+    except Exception as exc:
+        logger.warning("claim tree failed: %s", exc)
+        return {}
+    if _has_cycle(parents):
+        return {}
+    return parents
+
+
 def suggest_review_labels(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
     """Return review labels. A failed batch leaves those claims unlabeled."""
     if not claims:
@@ -183,7 +256,7 @@ def _write_labels(report: dict[str, Any], labels: dict[str, str]) -> None:
 
 
 def apply_document_graph(run_dir: Path, *, auto_label: bool, client: Any | None = None) -> None:
-    """Write sections onto report_data.json. Failures leave claims in place."""
+    """Write sections and claim_parents onto report_data.json. Failures leave claims in place."""
     path = run_dir / "report_data.json"
     if not path.exists():
         return
@@ -206,6 +279,9 @@ def apply_document_graph(run_dir: Path, *, auto_label: bool, client: Any | None 
             active = None
     report["sections"] = (
         organize_claims(claims, client=active) if active is not None and len(claims) >= 2 else []
+    )
+    report["claim_parents"] = (
+        tree_claims(claims, client=active) if active is not None and len(claims) >= 2 else {}
     )
     if auto_label and active is not None and claims:
         _write_labels(report, suggest_review_labels(claims, client=active))
