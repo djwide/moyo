@@ -759,6 +759,21 @@ def test_moyomap_followup_prompt_uses_combined_labels():
     assert '"customerLabels":["investigate","useful"]' in expanded
     assert "settled context" in expanded
     assert "priority leads" in expanded
+    assert "at most 10 new atomic claims" in expanded
+    assert "ranked by research value" in expanded
+
+    investigated = cw.moyomap_exploration_prompt(
+        "Investigate the selected claim.",
+        {
+            "action": "investigate",
+            "parentNodeId": "claim_2",
+            "priorClaims": [
+                {"nodeId": "claim_2", "claim": "Acme hired a regional lead.", "customerLabels": ["investigate"]}
+            ],
+        },
+    )
+    assert "relevance to that parent" in investigated
+    assert "at most 10 new atomic claims" in investigated
 
 
 def test_compile_moyomap_snapshot_claims_reads_label_arrays():

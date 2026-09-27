@@ -848,6 +848,16 @@ def moyomap_followup_instructions(context: dict[str, Any]) -> list[str]:
             "Prioritize the record whose nodeId equals parentNodeId; that record is the "
             "customer-selected investigation target."
         )
+        instructions.append(
+            "Return at most 10 new atomic claims, ranked by relevance to that parent "
+            "claim, then by research value (sensitivity, specificity, novelty, "
+            "interestingness, confidence)."
+        )
+    elif context.get("action") == "find_more":
+        instructions.append(
+            "Return at most 10 new atomic claims, ranked by research value "
+            "(sensitivity, specificity, novelty, interestingness, confidence)."
+        )
 
     expansion_instructions = {
         "more_depth": (
