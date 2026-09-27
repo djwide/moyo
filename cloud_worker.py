@@ -151,6 +151,7 @@ MOYOMAP_SCAN_ARTIFACTS = (
 MOYOMAP_EXTRACT_ARTIFACTS = (
     "claims.jsonl",
     "report_data.json",
+    "tree_layout.json",
     "evidence.json",
     "report.json",
 )
@@ -1694,6 +1695,7 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         "basis-report.pdf": output / "basis-report.pdf",
         "basis-report.html": output / "basis-report.html",
         "report_data.json": run_dir / "report_data.json",
+        "tree_layout.json": run_dir / "tree_layout.json",
         "claims.jsonl": run_dir / "claims.jsonl",
         "chunks.jsonl": run_dir / "chunks.jsonl",
         "extract_issues.json": run_dir / "extract_issues.json",
@@ -2574,7 +2576,7 @@ def run_moyomap_extract(
     progress: Callable[[str], None] | None = None,
     set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
-    """Extract, cluster, and score claims from an uploaded document. No retrieval."""
+    """Extract, cluster, and score claims from an uploaded document. No retrieval, no PDF."""
     from reports.build_report import main as build_report_main
 
     if spec.generation_mode != "moyomap_extract":
@@ -2668,7 +2670,7 @@ def run_moyomap_organize(
     progress: Callable[[str], None] | None = None,
     set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
-    """Group and tree already-scored claims from report_data.json. No retrieval."""
+    """Write tree_layout.json from already-scored report_data.json. No retrieval, no PDF."""
     from reports.pipeline.organize import apply_document_graph, finding_rows
 
     if spec.generation_mode != "moyomap_organize":

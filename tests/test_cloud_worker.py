@@ -849,6 +849,9 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
     monkeypatch.setattr(cw, "download_moyomap_note", lambda *_args, **_kwargs: "Acme opened an office.")
     monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(build_report, "main", fake_build)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p, **_k: "{}"))
 
     spec = cw.OrderSpec(
         order_id="ord_map_extract",
@@ -888,7 +891,6 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
     import yaml
     from moyo.publicside.gatherpublicsources import explorer
     from reports import build_report
-    from reports.pipeline import organize
 
     context = {
         "projectId": "project_1",
@@ -928,13 +930,12 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
     monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(build_report, "main", fake_build)
 
-    def unavailable():
-        raise RuntimeError("utility model down")
+    def boom_complete(_prompt: str) -> str:
+        raise RuntimeError("model down")
 
-    monkeypatch.setattr(organize, "get_utility_llm", unavailable, raising=False)
     import moyo.llm.utility as utility
 
-    monkeypatch.setattr(utility, "get_utility_llm", unavailable)
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=boom_complete))
 
     spec = cw.OrderSpec(
         order_id="ord_map_extract_group",
@@ -956,8 +957,13 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
         "Acme exists.",
         "Acme hired a treasurer.",
     ]
-    assert saved["sections"] == []
-    assert saved.get("claim_parents") == {}
+    assert "sections" not in saved
+    layout = json.loads(runs[0].artifacts["tree_layout.json"].read_text(encoding="utf-8"))
+    assert "edges" not in layout
+    assert {node["id"]: node["parent"] for node in layout["nodes"]} == {
+        "C0001": "root",
+        "C0002": "root",
+    }
 
 
 def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
@@ -985,15 +991,34 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
     def fake_apply(run_dir, *, auto_label, client=None, require_utility=False):
         path = run_dir / "report_data.json"
         saved = json.loads(path.read_text(encoding="utf-8"))
-        saved["sections"] = [{"title": "Corporate", "claim_ids": ["C0001", "C0002"]}]
-        saved["claim_parents"] = {"C0002": "C0001"}
-        path.write_text(json.dumps(saved), encoding="utf-8")
+        (run_dir / "tree_layout.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "root": "root",
+                    "nodes": [
+                        {
+                            "id": "section:0",
+                            "kind": "section",
+                            "title": "Corporate",
+                            "parent": "root",
+                            "depth": 1,
+                        },
+                        {"id": "C0001", "kind": "claim", "parent": "section:0", "depth": 2},
+                        {"id": "C0002", "kind": "claim", "parent": "C0001", "depth": 3},
+                    ],
+                    "review_labels": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert "sections" not in saved
 
     monkeypatch.setattr(cw, "download_moyomap_report_data", fake_download)
     monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
     import moyo.llm.utility as utility
 
-    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p: "{}"))
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p, **_k: "{}"))
     monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
 
     spec = cw.OrderSpec(
@@ -1012,8 +1037,12 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
         work=tmp_path,
     )
     saved = json.loads(runs[0].artifacts["report_data.json"].read_text(encoding="utf-8"))
-    assert saved["sections"]
-    assert saved["claim_parents"] == {"C0002": "C0001"}
+    assert "sections" not in saved
+    layout = json.loads(runs[0].artifacts["tree_layout.json"].read_text(encoding="utf-8"))
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["C0001"]["parent"] == "section:0"
+    assert by_id["C0002"]["parent"] == "C0001"
+    assert "edges" not in layout
 
 
 def test_normalize_moyomap_organize_context():

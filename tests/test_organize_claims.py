@@ -55,7 +55,7 @@ def test_bad_json_falls_back_to_no_sections():
             {"claim_id": "C0001", "claim": "Acme opened an office."},
             {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
         ],
-        client=type("Boom", (), {"complete": staticmethod(lambda _prompt: "{")})(),
+        client=type("Boom", (), {"complete": staticmethod(lambda _prompt, **_kw: "{")})(),
     ) == []
 
 
@@ -99,7 +99,7 @@ def test_tree_claims_skips_bad_batches():
                 {"claim_id": "C0001", "claim": "Acme opened an office."},
                 {"claim_id": "C0002", "claim": "The office is in Cayman."},
             ],
-            client=type("Boom", (), {"complete": staticmethod(lambda _prompt: "{")})(),
+            client=type("Boom", (), {"complete": staticmethod(lambda _prompt, **_kw: "{")})(),
         )
         == {}
     )
@@ -146,14 +146,24 @@ def test_apply_document_graph_keeps_claims_when_grouping_fails(tmp_path: Path):
     path.write_text(json.dumps(report), encoding="utf-8")
 
     class Boom:
-        def complete(self, _prompt: str) -> str:
+        def complete(self, _prompt: str, **_kw: object) -> str:
             raise RuntimeError("model down")
 
     apply_document_graph(tmp_path, auto_label=True, client=Boom())
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["findings_all"] == report["findings_all"]
-    assert saved["sections"] == []
-    assert saved["claim_parents"] == {}
+    assert "sections" not in saved
+    assert "claim_parents" not in saved
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    assert "edges" not in layout
+    assert "sections" not in layout
+    assert "claim_parents" not in layout
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["C0001"]["parent"] == "root"
+    assert by_id["C0001"]["depth"] == 1
+    assert by_id["C0002"]["parent"] == "root"
+    assert by_id["C0002"]["depth"] == 1
+    assert layout["review_labels"] == {}
 
 
 def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path: Path):
@@ -168,7 +178,7 @@ def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path:
     path.write_text(json.dumps(report), encoding="utf-8")
 
     class Scripted:
-        def complete(self, prompt: str) -> str:
+        def complete(self, prompt: str, **_kw: object) -> str:
             if "Suggest a review label" in prompt:
                 return json.dumps(
                     {
@@ -188,17 +198,31 @@ def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path:
 
     apply_document_graph(tmp_path, auto_label=False, client=Scripted())
     unlabeled = json.loads(path.read_text(encoding="utf-8"))
-    assert unlabeled["sections"] == [
-        {"title": "Bank account", "claim_ids": ["C0001", "C0002"]}
-    ]
-    assert unlabeled["claim_parents"] == {"C0002": "C0001"}
-    assert "customerLabels" not in unlabeled["findings_all"][0]
+    assert unlabeled["findings_all"] == report["findings_all"]
+    assert "sections" not in unlabeled
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    assert "edges" not in layout
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["section:0"] == {
+        "id": "section:0",
+        "kind": "section",
+        "title": "Bank account",
+        "parent": "root",
+        "depth": 1,
+    }
+    assert by_id["C0001"]["parent"] == "section:0"
+    assert by_id["C0001"]["depth"] == 2
+    assert by_id["C0002"]["parent"] == "C0001"
+    assert by_id["C0002"]["depth"] == 3
+    assert by_id["C0003"]["parent"] == "root"
+    assert by_id["C0003"]["depth"] == 1
+    assert layout["review_labels"] == {}
 
     apply_document_graph(tmp_path, auto_label=True, client=Scripted())
-    labeled = json.loads(path.read_text(encoding="utf-8"))
-    by_id = {row["claim_id"]: row for row in labeled["findings_all"]}
-    assert by_id["C0003"]["customerLabels"] == ["not_relevant"]
-    assert "customerLabels" not in by_id["C0001"]
+    still_unlabeled = json.loads(path.read_text(encoding="utf-8"))
+    assert still_unlabeled["findings_all"] == report["findings_all"]
+    labeled_layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    assert labeled_layout["review_labels"] == {"C0003": "not_relevant"}
     assert (
         suggest_review_labels(
             [{"claim_id": "C0001", "claim": "A fact."}],
@@ -207,7 +231,7 @@ def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path:
                 (),
                 {
                     "complete": staticmethod(
-                        lambda _prompt: json.dumps(
+                        lambda _prompt, **_kw: json.dumps(
                             {"labels": [{"claim_id": "C0001", "label": "useful"}]}
                         )
                     )

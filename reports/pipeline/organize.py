@@ -1,4 +1,4 @@
-"""Group scored claims into document sections and claim trees, and optionally suggest review labels."""
+"""Build a tree_layout from scored claims. Does not rewrite report_data.json."""
 
 from __future__ import annotations
 
@@ -16,6 +16,9 @@ DEFAULT_TREE_PROMPT = REPORTS_ROOT / "prompts" / "tree_claims.md"
 DEFAULT_LABEL_PROMPT = REPORTS_ROOT / "prompts" / "label_claims.md"
 REVIEW_LABELS = ("known", "known_to_be_wrong", "investigate", "not_relevant")
 BATCH_SIZE = 40
+# Gemini Flash spends most of a short completion budget on reasoning tokens;
+# 800–1024 caps truncate mid-JSON (finish_reason=length) and wipe sections.
+ORGANIZE_MAX_TOKENS = 4096
 
 
 def finding_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -168,9 +171,19 @@ def organize_claims(claims: list[dict[str, str]], *, client: Any) -> list[dict[s
             batch = claims[start : start + BATCH_SIZE]
             if len(batch) < 2:
                 continue
-            text = client.complete(_render_prompt(DEFAULT_ORGANIZE_PROMPT, batch))
+            text = client.complete(
+                _render_prompt(DEFAULT_ORGANIZE_PROMPT, batch),
+                max_tokens=ORGANIZE_MAX_TOKENS,
+            )
             parsed = parse_sections(text or "", {row["claim_id"] for row in batch})
             if parsed is None:
+                logger.warning(
+                    "claim grouping discarded batch at offset %s (%s claims, %s chars); "
+                    "likely truncated or invalid JSON",
+                    start,
+                    len(batch),
+                    len(text or ""),
+                )
                 return []
             sections.extend(parsed)
     except Exception as exc:
@@ -200,9 +213,18 @@ def tree_claims(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
             batch = claims[start : start + BATCH_SIZE]
             if len(batch) < 2:
                 continue
-            text = client.complete(_render_prompt(DEFAULT_TREE_PROMPT, batch))
+            text = client.complete(
+                _render_prompt(DEFAULT_TREE_PROMPT, batch),
+                max_tokens=ORGANIZE_MAX_TOKENS,
+            )
             parsed = parse_claim_parents(text or "", {row["claim_id"] for row in batch})
             if parsed is None:
+                logger.warning(
+                    "claim tree discarded batch at offset %s (%s claims, %s chars)",
+                    start,
+                    len(batch),
+                    len(text or ""),
+                )
                 # Discard this batch only; keep earlier confident links.
                 continue
             for child, parent in parsed.items():
@@ -229,30 +251,123 @@ def suggest_review_labels(claims: list[dict[str, str]], *, client: Any) -> dict[
     for start in range(0, len(claims), BATCH_SIZE):
         batch = claims[start : start + BATCH_SIZE]
         try:
-            text = client.complete(_render_prompt(DEFAULT_LABEL_PROMPT, batch))
+            text = client.complete(
+                _render_prompt(DEFAULT_LABEL_PROMPT, batch),
+                max_tokens=ORGANIZE_MAX_TOKENS,
+            )
         except Exception as exc:
             logger.warning("review label suggestion failed: %s", exc)
             continue
         parsed = parse_review_labels(text or "", {row["claim_id"] for row in batch})
         if not parsed:
+            logger.warning(
+                "review labels empty for batch at offset %s (%s claims, %s chars)",
+                start,
+                len(batch),
+                len(text or ""),
+            )
             continue
         labels.update(parsed)
     return {claim_id: label for claim_id, label in labels.items() if label in REVIEW_LABELS}
 
 
-def _write_labels(report: dict[str, Any], labels: dict[str, str]) -> None:
-    if not labels:
-        return
-    for key in ("findings_all", "findings"):
-        rows = report.get(key)
-        if not isinstance(rows, list):
+ROOT_ID = "root"
+
+
+def build_tree_layout(
+    *,
+    topic: str,
+    claims: list[dict[str, str]],
+    sections: list[dict[str, Any]],
+    parents: dict[str, str],
+    labels: dict[str, str],
+) -> dict[str, Any]:
+    """Build tree_layout.json. Parent and depth live on each node; no edges.
+
+    Layer-1 nodes (sections and ungrouped claims) use parent=\"root\". Claim text
+    stays on report_data.json.
+    """
+    nested = {child for child, parent in parents.items() if child and parent and child != parent}
+    section_of: dict[str, str] = {}
+    nodes: list[dict[str, Any]] = []
+    for index, section in enumerate(sections):
+        section_id = f"section:{index}"
+        title = str(section.get("title") or "").strip()
+        claim_ids = [
+            str(claim_id).strip()
+            for claim_id in (section.get("claim_ids") or [])
+            if str(claim_id).strip()
+        ]
+        if not title:
             continue
-        for row in rows:
-            if not isinstance(row, dict):
+        nodes.append(
+            {
+                "id": section_id,
+                "kind": "section",
+                "title": title,
+                "parent": ROOT_ID,
+                "depth": 1,
+            }
+        )
+        for claim_id in claim_ids:
+            if claim_id in nested:
                 continue
-            label = labels.get(str(row.get("claim_id") or "").strip())
-            if label:
-                row["customerLabels"] = [label]
+            section_of[claim_id] = section_id
+
+    claim_parent: dict[str, str] = {}
+    for row in claims:
+        claim_id = str(row.get("claim_id") or "").strip()
+        if not claim_id:
+            continue
+        parent = parents.get(claim_id) or ""
+        if parent and parent != claim_id:
+            claim_parent[claim_id] = parent
+        elif claim_id in section_of:
+            claim_parent[claim_id] = section_of[claim_id]
+        else:
+            claim_parent[claim_id] = ROOT_ID
+
+    depth_of: dict[str, int] = {ROOT_ID: 0}
+    for node in nodes:
+        depth_of[str(node["id"])] = 1
+
+    pending = set(claim_parent)
+    while pending:
+        progressed = False
+        for claim_id in list(pending):
+            parent = claim_parent[claim_id]
+            if parent not in depth_of:
+                continue
+            depth_of[claim_id] = depth_of[parent] + 1
+            pending.remove(claim_id)
+            progressed = True
+        if progressed:
+            continue
+        for claim_id in pending:
+            claim_parent[claim_id] = ROOT_ID
+            depth_of[claim_id] = 1
+        break
+
+    for row in claims:
+        claim_id = str(row.get("claim_id") or "").strip()
+        if not claim_id:
+            continue
+        nodes.append(
+            {
+                "id": claim_id,
+                "kind": "claim",
+                "parent": claim_parent.get(claim_id, ROOT_ID),
+                "depth": depth_of.get(claim_id, 1),
+            }
+        )
+
+    return {
+        "version": 1,
+        "topic": topic,
+        "root": ROOT_ID,
+        "nodes": nodes,
+        "review_labels": labels,
+    }
 
 
 def utility_organize_client() -> Any | None:
@@ -273,7 +388,7 @@ def apply_document_graph(
     client: Any | None = None,
     require_utility: bool = False,
 ) -> None:
-    """Write sections and claim_parents onto report_data.json. Failures leave claims in place."""
+    """Write tree_layout.json from scored claims. Leaves report_data.json unchanged."""
     path = run_dir / "report_data.json"
     if not path.exists():
         return
@@ -288,13 +403,25 @@ def apply_document_graph(
     utility = client or utility_organize_client()
     if require_utility and len(claims) >= 2 and utility is None:
         raise RuntimeError("Utility LLM is required to build the claim-parent tree.")
-    report["sections"] = (
+    sections = (
         organize_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else []
     )
-    # Parent/child links always come from the utility model (tree_claims prompt).
-    report["claim_parents"] = (
+    parents = (
         tree_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else {}
     )
-    if auto_label and utility is not None and claims:
-        _write_labels(report, suggest_review_labels(claims, client=utility))
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    labels = (
+        suggest_review_labels(claims, client=utility)
+        if auto_label and utility is not None and claims
+        else {}
+    )
+    layout = build_tree_layout(
+        topic=str(report.get("topic") or ""),
+        claims=claims,
+        sections=sections,
+        parents=parents,
+        labels=labels,
+    )
+    (run_dir / "tree_layout.json").write_text(
+        json.dumps(layout, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
