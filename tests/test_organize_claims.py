@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from reports.pipeline.documents import document_to_text
 from reports.pipeline.organize import (
     apply_document_graph,
@@ -114,6 +116,23 @@ def test_review_labels_skip_useful_and_unknowns():
         }
     )
     assert parse_review_labels(text, KNOWN) == {"C0001": "investigate"}
+
+
+def test_apply_document_graph_requires_utility_when_requested(tmp_path: Path, monkeypatch):
+    report = {
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "Acme exists."},
+            {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+        ]
+    }
+    path = tmp_path / "report_data.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    monkeypatch.setattr(
+        "reports.pipeline.organize.utility_organize_client",
+        lambda: None,
+    )
+    with pytest.raises(RuntimeError, match="Utility LLM"):
+        apply_document_graph(tmp_path, auto_label=False, require_utility=True)
 
 
 def test_apply_document_graph_keeps_claims_when_grouping_fails(tmp_path: Path):

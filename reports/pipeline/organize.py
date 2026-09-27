@@ -255,7 +255,24 @@ def _write_labels(report: dict[str, Any], labels: dict[str, str]) -> None:
                 row["customerLabels"] = [label]
 
 
-def apply_document_graph(run_dir: Path, *, auto_label: bool, client: Any | None = None) -> None:
+def utility_organize_client() -> Any | None:
+    """Hosted/local utility model used for sections, claim trees, and label hints."""
+    try:
+        from moyo.llm.utility import get_utility_llm
+
+        return get_utility_llm()
+    except Exception as exc:
+        logger.warning("utility model unavailable for claim organization: %s", exc)
+        return None
+
+
+def apply_document_graph(
+    run_dir: Path,
+    *,
+    auto_label: bool,
+    client: Any | None = None,
+    require_utility: bool = False,
+) -> None:
     """Write sections and claim_parents onto report_data.json. Failures leave claims in place."""
     path = run_dir / "report_data.json"
     if not path.exists():
@@ -268,21 +285,16 @@ def apply_document_graph(run_dir: Path, *, auto_label: bool, client: Any | None 
     if not isinstance(report, dict):
         return
     claims = _claim_payload(finding_rows(report))
-    active = client
-    if claims and active is None and (len(claims) >= 2 or auto_label):
-        try:
-            from moyo.llm.utility import get_utility_llm
-
-            active = get_utility_llm()
-        except Exception as exc:
-            logger.warning("utility model unavailable for grouping: %s", exc)
-            active = None
+    utility = client or utility_organize_client()
+    if require_utility and len(claims) >= 2 and utility is None:
+        raise RuntimeError("Utility LLM is required to build the claim-parent tree.")
     report["sections"] = (
-        organize_claims(claims, client=active) if active is not None and len(claims) >= 2 else []
+        organize_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else []
     )
+    # Parent/child links always come from the utility model (tree_claims prompt).
     report["claim_parents"] = (
-        tree_claims(claims, client=active) if active is not None and len(claims) >= 2 else {}
+        tree_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else {}
     )
-    if auto_label and active is not None and claims:
-        _write_labels(report, suggest_review_labels(claims, client=active))
+    if auto_label and utility is not None and claims:
+        _write_labels(report, suggest_review_labels(claims, client=utility))
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

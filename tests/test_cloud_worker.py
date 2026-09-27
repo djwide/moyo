@@ -946,6 +946,78 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
     assert saved.get("claim_parents") == {}
 
 
+def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
+    import cloud_worker as cw
+    from reports.pipeline import organize
+
+    context = {
+        "projectId": "project_1",
+        "runId": "run_1",
+        "topic": "Acme",
+        "reportDataPath": "gs://senteguard-website-moyo-reports/moyomap-notes/project_1/run_1.json",
+        "reportDataSha256": "a" * 64,
+        "autoLabel": False,
+    }
+    report = {
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "Acme exists."},
+            {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+        ]
+    }
+
+    def fake_download(_bucket, _context):
+        return report
+
+    def fake_apply(run_dir, *, auto_label, client=None, require_utility=False):
+        path = run_dir / "report_data.json"
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        saved["sections"] = [{"title": "Corporate", "claim_ids": ["C0001", "C0002"]}]
+        saved["claim_parents"] = {"C0002": "C0001"}
+        path.write_text(json.dumps(saved), encoding="utf-8")
+
+    monkeypatch.setattr(cw, "download_moyomap_report_data", fake_download)
+    monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p: "{}"))
+    monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
+
+    spec = cw.OrderSpec(
+        order_id="ord_map_organize",
+        prompts=["Organize claims about Acme into a claim tree."],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="moyomap_organize",
+        source="moyomap",
+        display_topic="Acme",
+        moyomap_organize_context=context,
+    )
+    runs = cw.run_moyomap_organize(
+        spec,
+        bucket=SimpleNamespace(name="senteguard-website-moyo-reports"),
+        work=tmp_path,
+    )
+    saved = json.loads(runs[0].artifacts["report_data.json"].read_text(encoding="utf-8"))
+    assert saved["sections"]
+    assert saved["claim_parents"] == {"C0002": "C0001"}
+
+
+def test_normalize_moyomap_organize_context():
+    import cloud_worker as cw
+
+    ok = cw.normalize_moyomap_organize_context(
+        {
+            "projectId": "project_1",
+            "runId": "run_1",
+            "topic": "Acme",
+            "reportDataPath": "gs://bucket/moyomap-notes/project_1/run_1.json",
+            "reportDataSha256": "b" * 64,
+        }
+    )
+    assert ok["reportDataPath"].endswith(".json")
+    assert cw.normalize_moyomap_organize_context({}) == {}
+
+
 def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():
     context = cw.normalize_moyomap_extract_context(
         {

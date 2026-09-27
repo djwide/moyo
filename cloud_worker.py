@@ -243,6 +243,7 @@ GENERATION_MODE_ALIASES = {
     "moyomap_report": "moyomap_report",
     "map_report": "moyomap_report",
     "moyomap_extract": "moyomap_extract",
+    "moyomap_organize": "moyomap_organize",
 }
 
 CANONICAL_AWAITING_QC = "awaiting_qc"
@@ -301,6 +302,7 @@ class OrderSpec:
     moyomap_context: dict[str, Any] = field(default_factory=dict)
     moyomap_report_context: dict[str, Any] = field(default_factory=dict)
     moyomap_extract_context: dict[str, Any] = field(default_factory=dict)
+    moyomap_organize_context: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         folder = (self.storage_folder or "").strip().strip("/")
@@ -405,7 +407,13 @@ def default_keep_content(from_stage: str) -> bool:
 
 def resolve_rebuild_plan(spec: OrderSpec) -> RebuildPlan | None:
     """None means a full explore; otherwise rebuild from existing artifacts."""
-    if spec.generation_mode in {"full", "exposure_preview", "rerun_models", "moyomap_extract"}:
+    if spec.generation_mode in {
+        "full",
+        "exposure_preview",
+        "rerun_models",
+        "moyomap_extract",
+        "moyomap_organize",
+    }:
         return None
     from_stage = spec.from_stage
     if from_stage not in PIPELINE_STAGES:
@@ -467,7 +475,7 @@ def stop_after_for(spec: OrderSpec) -> str | None:
     """
     if spec.generation_mode == "moyomap_report":
         return None
-    if spec.generation_mode == "moyomap_extract" or spec.source == "moyomap":
+    if spec.generation_mode in {"moyomap_extract", "moyomap_organize"} or spec.source == "moyomap":
         return "score"
     return None
 
@@ -475,7 +483,7 @@ def stop_after_for(spec: OrderSpec) -> str | None:
 def required_artifacts(spec: OrderSpec) -> tuple[str, ...]:
     if spec.generation_mode == "moyomap_report":
         return REBUILD_ARTIFACTS
-    if spec.generation_mode == "moyomap_extract":
+    if spec.generation_mode in {"moyomap_extract", "moyomap_organize"}:
         return MOYOMAP_EXTRACT_ARTIFACTS
     if spec.generation_mode in REBUILD_MODES:
         return REBUILD_ARTIFACTS
@@ -747,6 +755,33 @@ def normalize_moyomap_report_context(raw: Any) -> dict[str, Any]:
         "mode": mode,
         "snapshotPath": snapshot_path,
         "snapshotSha256": snapshot_sha256,
+    }
+
+
+def normalize_moyomap_organize_context(raw: Any) -> dict[str, Any]:
+    """Validate the report_data pointer for organize-only MoyoMap import."""
+    if not isinstance(raw, dict):
+        return {}
+    project_id = str(raw.get("projectId") or "").strip()
+    run_id = str(raw.get("runId") or "").strip()
+    topic = str(raw.get("topic") or "").strip()
+    report_data_path = str(raw.get("reportDataPath") or raw.get("report_data_path") or "").strip()
+    report_data_sha256 = str(raw.get("reportDataSha256") or raw.get("report_data_sha256") or "").strip().lower()
+    if (
+        not project_id
+        or not run_id
+        or not topic
+        or not re.fullmatch(r"gs://[^/]+/moyomap-notes/[^/]+/[^/]+\.json", report_data_path)
+        or not re.fullmatch(r"[0-9a-f]{64}", report_data_sha256)
+    ):
+        return {}
+    return {
+        "projectId": project_id[:160],
+        "runId": run_id[:160],
+        "topic": topic[:1000],
+        "reportDataPath": report_data_path,
+        "reportDataSha256": report_data_sha256,
+        "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
     }
 
 
@@ -1097,6 +1132,9 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
         ),
         moyomap_extract_context=normalize_moyomap_extract_context(
             _first(data, "moyoMapExtract", "moyo_map_extract", default={})
+        ),
+        moyomap_organize_context=normalize_moyomap_organize_context(
+            _first(data, "moyoMapOrganize", "moyo_map_organize", default={})
         ),
     )
 
@@ -2473,6 +2511,29 @@ def wrap_moyomap_note(topic: str, text: str) -> str:
     )
 
 
+def download_moyomap_report_data(bucket, context: dict[str, Any]) -> dict[str, Any]:
+    """Download and checksum report_data.json for an organize-only import."""
+    if not context:
+        raise ValueError("MoyoMap organize order is missing a valid report_data context.")
+    match = re.fullmatch(r"gs://([^/]+)/(.+)", str(context.get("reportDataPath") or ""))
+    if not match:
+        raise ValueError("MoyoMap report_data path is invalid.")
+    bucket_name, object_path = match.groups()
+    if bucket_name != bucket.name:
+        raise ValueError("MoyoMap report_data bucket does not match the reports bucket.")
+    raw = bucket.blob(object_path).download_as_bytes()
+    actual = hashlib.sha256(raw or b"").hexdigest()
+    if not hmac.compare_digest(actual, str(context.get("reportDataSha256") or "")):
+        raise ValueError("MoyoMap report_data checksum does not match the order.")
+    try:
+        report = json.loads((raw or b"{}").decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"MoyoMap report_data is not valid JSON: {exc}") from exc
+    if not isinstance(report, dict):
+        raise ValueError("MoyoMap report_data must be a JSON object.")
+    return report
+
+
 def download_moyomap_note(bucket, context: dict[str, Any], dest: Path) -> str:
     """Download and checksum the document referenced by an extract order."""
     from reports.pipeline.documents import document_to_text
@@ -2549,9 +2610,17 @@ def run_moyomap_extract(
 
     from reports.pipeline.organize import apply_document_graph
 
+    from moyo.llm.utility import get_utility_llm
+
+    try:
+        utility = get_utility_llm()
+    except Exception as exc:
+        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
     apply_document_graph(
         run_dir,
         auto_label=bool(spec.moyomap_extract_context.get("autoLabel")),
+        client=utility,
+        require_utility=True,
     )
     evidence = build_evidence(run_dir, prompt=prompt)
     evidence["moyomap_extract"] = {
@@ -2579,6 +2648,94 @@ def run_moyomap_extract(
             "Missing required MoyoMap extract artifacts: " + ", ".join(missing)
         )
     _progress("finished MoyoMap note extraction without retrieval")
+    return [run]
+
+
+def run_moyomap_organize(
+    spec: OrderSpec,
+    *,
+    bucket,
+    work: Path | None = None,
+    progress: Callable[[str], None] | None = None,
+    set_stage: Callable[[str], None] | None = None,
+) -> list[PromptRun]:
+    """Group and tree already-scored claims from report_data.json. No retrieval."""
+    from reports.pipeline.organize import apply_document_graph, finding_rows
+
+    if spec.generation_mode != "moyomap_organize":
+        raise RuntimeError("run_moyomap_organize requires generationMode=moyomap_organize.")
+    work = work or work_dir_for(spec.order_id)
+    work.mkdir(parents=True, exist_ok=True)
+
+    def _progress(message: str) -> None:
+        logger.info(message)
+        if progress:
+            progress(message)
+
+    if set_stage:
+        set_stage("organizing_claims")
+    context = spec.moyomap_organize_context
+    report = download_moyomap_report_data(bucket, context)
+    topic = str(context.get("topic") or spec.display_topic or spec.prompts[0]).strip()
+    prompt = topic or spec.prompts[0]
+    slug = prompt_slug(1, prompt)
+    prompt_dir = work / slug
+    run_id = f"{spec.order_id}__{slug}"
+    run_dir = prompt_dir / "report_runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    if not report.get("topic"):
+        report["topic"] = topic
+    (run_dir / "report_data.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    claims_path = run_dir / "claims.jsonl"
+    rows = finding_rows(report)
+    claims_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
+        + ("\n" if rows else ""),
+        encoding="utf-8",
+    )
+    _progress(f"loaded {len(rows)} claims for grouping and claim-tree inference")
+
+    from moyo.llm.utility import get_utility_llm
+
+    try:
+        utility = get_utility_llm()
+    except Exception as exc:
+        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
+    apply_document_graph(
+        run_dir,
+        auto_label=bool(context.get("autoLabel")),
+        client=utility,
+        require_utility=True,
+    )
+    evidence = build_evidence(run_dir, prompt=prompt)
+    evidence["moyomap_organize"] = {
+        "projectId": context.get("projectId"),
+        "runId": context.get("runId"),
+        "reportDataSha256": context.get("reportDataSha256"),
+        "retrievalRun": False,
+    }
+    (prompt_dir / "evidence.json").write_text(
+        json.dumps(evidence, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    artifacts = collect_artifacts(prompt_dir, run_dir, spec.product)
+    run = PromptRun(
+        index=1,
+        prompt=prompt,
+        slug=slug,
+        run_id=run_id,
+        artifacts=artifacts,
+    )
+    write_prompt_report_json(prompt_dir, spec, run, evidence=evidence)
+    missing = [name for name in required_artifacts(spec) if name not in run.artifacts]
+    if missing:
+        raise RuntimeError(
+            "Missing required MoyoMap organize artifacts: " + ", ".join(missing)
+        )
+    _progress("finished MoyoMap claim organization without retrieval")
     return [run]
 
 
@@ -3289,6 +3446,8 @@ def main() -> int:
                     if spec.generation_mode == "moyomap_report"
                     else "extracting_claims"
                     if spec.generation_mode == "moyomap_extract"
+                    else "organizing_claims"
+                    if spec.generation_mode == "moyomap_organize"
                     else "querying_models"
                 ),
                 "generationStartedAt": started,
@@ -3324,6 +3483,13 @@ def main() -> int:
             if bucket is None:
                 raise RuntimeError("MoyoMap note extraction needs Storage access.")
             runs = run_moyomap_extract(
+                spec, bucket=bucket, work=work, set_stage=_set_stage
+            )
+            uploaded = _upload_runs(bucket, spec, runs, work=work)
+        elif spec.generation_mode == "moyomap_organize":
+            if bucket is None:
+                raise RuntimeError("MoyoMap claim organization needs Storage access.")
+            runs = run_moyomap_organize(
                 spec, bucket=bucket, work=work, set_stage=_set_stage
             )
             uploaded = _upload_runs(bucket, spec, runs, work=work)
