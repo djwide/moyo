@@ -963,7 +963,14 @@ def moyomap_exploration_prompt(prompt: str, context: dict[str, Any] | None) -> s
 def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if not data:
         raise ValueError(f"Order {order_id!r} is missing or empty")
-    seeds_raw = _first(data, "seeds", "numSeeds", "num_seeds", default=3)
+    seeds_raw = _first(data, "seeds", "numSeeds", "num_seeds", default=None)
+    # MoyoMap graph scans: one retrieval prompt, original wording only, unless
+    # the order explicitly sets seeds/strategies.
+    moyomap_scan = str(_first(data, "source") or "") == "moyomap" and bool(
+        data.get("moyoMap")
+    )
+    if seeds_raw is None:
+        seeds_raw = 1 if moyomap_scan else 3
     try:
         seeds = max(1, int(seeds_raw))
     except (TypeError, ValueError) as exc:
@@ -1011,6 +1018,8 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     if isinstance(strategies, str):
         strategies = [part.strip() for part in strategies.split(",") if part.strip()]
     strategies = drop_cloud_unsupported_strategies(strategies)
+    if not strategies and moyomap_scan:
+        strategies = ["original"]
 
     workers_raw = _first(data, "workers", default=None)
     workers = None

@@ -165,6 +165,27 @@ def test_parse_order_keeps_sanitized_moyomap_context():
     assert spec.moyomap_context["priorClaims"][0]["customerLabel"] == "known"
 
 
+def test_parse_order_moyomap_scan_defaults_to_one_original_seed():
+    spec = cw.parse_order(
+        "ord_map_scan",
+        {
+            "source": "moyomap",
+            "product": "moyo_snapshot_raw",
+            "prompts": ["Acme Corp exposure"],
+            "moyoMap": {
+                "projectId": "project_1",
+                "runId": "run_1",
+                "action": "initial",
+                "topic": "Acme Corp",
+                "category": "corporate_investigations",
+                "priorClaims": [],
+            },
+        },
+    )
+    assert spec.seeds == 1
+    assert spec.strategies == ["original"]
+
+
 def test_moyomap_exploration_prompt_adds_graph_as_data():
     base = "Find materially new claims about Acme."
     expanded = cw.moyomap_exploration_prompt(
