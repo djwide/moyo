@@ -158,7 +158,7 @@ def infer_audience_from_text(raw: Any) -> str | None:
         return OPPOSITION
     if lowered.startswith("what personal, biographical"):
         return PERSONAL
-    if "unannounced or non-public product" in lowered:
+    if "unannounced or non-public product" in lowered or "not in official marketing" in lowered:
         return COMPETITIVE
     if lowered.startswith("what do ai systems already know"):
         return ORGANIZATION

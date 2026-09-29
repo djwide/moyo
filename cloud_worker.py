@@ -754,6 +754,7 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
         "parentNodeId": str(raw.get("parentNodeId") or "")[:160],
         "expansionOption": expansion_option,
         "priorClaims": prior,
+        "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
     }
 
 
@@ -1867,7 +1868,9 @@ def apply_moyomap_scan_layout(
 
     if set_stage:
         set_stage("organizing_claims")
-    action = str((spec.moyomap_context or {}).get("action") or "initial").strip().lower()
+    context = spec.moyomap_context or {}
+    action = str(context.get("action") or "initial").strip().lower()
+    auto_label = context.get("autoLabel") is True
     if action == "investigate":
         apply_document_graph(run_dir, auto_label=False, stub_only=True)
         return
@@ -1880,13 +1883,13 @@ def apply_moyomap_scan_layout(
 
         utility = get_utility_llm()
         existing = (
-            anchor_nodes_from_prior_claims((spec.moyomap_context or {}).get("priorClaims") or [])
+            anchor_nodes_from_prior_claims(context.get("priorClaims") or [])
             if action == "find_more"
             else None
         )
         apply_document_graph(
             run_dir,
-            auto_label=False,
+            auto_label=auto_label,
             client=utility,
             require_utility=True,
             existing_nodes=existing,

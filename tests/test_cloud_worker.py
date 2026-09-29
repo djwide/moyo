@@ -280,6 +280,10 @@ def test_normalize_moyomap_context_rejects_unknown_labels_and_options():
     assert sectioned["priorClaims"][0]["section"] is True
     assert sectioned["priorClaims"][0]["depth"] == 1
 
+    labeled = cw.normalize_moyomap_context({"action": "initial", "autoLabel": True, "priorClaims": []})
+    assert labeled["autoLabel"] is True
+    assert cw.normalize_moyomap_context({"action": "initial", "priorClaims": []})["autoLabel"] is False
+
 
 def test_parse_order_keeps_valid_moyomap_report_snapshot_context():
     checksum = "a" * 64
