@@ -163,6 +163,8 @@ def test_parse_order_keeps_sanitized_moyomap_context():
     assert spec.moyomap_context["action"] == "find_more"
     assert spec.moyomap_context["priorClaims"][0]["nodeId"] == "claim_1"
     assert spec.moyomap_context["priorClaims"][0]["customerLabel"] == "known"
+    assert spec.moyomap_context["priorClaims"][0]["section"] is False
+    assert spec.moyomap_context["priorClaims"][0]["depth"] == 1
 
 
 def test_parse_order_moyomap_scan_defaults_to_one_original_seed():
@@ -265,6 +267,18 @@ def test_normalize_moyomap_context_rejects_unknown_labels_and_options():
     )
     assert normalized["expansionOption"] == ""
     assert normalized["priorClaims"][0]["customerLabel"] is None
+    assert normalized["priorClaims"][0]["section"] is False
+
+    sectioned = cw.normalize_moyomap_context(
+        {
+            "action": "find_more",
+            "priorClaims": [
+                {"nodeId": "section_abc", "claim": "Banking", "parentId": "topic_1", "depth": 1}
+            ],
+        }
+    )
+    assert sectioned["priorClaims"][0]["section"] is True
+    assert sectioned["priorClaims"][0]["depth"] == 1
 
 
 def test_parse_order_keeps_valid_moyomap_report_snapshot_context():
@@ -1064,6 +1078,96 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
     assert by_id["C0001"]["parent"] == "section:0"
     assert by_id["C0002"]["parent"] == "C0001"
     assert "edges" not in layout
+
+
+def test_apply_moyomap_scan_layout_organizes_initial_and_find_more(tmp_path: Path, monkeypatch):
+    from reports.pipeline import organize
+
+    seen: list[dict[str, object]] = []
+
+    def fake_apply(run_dir, **kwargs):
+        seen.append({"run_dir": run_dir, **kwargs})
+        (run_dir / "tree_layout.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p, **_k: "{}"))
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "report_data.json").write_text("{}", encoding="utf-8")
+
+    initial = cw.OrderSpec(
+        order_id="ord_scan",
+        prompts=["Acme"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+        moyomap_context={"action": "initial", "priorClaims": []},
+    )
+    cw.apply_moyomap_scan_layout(initial, run_dir)
+    assert seen[-1]["attach"] is False
+    assert seen[-1]["require_utility"] is True
+    assert seen[-1].get("stub_only") in {None, False}
+    assert seen[-1]["existing_nodes"] is None
+
+    find_more = cw.OrderSpec(
+        order_id="ord_more",
+        prompts=["Acme"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+        moyomap_context={
+            "action": "find_more",
+            "priorClaims": [
+                {
+                    "nodeId": "claim_1",
+                    "claim": "Acme opened an office.",
+                    "section": False,
+                    "depth": 2,
+                }
+            ],
+        },
+    )
+    cw.apply_moyomap_scan_layout(find_more, run_dir)
+    assert seen[-1]["attach"] is True
+    assert seen[-1]["existing_nodes"][0]["claim_id"] == "claim_1"
+
+
+def test_apply_moyomap_scan_layout_investigate_does_not_call_utility(tmp_path: Path, monkeypatch):
+    from reports.pipeline import organize
+
+    seen: list[dict[str, object]] = []
+
+    def fake_apply(run_dir, **kwargs):
+        seen.append(kwargs)
+        (run_dir / "tree_layout.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
+
+    def fail_utility():
+        raise AssertionError("investigate must not call the utility LLM")
+
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", fail_utility)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    spec = cw.OrderSpec(
+        order_id="ord_inv",
+        prompts=["Acme"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+        moyomap_context={"action": "investigate", "parentNodeId": "claim_1", "priorClaims": []},
+    )
+    cw.apply_moyomap_scan_layout(spec, run_dir)
+    assert seen == [{"auto_label": False, "stub_only": True}]
 
 
 def test_normalize_moyomap_organize_context():

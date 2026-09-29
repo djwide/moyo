@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 REPORTS_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ORGANIZE_PROMPT = REPORTS_ROOT / "prompts" / "organize_claims.md"
 DEFAULT_TREE_PROMPT = REPORTS_ROOT / "prompts" / "tree_claims.md"
+DEFAULT_PLACE_PROMPT = REPORTS_ROOT / "prompts" / "place_find_more.md"
 DEFAULT_LABEL_PROMPT = REPORTS_ROOT / "prompts" / "label_claims.md"
 REVIEW_LABELS = ("known", "known_to_be_wrong", "investigate", "not_relevant")
 BATCH_SIZE = 40
@@ -160,6 +161,85 @@ def _render_prompt(path: Path, claims: list[dict[str, str]]) -> str:
     return template.replace("{{ claims_json }}", payload)
 
 
+def _render_place_prompt(
+    new_claims: list[dict[str, str]], existing_nodes: list[dict[str, Any]]
+) -> str:
+    template = DEFAULT_PLACE_PROMPT.read_text(encoding="utf-8")
+    existing_payload = [
+        {
+            "claim_id": str(row.get("claim_id") or "").strip(),
+            "claim": str(row.get("claim") or ""),
+            "section": bool(row.get("section")),
+        }
+        for row in existing_nodes
+        if str(row.get("claim_id") or "").strip()
+    ]
+    return template.replace(
+        "{{ existing_json }}", json.dumps(existing_payload, ensure_ascii=False)
+    ).replace("{{ claims_json }}", json.dumps(new_claims, ensure_ascii=False))
+
+
+def anchor_nodes_from_prior_claims(prior: Any) -> list[dict[str, Any]]:
+    """Compact existing graph nodes for attach-mode placement."""
+    rows = prior if isinstance(prior, list) else []
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        node_id = str(item.get("nodeId") or item.get("claim_id") or "").strip()
+        claim = " ".join(str(item.get("claim") or "").split())
+        if not node_id or not claim or node_id in seen:
+            continue
+        seen.add(node_id)
+        depth_raw = item.get("depth")
+        try:
+            depth = int(depth_raw) if depth_raw is not None else 1
+        except (TypeError, ValueError):
+            depth = 1
+        section = bool(item.get("section")) or node_id.startswith("section_")
+        out.append(
+            {
+                "claim_id": node_id,
+                "claim": claim[:500],
+                "section": section,
+                "depth": max(1, depth),
+            }
+        )
+    return out
+
+
+def parse_attach_parents(
+    text: str, new_ids: set[str], known_ids: set[str]
+) -> dict[str, str] | None:
+    """Child→parent for new claims only. None means the payload was unusable."""
+    data = _load_json_object(text)
+    if data is None or not isinstance(data.get("parents"), list):
+        return None
+    parents: dict[str, str] = {}
+    for item in data["parents"]:
+        if not isinstance(item, dict):
+            return None
+        child = str(item.get("claim_id") or item.get("claimId") or "").strip()
+        parent = str(
+            item.get("parent_claim_id") or item.get("parentClaimId") or item.get("parent_id") or ""
+        ).strip()
+        if not child or not parent:
+            return None
+        if child not in new_ids:
+            continue
+        if parent not in known_ids:
+            continue
+        if child == parent:
+            return None
+        if child in parents and parents[child] != parent:
+            return None
+        parents[child] = parent
+    if _has_cycle(parents):
+        return None
+    return parents
+
+
 def organize_claims(claims: list[dict[str, str]], *, client: Any) -> list[dict[str, Any]]:
     """Return sections, or [] when the model output cannot be trusted."""
     if len(claims) < 2:
@@ -243,6 +323,41 @@ def tree_claims(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
     return parents
 
 
+def place_find_more_claims(
+    new_claims: list[dict[str, str]],
+    existing_nodes: list[dict[str, Any]],
+    *,
+    client: Any,
+) -> dict[str, str]:
+    """Attach new claims to existing nodes or other new claims. {} if unusable."""
+    if not new_claims:
+        return {}
+    new_ids = {row["claim_id"] for row in new_claims}
+    known_ids = new_ids | {
+        str(row.get("claim_id") or "").strip()
+        for row in existing_nodes
+        if str(row.get("claim_id") or "").strip()
+    }
+    if len(known_ids) < 2:
+        return {}
+    try:
+        text = client.complete(
+            _render_place_prompt(new_claims, existing_nodes),
+            max_tokens=ORGANIZE_MAX_TOKENS,
+        )
+    except Exception as exc:
+        logger.warning("find-more claim placement failed: %s", exc)
+        return {}
+    parsed = parse_attach_parents(text or "", new_ids, known_ids)
+    if parsed is None:
+        logger.warning("find-more claim placement discarded unusable JSON")
+        return {}
+    parents = dict(parsed)
+    if _has_cycle(parents):
+        return {}
+    return parents
+
+
 def suggest_review_labels(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
     """Return review labels. A failed batch leaves those claims unlabeled."""
     if not claims:
@@ -281,15 +396,21 @@ def build_tree_layout(
     sections: list[dict[str, Any]],
     parents: dict[str, str],
     labels: dict[str, str],
+    existing_depths: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Build tree_layout.json. Parent and depth live on each node; no edges.
 
     Layer-1 nodes (sections and ungrouped claims) use parent=\"root\". Claim text
-    stays on report_data.json.
+    stays on report_data.json. Existing graph ids may appear only as parents.
     """
     nested = {child for child, parent in parents.items() if child and parent and child != parent}
     section_of: dict[str, str] = {}
     nodes: list[dict[str, Any]] = []
+    new_claim_ids = {
+        str(row.get("claim_id") or "").strip()
+        for row in claims
+        if str(row.get("claim_id") or "").strip()
+    }
     for index, section in enumerate(sections):
         section_id = f"section:{index}"
         title = str(section.get("title") or "").strip()
@@ -314,6 +435,7 @@ def build_tree_layout(
                 continue
             section_of[claim_id] = section_id
 
+    section_ids = {str(node["id"]) for node in nodes}
     claim_parent: dict[str, str] = {}
     for row in claims:
         claim_id = str(row.get("claim_id") or "").strip()
@@ -330,6 +452,21 @@ def build_tree_layout(
     depth_of: dict[str, int] = {ROOT_ID: 0}
     for node in nodes:
         depth_of[str(node["id"])] = 1
+    if existing_depths:
+        for node_id, depth in existing_depths.items():
+            key = str(node_id).strip()
+            if not key or key in depth_of:
+                continue
+            try:
+                depth_of[key] = max(1, int(depth))
+            except (TypeError, ValueError):
+                depth_of[key] = 1
+    for parent in claim_parent.values():
+        if parent in depth_of or parent == ROOT_ID:
+            continue
+        if parent in new_claim_ids or parent in section_ids:
+            continue
+        depth_of[parent] = 1
 
     pending = set(claim_parent)
     while pending:
@@ -387,6 +524,9 @@ def apply_document_graph(
     auto_label: bool,
     client: Any | None = None,
     require_utility: bool = False,
+    existing_nodes: list[dict[str, Any]] | None = None,
+    attach: bool = False,
+    stub_only: bool = False,
 ) -> None:
     """Write tree_layout.json from scored claims. Leaves report_data.json unchanged."""
     path = run_dir / "report_data.json"
@@ -400,15 +540,52 @@ def apply_document_graph(
     if not isinstance(report, dict):
         return
     claims = _claim_payload(finding_rows(report))
+    anchors = existing_nodes or []
+    existing_depths: dict[str, int] = {}
+    for row in anchors:
+        key = str(row.get("claim_id") or "").strip()
+        if not key:
+            continue
+        try:
+            existing_depths[key] = max(1, int(row.get("depth") or 1))
+        except (TypeError, ValueError):
+            existing_depths[key] = 1
+    if stub_only:
+        layout = build_tree_layout(
+            topic=str(report.get("topic") or ""),
+            claims=claims,
+            sections=[],
+            parents={},
+            labels={},
+        )
+        (run_dir / "tree_layout.json").write_text(
+            json.dumps(layout, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return
     utility = client or utility_organize_client()
-    if require_utility and len(claims) >= 2 and utility is None:
+    needs_utility = len(claims) >= 2 or (attach and claims and anchors)
+    if require_utility and needs_utility and utility is None:
         raise RuntimeError("Utility LLM is required to build the claim-parent tree.")
-    sections = (
-        organize_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else []
-    )
-    parents = (
-        tree_claims(claims, client=utility) if utility is not None and len(claims) >= 2 else {}
-    )
+    if attach and utility is not None and claims and anchors:
+        parents = place_find_more_claims(claims, anchors, client=utility)
+        nested = set(parents)
+        to_group = [row for row in claims if row["claim_id"] not in nested]
+        sections = (
+            organize_claims(to_group, client=utility) if len(to_group) >= 2 else []
+        )
+    else:
+        sections = (
+            organize_claims(claims, client=utility)
+            if utility is not None and len(claims) >= 2
+            else []
+        )
+        parents = (
+            tree_claims(claims, client=utility)
+            if utility is not None and len(claims) >= 2
+            else {}
+        )
+        existing_depths = {}
     labels = (
         suggest_review_labels(claims, client=utility)
         if auto_label and utility is not None and claims
@@ -420,6 +597,7 @@ def apply_document_graph(
         sections=sections,
         parents=parents,
         labels=labels,
+        existing_depths=existing_depths or None,
     )
     (run_dir / "tree_layout.json").write_text(
         json.dumps(layout, indent=2, ensure_ascii=False),

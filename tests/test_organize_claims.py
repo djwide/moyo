@@ -11,6 +11,7 @@ from reports.pipeline.documents import document_to_text
 from reports.pipeline.organize import (
     apply_document_graph,
     organize_claims,
+    parse_attach_parents,
     parse_claim_parents,
     parse_review_labels,
     parse_sections,
@@ -90,6 +91,20 @@ def test_claim_parents_accept_confident_links_and_reject_cycles():
         )
         is None
     )
+
+
+def test_parse_attach_parents_keeps_new_children_only():
+    text = json.dumps(
+        {
+            "parents": [
+                {"claim_id": "C0001", "parent_claim_id": "claim_office"},
+                {"claim_id": "claim_office", "parent_claim_id": "C0001"},
+            ]
+        }
+    )
+    assert parse_attach_parents(text, {"C0001"}, {"C0001", "claim_office"}) == {
+        "C0001": "claim_office"
+    }
 
 
 def test_tree_claims_skips_bad_batches():
@@ -237,6 +252,93 @@ def test_apply_document_graph_writes_sections_tree_and_optional_labels(tmp_path:
                     )
                 },
             )(),
+        )
+        == {}
+    )
+
+
+def test_apply_document_graph_stub_only_skips_utility(tmp_path: Path):
+    report = {
+        "topic": "Acme",
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "Acme exists."},
+            {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+        ],
+    }
+    (tmp_path / "report_data.json").write_text(json.dumps(report), encoding="utf-8")
+
+    class Boom:
+        def complete(self, _prompt: str, **_kw: object) -> str:
+            raise AssertionError("investigate stub must not call the utility LLM")
+
+    apply_document_graph(tmp_path, auto_label=False, client=Boom(), stub_only=True)
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["C0001"]["parent"] == "root"
+    assert by_id["C0002"]["parent"] == "root"
+    assert layout["review_labels"] == {}
+
+
+def test_apply_document_graph_attach_mode_links_to_existing_nodes(tmp_path: Path):
+    from reports.pipeline.organize import anchor_nodes_from_prior_claims, place_find_more_claims
+
+    report = {
+        "topic": "Acme",
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "The Cayman office opened in March."},
+            {"claim_id": "C0002", "claim": "Acme also hired a treasurer."},
+            {"claim_id": "C0003", "claim": "A related payroll vendor was paid."},
+        ],
+    }
+    (tmp_path / "report_data.json").write_text(json.dumps(report), encoding="utf-8")
+    existing = [
+        {
+            "nodeId": "section_bank",
+            "claim": "Banking",
+            "section": True,
+            "depth": 1,
+            "parentId": "topic_1",
+        },
+        {
+            "nodeId": "claim_office",
+            "claim": "Acme opened an office in Cayman.",
+            "section": False,
+            "depth": 2,
+            "parentId": "section_bank",
+        },
+    ]
+
+    class Scripted:
+        def complete(self, prompt: str, **_kw: object) -> str:
+            if "Existing map nodes" in prompt or "newly found" in prompt:
+                return json.dumps(
+                    {"parents": [{"claim_id": "C0001", "parent_claim_id": "claim_office"}]}
+                )
+            return json.dumps(
+                {"sections": [{"title": "Treasury", "claim_ids": ["C0002", "C0003"]}]}
+            )
+
+    apply_document_graph(
+        tmp_path,
+        auto_label=False,
+        client=Scripted(),
+        attach=True,
+        existing_nodes=anchor_nodes_from_prior_claims(existing),
+    )
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert "claim_office" not in by_id
+    assert "section_bank" not in by_id
+    assert by_id["C0001"]["parent"] == "claim_office"
+    assert by_id["C0001"]["depth"] == 3
+    assert by_id["C0002"]["parent"] == "section:0"
+    assert by_id["C0003"]["parent"] == "section:0"
+    assert by_id["section:0"]["title"] == "Treasury"
+    assert (
+        place_find_more_claims(
+            [{"claim_id": "C0001", "claim": "New fact."}],
+            [{"claim_id": "claim_office", "claim": "Old fact.", "section": False}],
+            client=type("Boom", (), {"complete": staticmethod(lambda _prompt, **_kw: "{")})(),
         )
         == {}
     )

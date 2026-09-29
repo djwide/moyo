@@ -15,7 +15,8 @@ Storefront order fields used here::
     reportStatus         queued → generating → awaiting_qc | delivered | failed
                          | held (auto-validation failed after retry)
     reportStage          querying_models | analyzing_results | compiling_map |
-                         generating_report | validating  (live customer progress)
+                         generating_report | organizing_claims | validating
+                         (live customer progress)
     qcRequired           false skips human QC (agent orders → delivered).
                          GUI and Checkout default true when the field is missing.
                          Auto-validation (coverage, required sections, retry/hold)
@@ -138,6 +139,7 @@ RAW_CONTRACT_ARTIFACTS = (
 MOYOMAP_SCAN_ARTIFACTS = (
     "claims.jsonl",
     "report_data.json",
+    "tree_layout.json",
     "normalized_responses.json",
     "provider_responses.jsonl",
     "llm_prompts.jsonl",
@@ -714,6 +716,11 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
                 continue
             labels = coerce_moyomap_customer_labels(item)
             primary = next((label for label in labels if label != "useful"), None)
+            depth_raw = item.get("depth")
+            try:
+                depth = int(depth_raw) if depth_raw is not None else 1
+            except (TypeError, ValueError):
+                depth = 1
             prior.append(
                 {
                     "nodeId": node_id[:160],
@@ -723,6 +730,8 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
                     "customerLabels": labels,
                     "customerLabel": primary or (labels[0] if labels else None),
                     "parentId": str(item.get("parentId") or "")[:160],
+                    "section": bool(item.get("section")) or node_id.startswith("section_"),
+                    "depth": max(1, depth),
                 }
             )
     expansion_option = str(raw.get("expansionOption") or "").strip().lower()
@@ -1782,6 +1791,52 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     return dest
 
 
+def apply_moyomap_scan_layout(
+    spec: OrderSpec,
+    run_dir: Path,
+    *,
+    set_stage: Callable[[str], None] | None = None,
+) -> None:
+    """Write tree_layout.json for MoyoMap retrieval scans after score.
+
+    Initial scans organize new claims. Find more attaches them to the existing
+    tree. Investigate writes a flat stub; ingest hangs those claims under the
+    selected parent.
+    """
+    if not is_moyomap_map_pipeline(spec):
+        return
+    from reports.pipeline.organize import (
+        anchor_nodes_from_prior_claims,
+        apply_document_graph,
+    )
+
+    if set_stage:
+        set_stage("organizing_claims")
+    action = str((spec.moyomap_context or {}).get("action") or "initial").strip().lower()
+    if action == "investigate":
+        apply_document_graph(run_dir, auto_label=False, stub_only=True)
+        return
+    from moyo.llm.utility import get_utility_llm
+
+    try:
+        utility = get_utility_llm()
+    except Exception as exc:
+        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
+    existing = (
+        anchor_nodes_from_prior_claims((spec.moyomap_context or {}).get("priorClaims") or [])
+        if action == "find_more"
+        else None
+    )
+    apply_document_graph(
+        run_dir,
+        auto_label=False,
+        client=utility,
+        require_utility=True,
+        existing_nodes=existing,
+        attach=action == "find_more",
+    )
+
+
 def _run_one_prompt(
     spec: OrderSpec,
     *,
@@ -1891,6 +1946,7 @@ def _run_one_prompt_logged(
         raise RuntimeError(f"build_report exited with {rc} for {prompt!r}")
 
     run_dir = prompt_dir / "report_runs" / run_id
+    apply_moyomap_scan_layout(spec, run_dir, set_stage=_stage)
     if not test_mode:
         pipeline_notes.extend(note_report_gaps(run_dir, prompt))
     evidence = build_evidence(run_dir, prompt=prompt)
