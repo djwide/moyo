@@ -474,7 +474,11 @@ def is_moyomap_map_pipeline(spec: OrderSpec) -> bool:
     """Jobs that only produce map ingest artifacts (GCS), not storefront PDF delivery."""
     if spec.generation_mode in {"moyomap_extract", "moyomap_organize"}:
         return True
-    return spec.source == "moyomap" and spec.generation_mode == "full"
+    if spec.generation_mode in {"moyomap_report", "exposure_preview"}:
+        return False
+    if spec.generation_mode in REBUILD_MODES:
+        return False
+    return spec.source == "moyomap"
 
 
 def stop_after_for(spec: OrderSpec) -> str | None:
@@ -497,7 +501,11 @@ def required_artifacts(spec: OrderSpec) -> tuple[str, ...]:
         return MOYOMAP_EXTRACT_ARTIFACTS
     if spec.generation_mode in REBUILD_MODES:
         return REBUILD_ARTIFACTS
-    if spec.source == "moyomap" and spec.generation_mode == "full":
+    if spec.source == "moyomap" and spec.generation_mode not in {
+        "moyomap_report",
+        "exposure_preview",
+        *REBUILD_MODES,
+    }:
         return MOYOMAP_SCAN_ARTIFACTS
     if is_raw_product(spec):
         return RAW_CONTRACT_ARTIFACTS
@@ -1618,32 +1626,79 @@ def note_explore_gaps(prompt_dir: Path, prompt: str) -> list[str]:
     return [note]
 
 
+def jsonl_row_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
 def note_report_gaps(run_dir: Path, prompt: str) -> list[str]:
     """Log an empty claims inventory; still allow the report to be delivered."""
-    claims_path = run_dir / "claims.jsonl"
-    n = 0
-    if claims_path.is_file():
-        n = sum(
-            1
-            for line in claims_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        )
+    n = jsonl_row_count(run_dir / "claims.jsonl")
     if n > 0:
         return []
-    chunks_path = run_dir / "chunks.jsonl"
-    n_chunks = 0
-    if chunks_path.is_file():
-        n_chunks = sum(
-            1
-            for line in chunks_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        )
+    n_chunks = jsonl_row_count(run_dir / "chunks.jsonl")
     note = (
         f"build_report produced 0 claims for {prompt!r} "
         f"(chunks.jsonl rows={n_chunks}); report built from remaining artifacts."
     )
     logger.warning(note)
     return [note]
+
+
+_RETRIEVAL_AUTH_MARKERS = (
+    "incorrect api key",
+    "invalid_api_key",
+    "invalid authentication",
+    "authentication_error",
+    "invalid_authentication",
+    "missing api key",
+    "api key not",
+    "unauthorized",
+    "permission-denied",
+    "permission denied",
+)
+
+
+def _retrieval_errors_look_like_auth(errors: list[str]) -> bool:
+    blob = " ".join(errors).lower()
+    if any(marker in blob for marker in _RETRIEVAL_AUTH_MARKERS):
+        return True
+    return "401" in blob and "unauthorized" in blob
+
+
+def moyomap_scan_claim_failure_message(
+    prompt_dir: Path, prompt: str, run_dir: Path
+) -> str:
+    """Explain empty claim inventory; prefer API-key guidance when retrieval auth failed."""
+    ok, total, errors = _count_usable_raw_responses(prompt_dir / "normalized_responses.json")
+    if ok == 0 and total > 0:
+        if _retrieval_errors_look_like_auth(errors):
+            return (
+                "Map build failed while organizing the claim tree: one or more retrieval "
+                "models rejected the API key. Open LLM keys in the workspace sidebar, "
+                "verify keys for your selected models, then run the scan again."
+            )
+        sample = "; ".join(errors[:2])
+        return (
+            "Map build failed while organizing the claim tree: retrieval returned no "
+            f"usable answers ({sample})."
+        )
+    n_chunks = jsonl_row_count(run_dir / "chunks.jsonl")
+    return (
+        f"Map build failed while organizing the claim tree: scan produced no claims "
+        f"for {prompt!r} (chunks.jsonl rows={n_chunks}). Retry after fixing model access."
+    )
+
+
+def require_moyomap_extracted_claims(
+    run_dir: Path, prompt: str, *, prompt_dir: Path | None = None
+) -> None:
+    """Map ingest needs scored claims. An empty tree_layout is not a successful scan."""
+    if jsonl_row_count(run_dir / "claims.jsonl") > 0:
+        return
+    work = prompt_dir or (run_dir.parent.parent if run_dir.parent.name == "report_runs" else run_dir)
+    raise RuntimeError(moyomap_scan_claim_failure_message(work, prompt, run_dir))
 
 
 # Back-compat aliases used by older tests / callers.
@@ -1816,25 +1871,36 @@ def apply_moyomap_scan_layout(
     if action == "investigate":
         apply_document_graph(run_dir, auto_label=False, stub_only=True)
         return
-    from moyo.llm.utility import get_utility_llm
+
+    def write_flat_layout() -> None:
+        apply_document_graph(run_dir, auto_label=False, stub_only=True)
 
     try:
+        from moyo.llm.utility import get_utility_llm
+
         utility = get_utility_llm()
+        existing = (
+            anchor_nodes_from_prior_claims((spec.moyomap_context or {}).get("priorClaims") or [])
+            if action == "find_more"
+            else None
+        )
+        apply_document_graph(
+            run_dir,
+            auto_label=False,
+            client=utility,
+            require_utility=True,
+            existing_nodes=existing,
+            attach=action == "find_more",
+        )
     except Exception as exc:
-        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
-    existing = (
-        anchor_nodes_from_prior_claims((spec.moyomap_context or {}).get("priorClaims") or [])
-        if action == "find_more"
-        else None
-    )
-    apply_document_graph(
-        run_dir,
-        auto_label=False,
-        client=utility,
-        require_utility=True,
-        existing_nodes=existing,
-        attach=action == "find_more",
-    )
+        logger.exception(
+            "claim tree organize failed after score; writing a flat tree_layout.json: %s",
+            exc,
+        )
+        write_flat_layout()
+    if not (run_dir / "tree_layout.json").is_file():
+        logger.warning("tree_layout.json missing after organize; writing a flat layout")
+        write_flat_layout()
 
 
 def _run_one_prompt(
@@ -1947,6 +2013,8 @@ def _run_one_prompt_logged(
 
     run_dir = prompt_dir / "report_runs" / run_id
     apply_moyomap_scan_layout(spec, run_dir, set_stage=_stage)
+    if is_moyomap_map_pipeline(spec) and not test_mode:
+        require_moyomap_extracted_claims(run_dir, prompt, prompt_dir=prompt_dir)
     if not test_mode:
         pipeline_notes.extend(note_report_gaps(run_dir, prompt))
     evidence = build_evidence(run_dir, prompt=prompt)
@@ -2698,6 +2766,7 @@ def run_moyomap_extract(
         client=utility,
         require_utility=True,
     )
+    require_moyomap_extracted_claims(run_dir, prompt)
     evidence = build_evidence(run_dir, prompt=prompt)
     evidence["moyomap_extract"] = {
         "projectId": spec.moyomap_extract_context.get("projectId"),
@@ -3723,14 +3792,15 @@ def main() -> int:
                         }
                     )
                 else:
-                    order_ref.update(
-                        {
-                            "reportStatus": "failed",
-                            "generationStartedAt": started,
-                            "generationFinishedAt": utc_now(),
-                            "error": message,
-                        }
-                    )
+                    fail_fields: dict[str, Any] = {
+                        "reportStatus": "failed",
+                        "generationStartedAt": started,
+                        "generationFinishedAt": utc_now(),
+                        "error": message,
+                    }
+                    if spec is not None and is_moyomap_map_pipeline(spec):
+                        fail_fields.setdefault("reportStage", "organizing_claims")
+                    order_ref.update(fail_fields)
             except Exception:
                 logger.exception("failed to write error status")
         return 1

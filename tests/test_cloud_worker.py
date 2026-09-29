@@ -1170,6 +1170,43 @@ def test_apply_moyomap_scan_layout_investigate_does_not_call_utility(tmp_path: P
     assert seen == [{"auto_label": False, "stub_only": True}]
 
 
+def test_apply_moyomap_scan_layout_writes_flat_tree_when_utility_fails(tmp_path: Path, monkeypatch):
+    import moyo.llm.utility as utility
+
+    def fail_utility():
+        raise RuntimeError("vertex down")
+
+    monkeypatch.setattr(utility, "get_utility_llm", fail_utility)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "report_data.json").write_text(
+        json.dumps(
+            {
+                "topic": "Acme",
+                "findings_all": [
+                    {"claim_id": "C0001", "claim": "Acme exists."},
+                    {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    spec = cw.OrderSpec(
+        order_id="ord_scan_layout",
+        prompts=["Acme"],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="full",
+        source="moyomap",
+        moyomap_context={"action": "initial", "priorClaims": []},
+    )
+    cw.apply_moyomap_scan_layout(spec, run_dir)
+    layout = json.loads((run_dir / "tree_layout.json").read_text(encoding="utf-8"))
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["C0001"]["parent"] == "root"
+    assert by_id["C0002"]["parent"] == "root"
+
+
 def test_normalize_moyomap_organize_context():
     import cloud_worker as cw
 
@@ -1655,6 +1692,38 @@ def test_note_report_gaps_when_empty(tmp_path: Path):
     notes = cw.note_report_gaps(tmp_path, "Enron?")
     assert notes
     assert "0 claims" in notes[0]
+
+
+def test_require_moyomap_extracted_claims_rejects_empty_inventory(tmp_path: Path):
+    (tmp_path / "claims.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "chunks.jsonl").write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Map build failed while organizing"):
+        cw.require_moyomap_extracted_claims(tmp_path, "iPhone manufacturing")
+
+
+def test_moyomap_scan_claim_failure_message_flags_bad_api_key(tmp_path: Path):
+    prompt_dir = tmp_path / "prompt"
+    prompt_dir.mkdir()
+    run_dir = prompt_dir / "report_runs" / "ord__slug"
+    run_dir.mkdir(parents=True)
+    (run_dir / "chunks.jsonl").write_text("", encoding="utf-8")
+    (prompt_dir / "normalized_responses.json").write_text(
+        json.dumps(
+            [
+                {"source_label": "GPT", "error": "401 Unauthorized", "text": ""},
+                {"source_label": "Claude", "error": "invalid_api_key", "text": ""},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    message = cw.moyomap_scan_claim_failure_message(prompt_dir, "iPhone", run_dir)
+    assert "API key" in message
+    assert "organizing" in message
+    (tmp_path / "claims.jsonl").write_text(
+        '{"claim_id":"C0001","claim":"The line uses SMT."}\n',
+        encoding="utf-8",
+    )
+    cw.require_moyomap_extracted_claims(tmp_path, "iPhone manufacturing")
 
 
 def test_required_llm_env_presence(monkeypatch):
