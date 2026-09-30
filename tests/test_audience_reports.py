@@ -29,13 +29,13 @@ def test_organization_labels_stay_on_the_basic_builder():
     assert retain_finding(_claim(sensitivity=1), "organization")
 
 
-def test_opposition_drops_info_and_renames_bands():
+def test_opposition_keeps_expected_and_renames_bands():
     ordinary = _claim(claim_id="C0", sensitivity=1, novelty=1)
     mid = _claim(claim_id="C2", claim="A donor tie.", sensitivity=3, novelty=1)
     hot = _claim(claim_id="C3", claim="A documented controversy.", sensitivity=5, novelty=2)
     odd = _claim(claim_id="C4", claim="Models agree on a hard-to-find fact.", sensitivity=2, novelty=4)
     assert disclosure_class(ordinary, "opposition") == "Expected"
-    assert not retain_finding(ordinary, "opposition")
+    assert retain_finding(ordinary, "opposition")
     assert disclosure_class(mid, "opposition") == "Potentially damaging"
     assert disclosure_class(hot, "opposition") == "Damaging"
     assert disclosure_class(odd, "opposition") == "Unexpected"
@@ -49,8 +49,7 @@ def test_opposition_drops_info_and_renames_bands():
         audience="opposition",
     )
     ids = {f["claim_id"] for f in data["findings"]}
-    assert "C0" not in ids
-    assert ids == {"C2", "C3", "C4"}
+    assert ids == {"C0", "C2", "C3", "C4"}
     assert data["headline"] == "What models assemble from public records"
     assert data["counts"]["high_sensitivity"] == 1
     assert data["sensitivity_bins"]["damaging"] == 1
@@ -161,12 +160,12 @@ def test_opposition_closes_on_verification_plan():
     assert doc["meta"]["kicker"] == "Opposition research"
 
 
-def test_competitive_drops_expected_and_renames_bands():
+def test_competitive_keeps_expected_and_renames_bands():
     ordinary = _claim(claim_id="C0", sensitivity=1, novelty=1)
     mid = _claim(claim_id="C2", claim="A supplier contract.", sensitivity=3, novelty=1)
     hot = _claim(claim_id="C3", claim="An unannounced product line.", sensitivity=5, novelty=2)
     odd = _claim(claim_id="C4", claim="Models agree on a hard-to-find hiring plan.", sensitivity=2, novelty=4)
-    assert not retain_finding(ordinary, "competitive")
+    assert retain_finding(ordinary, "competitive")
     assert disclosure_class(mid, "competitive") == "Potentially strategic"
     assert disclosure_class(hot, "competitive") == "Commercially sensitive"
     assert disclosure_class(odd, "competitive") == "Unexpected"
@@ -180,7 +179,7 @@ def test_competitive_drops_expected_and_renames_bands():
         audience="competitive",
     )
     ids = {f["claim_id"] for f in data["findings"]}
-    assert "C0" not in ids
+    assert ids == {"C0", "C2", "C3", "C4"}
     assert data["headline"] == "What models already know about this competitor"
     assert data["counts"]["high_sensitivity"] == 1
     assert data["sensitivity_bins"]["commercially_sensitive"] == 1
@@ -188,11 +187,11 @@ def test_competitive_drops_expected_and_renames_bands():
     assert "security_relevant" not in data["sensitivity_bins"]
 
 
-def test_security_drops_expected_and_keeps_security_relevant():
+def test_security_keeps_expected_and_security_relevant():
     ordinary = _claim(claim_id="C0", sensitivity=1, novelty=1)
     mid = _claim(claim_id="C2", claim="A vendor with network access.", sensitivity=3, novelty=1)
     hot = _claim(claim_id="C3", claim="A public incident writeup.", sensitivity=5, novelty=2)
-    assert not retain_finding(ordinary, "security")
+    assert retain_finding(ordinary, "security")
     assert disclosure_class(mid, "security") == "Material"
     assert disclosure_class(hot, "security") == "Security relevant"
     data = score_report(
@@ -204,7 +203,7 @@ def test_security_drops_expected_and_keeps_security_relevant():
         graphics_cfg={},
         audience="security",
     )
-    assert {f["claim_id"] for f in data["findings"]} == {"C2", "C3"}
+    assert {f["claim_id"] for f in data["findings"]} == {"C0", "C2", "C3"}
     assert data["headline"] == "What an outsider can already reconstruct"
     assert data["counts"]["high_sensitivity"] == 1
     assert data["sensitivity_bins"]["security_relevant"] == 1

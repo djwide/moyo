@@ -1,8 +1,8 @@
 """Report voice by storefront scan audience.
 
-The generic organization builder is unchanged. Competitive intelligence and
-security each keep Interesting and Unexpected, drop ordinary Expected facts,
-and rename the top bands. Opposition and personal keep their own voices.
+The generic organization builder is unchanged. Competitive intelligence,
+security, and opposition still rename disclosure bands; every extracted claim
+is retained so maps and reports can inventory Expected public facts.
 """
 
 from __future__ import annotations
@@ -318,13 +318,9 @@ def chart_order(audience: str = ORGANIZATION) -> tuple[str, ...]:
 
 
 def retain_finding(finding: dict, audience: str = ORGANIZATION) -> bool:
-    """Opposition, competitive, and security reports omit ordinary public facts."""
-    audience = normalize_audience(audience)
-    if audience not in {OPPOSITION, COMPETITIVE, SECURITY}:
-        return True
-    if int(finding.get("sensitivity") or 0) <= 1:
-        return False
-    return disclosure_class(finding, audience) != "Expected"
+    """Keep every extracted claim. Audience still remaps disclosure labels."""
+    del finding, audience
+    return True
 
 
 def sort_key(finding: dict, audience: str = ORGANIZATION) -> tuple:
