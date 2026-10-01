@@ -705,6 +705,40 @@ MOYOMAP_EXPANSION_OPTIONS = {
 }
 
 
+def normalize_moyomap_prior_claims(raw: Any) -> list[dict[str, Any]]:
+    """Keep the same prior-claim rows Generate more sends into attach placement."""
+    prior_raw = raw if isinstance(raw, list) else []
+    prior: list[dict[str, Any]] = []
+    for item in prior_raw:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or "").strip()
+        node_id = str(item.get("nodeId") or "").strip()
+        if not claim or not node_id:
+            continue
+        labels = coerce_moyomap_customer_labels(item)
+        primary = next((label for label in labels if label != "useful"), None)
+        depth_raw = item.get("depth")
+        try:
+            depth = int(depth_raw) if depth_raw is not None else 1
+        except (TypeError, ValueError):
+            depth = 1
+        prior.append(
+            {
+                "nodeId": node_id[:160],
+                "claim": claim[:4000],
+                "moyoLabel": str(item.get("moyoLabel") or "")[:160],
+                "moyoStatus": str(item.get("moyoStatus") or "")[:80],
+                "customerLabels": labels,
+                "customerLabel": primary or (labels[0] if labels else None),
+                "parentId": str(item.get("parentId") or "")[:160],
+                "section": bool(item.get("section")) or node_id.startswith("section_"),
+                "depth": max(1, depth),
+            }
+        )
+    return prior
+
+
 def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
     """Validate the server-authored graph context without trusting its shape."""
     if not isinstance(raw, dict):
@@ -712,36 +746,6 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
     action = str(raw.get("action") or "").strip().lower()
     if action not in {"initial", "investigate", "find_more"}:
         return {}
-    prior_raw = raw.get("priorClaims")
-    prior: list[dict[str, Any]] = []
-    if isinstance(prior_raw, list):
-        for item in prior_raw:
-            if not isinstance(item, dict):
-                continue
-            claim = str(item.get("claim") or "").strip()
-            node_id = str(item.get("nodeId") or "").strip()
-            if not claim or not node_id:
-                continue
-            labels = coerce_moyomap_customer_labels(item)
-            primary = next((label for label in labels if label != "useful"), None)
-            depth_raw = item.get("depth")
-            try:
-                depth = int(depth_raw) if depth_raw is not None else 1
-            except (TypeError, ValueError):
-                depth = 1
-            prior.append(
-                {
-                    "nodeId": node_id[:160],
-                    "claim": claim[:4000],
-                    "moyoLabel": str(item.get("moyoLabel") or "")[:160],
-                    "moyoStatus": str(item.get("moyoStatus") or "")[:80],
-                    "customerLabels": labels,
-                    "customerLabel": primary or (labels[0] if labels else None),
-                    "parentId": str(item.get("parentId") or "")[:160],
-                    "section": bool(item.get("section")) or node_id.startswith("section_"),
-                    "depth": max(1, depth),
-                }
-            )
     expansion_option = str(raw.get("expansionOption") or "").strip().lower()
     if expansion_option not in MOYOMAP_EXPANSION_OPTIONS:
         expansion_option = ""
@@ -753,7 +757,7 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
         "category": str(raw.get("category") or "")[:80],
         "parentNodeId": str(raw.get("parentNodeId") or "")[:160],
         "expansionOption": expansion_option,
-        "priorClaims": prior,
+        "priorClaims": normalize_moyomap_prior_claims(raw.get("priorClaims")),
         "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
     }
 
@@ -808,6 +812,7 @@ def normalize_moyomap_organize_context(raw: Any) -> dict[str, Any]:
         "reportDataPath": report_data_path,
         "reportDataSha256": report_data_sha256,
         "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
+        "priorClaims": normalize_moyomap_prior_claims(raw.get("priorClaims")),
     }
 
 
@@ -837,6 +842,7 @@ def normalize_moyomap_extract_context(raw: Any) -> dict[str, Any]:
         "textSha256": text_sha256,
         "contentType": content_type[:120],
         "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
+        "priorClaims": normalize_moyomap_prior_claims(raw.get("priorClaims")),
     }
 
 
@@ -913,14 +919,15 @@ def moyomap_followup_instructions(context: dict[str, Any]) -> list[str]:
             "customer-selected investigation target."
         )
         instructions.append(
-            "Return at most 10 new atomic claims, ranked by relevance to that parent "
-            "claim, then by research value (sensitivity, specificity, novelty, "
-            "interestingness, confidence)."
+            "Return new atomic claims ranked by relevance to that parent claim, then "
+            "by research value (sensitivity, specificity, novelty, interestingness, "
+            "confidence). Include every distinct, evidence-bearing finding."
         )
     elif context.get("action") == "find_more":
         instructions.append(
-            "Return at most 10 new atomic claims, ranked by research value "
-            "(sensitivity, specificity, novelty, interestingness, confidence)."
+            "Return new atomic claims ranked by research value (sensitivity, "
+            "specificity, novelty, interestingness, confidence). Include every "
+            "distinct, evidence-bearing finding."
         )
 
     expansion_instructions = {
@@ -1847,6 +1854,62 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     return dest
 
 
+def apply_moyomap_claim_tree(
+    run_dir: Path,
+    *,
+    auto_label: bool = False,
+    prior_claims: Any = None,
+    attach: bool = False,
+    stub_only: bool = False,
+    fallback_flat: bool = False,
+    set_stage: Callable[[str], None] | None = None,
+) -> None:
+    """Write tree_layout.json. Attach mode is the Generate more / import-into-map path."""
+    from reports.pipeline.organize import (
+        anchor_nodes_from_prior_claims,
+        apply_document_graph,
+    )
+
+    if set_stage:
+        set_stage("organizing_claims")
+
+    def write_flat_layout() -> None:
+        apply_document_graph(run_dir, auto_label=False, stub_only=True)
+
+    if stub_only:
+        write_flat_layout()
+        return
+
+    existing = anchor_nodes_from_prior_claims(prior_claims or []) if attach else None
+    try:
+        from moyo.llm.utility import get_utility_llm
+
+        try:
+            utility = get_utility_llm()
+        except Exception as exc:
+            raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
+        apply_document_graph(
+            run_dir,
+            auto_label=auto_label,
+            client=utility,
+            require_utility=True,
+            existing_nodes=existing,
+            attach=bool(attach and existing),
+        )
+    except Exception:
+        if not fallback_flat:
+            raise
+        logger.exception(
+            "claim tree organize failed after score; writing a flat tree_layout.json"
+        )
+        write_flat_layout()
+    if not (run_dir / "tree_layout.json").is_file():
+        if not fallback_flat:
+            raise RuntimeError("tree_layout.json missing after organize.")
+        logger.warning("tree_layout.json missing after organize; writing a flat layout")
+        write_flat_layout()
+
+
 def apply_moyomap_scan_layout(
     spec: OrderSpec,
     run_dir: Path,
@@ -1861,49 +1924,20 @@ def apply_moyomap_scan_layout(
     """
     if not is_moyomap_map_pipeline(spec):
         return
-    from reports.pipeline.organize import (
-        anchor_nodes_from_prior_claims,
-        apply_document_graph,
-    )
-
-    if set_stage:
-        set_stage("organizing_claims")
     context = spec.moyomap_context or {}
     action = str(context.get("action") or "initial").strip().lower()
     auto_label = context.get("autoLabel") is True
     if action == "investigate":
-        apply_document_graph(run_dir, auto_label=False, stub_only=True)
+        apply_moyomap_claim_tree(run_dir, stub_only=True, set_stage=set_stage)
         return
-
-    def write_flat_layout() -> None:
-        apply_document_graph(run_dir, auto_label=False, stub_only=True)
-
-    try:
-        from moyo.llm.utility import get_utility_llm
-
-        utility = get_utility_llm()
-        existing = (
-            anchor_nodes_from_prior_claims(context.get("priorClaims") or [])
-            if action == "find_more"
-            else None
-        )
-        apply_document_graph(
-            run_dir,
-            auto_label=auto_label,
-            client=utility,
-            require_utility=True,
-            existing_nodes=existing,
-            attach=action == "find_more",
-        )
-    except Exception as exc:
-        logger.exception(
-            "claim tree organize failed after score; writing a flat tree_layout.json: %s",
-            exc,
-        )
-        write_flat_layout()
-    if not (run_dir / "tree_layout.json").is_file():
-        logger.warning("tree_layout.json missing after organize; writing a flat layout")
-        write_flat_layout()
+    apply_moyomap_claim_tree(
+        run_dir,
+        auto_label=auto_label,
+        prior_claims=context.get("priorClaims") or [],
+        attach=action == "find_more",
+        fallback_flat=True,
+        set_stage=set_stage,
+    )
 
 
 def _run_one_prompt(
@@ -2755,19 +2789,13 @@ def run_moyomap_extract(
     if rc != 0:
         raise RuntimeError(f"MoyoMap note extraction exited with {rc}.")
 
-    from reports.pipeline.organize import apply_document_graph
-
-    from moyo.llm.utility import get_utility_llm
-
-    try:
-        utility = get_utility_llm()
-    except Exception as exc:
-        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
-    apply_document_graph(
+    prior = spec.moyomap_extract_context.get("priorClaims") or []
+    apply_moyomap_claim_tree(
         run_dir,
         auto_label=bool(spec.moyomap_extract_context.get("autoLabel")),
-        client=utility,
-        require_utility=True,
+        prior_claims=prior,
+        attach=bool(prior),
+        set_stage=set_stage,
     )
     require_moyomap_extracted_claims(run_dir, prompt)
     evidence = build_evidence(run_dir, prompt=prompt)
@@ -2808,7 +2836,7 @@ def run_moyomap_organize(
     set_stage: Callable[[str], None] | None = None,
 ) -> list[PromptRun]:
     """Write tree_layout.json from already-scored report_data.json. No retrieval, no PDF."""
-    from reports.pipeline.organize import apply_document_graph, finding_rows
+    from reports.pipeline.organize import finding_rows
 
     if spec.generation_mode != "moyomap_organize":
         raise RuntimeError("run_moyomap_organize requires generationMode=moyomap_organize.")
@@ -2846,17 +2874,13 @@ def run_moyomap_organize(
     )
     _progress(f"loaded {len(rows)} claims for grouping and claim-tree inference")
 
-    from moyo.llm.utility import get_utility_llm
-
-    try:
-        utility = get_utility_llm()
-    except Exception as exc:
-        raise RuntimeError(f"Utility LLM unavailable for claim tree: {exc}") from exc
-    apply_document_graph(
+    prior = context.get("priorClaims") or []
+    apply_moyomap_claim_tree(
         run_dir,
         auto_label=bool(context.get("autoLabel")),
-        client=utility,
-        require_utility=True,
+        prior_claims=prior,
+        attach=bool(prior),
+        set_stage=set_stage,
     )
     evidence = build_evidence(run_dir, prompt=prompt)
     evidence["moyomap_organize"] = {

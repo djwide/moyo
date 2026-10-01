@@ -812,7 +812,7 @@ def test_moyomap_followup_prompt_uses_combined_labels():
     assert '"customerLabels":["investigate","useful"]' in expanded
     assert "settled context" in expanded
     assert "priority leads" in expanded
-    assert "at most 10 new atomic claims" in expanded
+    assert "new atomic claims ranked" in expanded
     assert "ranked by research value" in expanded
 
     investigated = cw.moyomap_exploration_prompt(
@@ -826,7 +826,7 @@ def test_moyomap_followup_prompt_uses_combined_labels():
         },
     )
     assert "relevance to that parent" in investigated
-    assert "at most 10 new atomic claims" in investigated
+    assert "new atomic claims ranked" in investigated
 
 
 def test_compile_moyomap_snapshot_claims_reads_label_arrays():
@@ -1027,7 +1027,7 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
     def fake_download(_bucket, _context):
         return report
 
-    def fake_apply(run_dir, *, auto_label, client=None, require_utility=False):
+    def fake_apply(run_dir, *, auto_label, client=None, require_utility=False, **kwargs):
         path = run_dir / "report_data.json"
         saved = json.loads(path.read_text(encoding="utf-8"))
         (run_dir / "tree_layout.json").write_text(
@@ -1052,6 +1052,8 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
             encoding="utf-8",
         )
         assert "sections" not in saved
+        assert kwargs.get("attach") is False
+        assert not kwargs.get("existing_nodes")
 
     monkeypatch.setattr(cw, "download_moyomap_report_data", fake_download)
     monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
@@ -1082,6 +1084,133 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
     assert by_id["C0001"]["parent"] == "section:0"
     assert by_id["C0002"]["parent"] == "C0001"
     assert "edges" not in layout
+
+
+def test_moyomap_organize_attaches_to_prior_claims(tmp_path: Path, monkeypatch):
+    import cloud_worker as cw
+    from reports.pipeline import organize
+
+    context = {
+        "projectId": "project_1",
+        "runId": "run_1",
+        "topic": "Acme",
+        "reportDataPath": "gs://senteguard-website-moyo-reports/moyomap-notes/project_1/run_1.json",
+        "reportDataSha256": "a" * 64,
+        "autoLabel": False,
+        "priorClaims": [
+            {
+                "nodeId": "claim_office",
+                "claim": "Acme opened an office.",
+                "section": False,
+                "depth": 2,
+            }
+        ],
+    }
+    seen: list[dict[str, object]] = []
+
+    def fake_download(_bucket, _context):
+        return {"findings_all": [{"claim_id": "C0001", "claim": "Acme hired a treasurer."}]}
+
+    def fake_apply(run_dir, **kwargs):
+        seen.append(kwargs)
+        (run_dir / "tree_layout.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(cw, "download_moyomap_report_data", fake_download)
+    monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p, **_k: "{}"))
+    monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
+
+    spec = cw.OrderSpec(
+        order_id="ord_map_organize_attach",
+        prompts=["Organize claims about Acme into a claim tree."],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="moyomap_organize",
+        source="moyomap",
+        display_topic="Acme",
+        moyomap_organize_context=context,
+    )
+    cw.run_moyomap_organize(
+        spec,
+        bucket=SimpleNamespace(name="senteguard-website-moyo-reports"),
+        work=tmp_path,
+    )
+    assert seen[-1]["attach"] is True
+    assert seen[-1]["existing_nodes"][0]["claim_id"] == "claim_office"
+
+
+def test_moyomap_extract_attaches_to_prior_claims(tmp_path: Path, monkeypatch):
+    import yaml
+    from moyo.publicside.gatherpublicsources import explorer
+    from reports import build_report
+    from reports.pipeline import organize
+
+    context = {
+        "projectId": "project_1",
+        "runId": "run_1",
+        "topic": "Acme",
+        "textPath": "gs://senteguard-website-moyo-reports/moyomap-notes/project_1/run_1.md",
+        "textSha256": "b" * 64,
+        "priorClaims": [
+            {
+                "nodeId": "claim_office",
+                "claim": "Acme opened an office.",
+                "section": False,
+                "depth": 2,
+            }
+        ],
+    }
+    seen: list[dict[str, object]] = []
+
+    def fail_retrieval(*_args, **_kwargs):
+        raise AssertionError("MoyoMap note extraction must not run retrieval")
+
+    def fake_build(argv):
+        cfg = yaml.safe_load(Path(argv[argv.index("--config") + 1]).read_text())
+        run_id = argv[argv.index("--run-id") + 1]
+        run_dir = Path(cfg["output"]["dir"]) / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "claims.jsonl").write_text('{"claim":"Acme hired a treasurer."}\n', encoding="utf-8")
+        (run_dir / "report_data.json").write_text(
+            json.dumps({"findings_all": [{"claim_id": "C0001", "claim": "Acme hired a treasurer."}]}),
+            encoding="utf-8",
+        )
+        prompt_dir = Path(argv[argv.index("--exploration") + 1]).parent
+        (prompt_dir / "report.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    def fake_apply(run_dir, **kwargs):
+        seen.append(kwargs)
+        (run_dir / "tree_layout.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(explorer, "explore_and_save", fail_retrieval)
+    monkeypatch.setattr(cw, "download_moyomap_note", lambda *_args, **_kwargs: "Acme hired a treasurer.")
+    monkeypatch.setattr(cw, "build_evidence", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(build_report, "main", fake_build)
+    monkeypatch.setattr(organize, "apply_document_graph", fake_apply)
+    import moyo.llm.utility as utility
+
+    monkeypatch.setattr(utility, "get_utility_llm", lambda: SimpleNamespace(complete=lambda _p, **_k: "{}"))
+
+    spec = cw.OrderSpec(
+        order_id="ord_map_extract_attach",
+        prompts=["Extract claims about Acme from the supplied note."],
+        product="snapshot",
+        product_id="moyo_snapshot_raw",
+        generation_mode="moyomap_extract",
+        source="moyomap",
+        display_topic="Acme",
+        moyomap_extract_context=context,
+    )
+    cw.run_moyomap_extract(
+        spec,
+        bucket=SimpleNamespace(name="senteguard-website-moyo-reports"),
+        work=tmp_path,
+    )
+    assert seen[-1]["attach"] is True
+    assert seen[-1]["existing_nodes"][0]["claim_id"] == "claim_office"
 
 
 def test_apply_moyomap_scan_layout_organizes_initial_and_find_more(tmp_path: Path, monkeypatch):
@@ -1224,6 +1353,18 @@ def test_normalize_moyomap_organize_context():
         }
     )
     assert ok["reportDataPath"].endswith(".json")
+    assert ok["priorClaims"] == []
+    attached = cw.normalize_moyomap_organize_context(
+        {
+            "projectId": "project_1",
+            "runId": "run_1",
+            "topic": "Acme",
+            "reportDataPath": "gs://bucket/moyomap-notes/project_1/run_1.json",
+            "reportDataSha256": "b" * 64,
+            "priorClaims": [{"nodeId": "claim_1", "claim": "Acme opened an office."}],
+        }
+    )
+    assert attached["priorClaims"][0]["nodeId"] == "claim_1"
     assert cw.normalize_moyomap_organize_context({}) == {}
 
 
@@ -1240,6 +1381,7 @@ def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():
     )
     assert context["textPath"].endswith(".pdf")
     assert context["autoLabel"] is False
+    assert context["priorClaims"] == []
     assert cw.normalize_moyomap_extract_context(
         {
             "projectId": "project_1",
