@@ -20,7 +20,9 @@ Return **only** JSON (no markdown fences):
 - A claim has at most one parent. Do not create cycles.
 - Hang a new claim under an existing section when it matches that section's theme.
 - Hang a new claim under an existing claim when it is clearly a subclaim of that claim.
-- Leave a claim out when you are unsure; roots need no entry.
+- Do not invent a section id. Leave a claim out when it does not fit an existing node.
+- Unassigned claims are grouped later, and only into a new section when they share a theme this tree does not already cover.
+- Leave a claim out when you are unsure; do not hang it on the root just to place it.
 - Prefer the most immediate parent (one step), not a distant ancestor.
 - Return `{ "parents": [] }` when no parent is confident.
 - Do not invent ids. Use only ids from the existing-node list or the new-claim list.

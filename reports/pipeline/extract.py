@@ -103,6 +103,7 @@ def _load_prompt(prompt_path: Path, chunk: Chunk) -> str:
         .replace("{{ source_model }}", chunk.source_model)
         .replace("{{ line_offset }}", str(chunk.start_line))
         .replace("{{ language }}", chunk.language or "")
+        .replace("{{ theme }}", chunk.query_text or "")
         .replace("{{ chunk_text }}", chunk_text)
     )
 

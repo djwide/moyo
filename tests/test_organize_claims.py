@@ -10,11 +10,15 @@ import pytest
 from reports.pipeline.documents import document_to_text
 from reports.pipeline.organize import (
     apply_document_graph,
+    filter_claims_for_theme,
+    layout_document_claims,
     organize_claims,
     parse_attach_parents,
     parse_claim_parents,
+    parse_document_layout,
     parse_review_labels,
     parse_sections,
+    parse_theme_filter,
     suggest_review_labels,
     tree_claims,
 )
@@ -342,6 +346,171 @@ def test_apply_document_graph_attach_mode_links_to_existing_nodes(tmp_path: Path
         )
         == {}
     )
+
+
+def test_parse_theme_filter_keeps_omissions_and_rejects_conflicts():
+    assert parse_theme_filter(
+        json.dumps({"keep": ["C0001"], "drop": ["C0002"]}),
+        KNOWN,
+    ) == {"C0001", "C0003", "C0004"}
+    assert parse_theme_filter(
+        json.dumps({"keep": ["C0001"], "drop": ["C0001"]}),
+        KNOWN,
+    ) is None
+
+
+def test_parse_document_layout_is_one_step_inside_a_section():
+    text = json.dumps(
+        {
+            "sections": [
+                {"title": "Bank account", "claim_ids": ["C0001", "C0002", "C0003"]},
+            ],
+            "parents": [
+                {"claim_id": "C0002", "parent_claim_id": "C0001"},
+                {"claim_id": "C0003", "parent_claim_id": "C0002"},
+            ],
+        }
+    )
+    sections, parents = parse_document_layout(text, KNOWN) or ([], {})
+    assert sections == [{"title": "Bank account", "claim_ids": ["C0001", "C0002", "C0003"]}]
+    assert parents == {"C0002": "C0001"}
+
+
+def test_document_import_drops_off_theme_claims_before_layout(tmp_path: Path):
+    report = {
+        "topic": "Acme",
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "Acme opened a bank account."},
+            {"claim_id": "C0002", "claim": "The account held $100,000."},
+            {"claim_id": "C0003", "claim": "A bakery sold bread downtown."},
+        ],
+    }
+    path = tmp_path / "report_data.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+
+    class Scripted:
+        def complete(self, prompt: str, **_kw: object) -> str:
+            if "Keep claims that bear on one theme" in prompt:
+                return json.dumps({"keep": ["C0001", "C0002"], "drop": ["C0003"]})
+            if "Lay out claims" in prompt:
+                return json.dumps(
+                    {
+                        "sections": [
+                            {"title": "Bank account", "claim_ids": ["C0001", "C0002"]}
+                        ],
+                        "parents": [{"claim_id": "C0002", "parent_claim_id": "C0001"}],
+                    }
+                )
+            raise AssertionError(prompt[:80])
+
+    apply_document_graph(
+        tmp_path,
+        auto_label=False,
+        client=Scripted(),
+        document_import=True,
+        theme="Acme banking",
+    )
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["findings_all"] == report["findings_all"]
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    assert layout["theme_filtered"] is True
+    assert layout["kept_claim_ids"] == ["C0001", "C0002"]
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert "C0003" not in by_id
+    assert by_id["C0001"]["parent"] == "section:0"
+    assert by_id["C0001"]["depth"] == 2
+    assert by_id["C0002"]["parent"] == "C0001"
+    assert by_id["C0002"]["depth"] == 3
+    assert by_id["section:0"]["parent"] == "root"
+
+
+def test_document_import_fails_when_nothing_fits_the_theme(tmp_path: Path):
+    report = {
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "A bakery sold bread."},
+            {"claim_id": "C0002", "claim": "The oven was new."},
+        ]
+    }
+    (tmp_path / "report_data.json").write_text(json.dumps(report), encoding="utf-8")
+
+    class DropAll:
+        def complete(self, prompt: str, **_kw: object) -> str:
+            if "Keep claims that bear on one theme" in prompt:
+                return json.dumps({"keep": [], "drop": ["C0001", "C0002"]})
+            raise AssertionError("layout must not run when the theme gate drops every claim")
+
+    with pytest.raises(RuntimeError, match="No claims fit the import theme"):
+        apply_document_graph(
+            tmp_path,
+            auto_label=False,
+            client=DropAll(),
+            document_import=True,
+            theme="Acme",
+        )
+
+
+def test_document_import_attach_does_not_reparent_existing_nodes(tmp_path: Path):
+    report = {
+        "topic": "Acme",
+        "findings_all": [
+            {"claim_id": "C0001", "claim": "The Cayman office opened in March."},
+            {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+            {"claim_id": "C0003", "claim": "Payroll ran through that treasurer."},
+        ],
+    }
+    (tmp_path / "report_data.json").write_text(json.dumps(report), encoding="utf-8")
+    existing = [
+        {"claim_id": "section_bank", "claim": "Banking", "section": True, "depth": 1},
+        {"claim_id": "claim_office", "claim": "Acme opened an office in Cayman.", "section": False, "depth": 2},
+    ]
+
+    class Scripted:
+        def complete(self, prompt: str, **_kw: object) -> str:
+            if "Keep claims that bear on one theme" in prompt:
+                return json.dumps({"keep": ["C0001", "C0002", "C0003"], "drop": []})
+            if "Existing map nodes" in prompt:
+                return json.dumps(
+                    {"parents": [{"claim_id": "C0001", "parent_claim_id": "claim_office"}]}
+                )
+            if "Lay out claims" in prompt:
+                assert "Banking" in prompt
+                return json.dumps(
+                    {
+                        "sections": [{"title": "Treasury", "claim_ids": ["C0002", "C0003"]}],
+                        "parents": [{"claim_id": "C0003", "parent_claim_id": "C0002"}],
+                    }
+                )
+            raise AssertionError(prompt[:80])
+
+    apply_document_graph(
+        tmp_path,
+        auto_label=False,
+        client=Scripted(),
+        document_import=True,
+        theme="Acme",
+        attach=True,
+        existing_nodes=existing,
+    )
+    layout = json.loads((tmp_path / "tree_layout.json").read_text(encoding="utf-8"))
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert "claim_office" not in by_id
+    assert "section_bank" not in by_id
+    assert by_id["C0001"]["parent"] == "claim_office"
+    assert by_id["C0002"]["parent"] == "section:0"
+    assert by_id["C0003"]["parent"] == "C0002"
+    assert by_id["C0003"]["depth"] == 3
+
+
+def test_filter_and_layout_helpers_fail_open_on_bad_json():
+    claims = [
+        {"claim_id": "C0001", "claim": "Acme exists."},
+        {"claim_id": "C0002", "claim": "Acme hired a treasurer."},
+    ]
+    boom = type("Boom", (), {"complete": staticmethod(lambda _prompt, **_kw: "{")})()
+    assert filter_claims_for_theme(claims, "Acme", client=boom) is None
+    sections, parents = layout_document_claims(claims, "Acme", client=boom)
+    assert parents == {}
+    assert sections == [{"title": "Acme", "claim_ids": ["C0001", "C0002"]}]
 
 
 def test_document_to_text_rejects_empty_and_reads_notes():

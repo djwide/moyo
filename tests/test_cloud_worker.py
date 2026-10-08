@@ -868,6 +868,7 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
         "textSha256": "b" * 64,
     }
     seen_argv = []
+    seen_cfg: dict = {}
 
     def fail_retrieval(*_args, **_kwargs):
         raise AssertionError("MoyoMap note extraction must not run retrieval")
@@ -875,6 +876,7 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
     def fake_build(argv):
         seen_argv.extend(argv)
         cfg = yaml.safe_load(Path(argv[argv.index("--config") + 1]).read_text())
+        seen_cfg.update(cfg)
         run_id = argv[argv.index("--run-id") + 1]
         run_dir = Path(cfg["output"]["dir"]) / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -913,7 +915,9 @@ def test_moyomap_extract_scores_a_note_without_retrieval(tmp_path: Path, monkeyp
     assert "normalized_responses.json" not in runs[0].artifacts
     assert "provider_responses.jsonl" not in runs[0].artifacts
     exploration = runs[0].artifacts["exploration.md"].read_text(encoding="utf-8")
+    assert seen_cfg["extract"]["prompt"] == "prompts/extract_document_claims.md"
     assert "#### Query 1: Acme" in exploration
+    assert "Keep claims that fit these themes" not in exploration
     assert cw.required_artifacts(spec) == cw.MOYOMAP_EXTRACT_ARTIFACTS
     scan = cw.OrderSpec(
         order_id="ord_map_scan",
@@ -999,10 +1003,12 @@ def test_moyomap_extract_keeps_claims_when_grouping_fails(tmp_path: Path, monkey
     assert "sections" not in saved
     layout = json.loads(runs[0].artifacts["tree_layout.json"].read_text(encoding="utf-8"))
     assert "edges" not in layout
-    assert {node["id"]: node["parent"] for node in layout["nodes"]} == {
-        "C0001": "root",
-        "C0002": "root",
-    }
+    assert layout.get("theme_filtered") is not True
+    by_id = {node["id"]: node for node in layout["nodes"]}
+    assert by_id["section:0"]["title"] == "Acme"
+    assert by_id["section:0"]["parent"] == "root"
+    assert by_id["C0001"]["parent"] == "section:0"
+    assert by_id["C0002"]["parent"] == "section:0"
 
 
 def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
@@ -1053,6 +1059,8 @@ def test_moyomap_organize_applies_document_graph(tmp_path: Path, monkeypatch):
         )
         assert "sections" not in saved
         assert kwargs.get("attach") is False
+        assert kwargs.get("document_import") is True
+        assert kwargs.get("theme") == "Acme"
         assert not kwargs.get("existing_nodes")
 
     monkeypatch.setattr(cw, "download_moyomap_report_data", fake_download)
@@ -1242,6 +1250,7 @@ def test_apply_moyomap_scan_layout_organizes_initial_and_find_more(tmp_path: Pat
     )
     cw.apply_moyomap_scan_layout(initial, run_dir)
     assert seen[-1]["attach"] is False
+    assert seen[-1]["document_import"] is False
     assert seen[-1]["require_utility"] is True
     assert seen[-1].get("stub_only") in {None, False}
     assert seen[-1]["existing_nodes"] is None
@@ -1393,11 +1402,15 @@ def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():
     ) == {}
 
 
-def test_wrap_moyomap_note_keeps_existing_query_headings():
+def test_wrap_moyomap_note_fences_user_query_headings():
     wrapped = cw.wrap_moyomap_note("Acme", "#### Query 1: Acme\n\nExisting exploration.")
-    assert wrapped.startswith("#### Query 1: Acme")
+    assert wrapped.startswith("# Topic exploration: Acme\n")
+    query_lines = [line for line in wrapped.splitlines() if line.startswith("#### Query")]
+    assert query_lines == ["#### Query 1: Acme"]
+    assert " #### Query 1: Acme" in wrapped
     plain = cw.wrap_moyomap_note("Acme", "A plain note.")
     assert "#### Query 1: Acme" in plain
+    assert "Keep claims that fit these themes" not in plain
     assert "A plain note." in plain
 
 

@@ -15,6 +15,8 @@ DEFAULT_ORGANIZE_PROMPT = REPORTS_ROOT / "prompts" / "organize_claims.md"
 DEFAULT_TREE_PROMPT = REPORTS_ROOT / "prompts" / "tree_claims.md"
 DEFAULT_PLACE_PROMPT = REPORTS_ROOT / "prompts" / "place_find_more.md"
 DEFAULT_LABEL_PROMPT = REPORTS_ROOT / "prompts" / "label_claims.md"
+DEFAULT_FILTER_PROMPT = REPORTS_ROOT / "prompts" / "filter_claims_by_theme.md"
+DEFAULT_LAYOUT_PROMPT = REPORTS_ROOT / "prompts" / "layout_document_claims.md"
 REVIEW_LABELS = ("known", "known_to_be_wrong", "investigate", "not_relevant")
 BATCH_SIZE = 40
 # Gemini Flash spends most of a short completion budget on reasoning tokens;
@@ -358,6 +360,228 @@ def place_find_more_claims(
     return parents
 
 
+def _fallback_section_title(theme: str) -> str:
+    title = " ".join((theme or "").split())
+    return (title[:80] or "Related claims")
+
+
+def parse_theme_filter(text: str, known_ids: set[str]) -> set[str] | None:
+    """Kept claim ids. None means the payload was unusable."""
+    data = _load_json_object(text)
+    if data is None:
+        return None
+    keep = data.get("keep")
+    drop = data.get("drop")
+    if not isinstance(keep, list) or not isinstance(drop, list):
+        return None
+    kept: set[str] = set()
+    dropped: set[str] = set()
+    for raw in keep:
+        claim_id = str(raw or "").strip()
+        if claim_id in known_ids:
+            kept.add(claim_id)
+    for raw in drop:
+        claim_id = str(raw or "").strip()
+        if claim_id not in known_ids:
+            continue
+        if claim_id in kept:
+            return None
+        dropped.add(claim_id)
+    for claim_id in known_ids:
+        if claim_id not in dropped:
+            kept.add(claim_id)
+    return kept
+
+
+def _render_filter_prompt(theme: str, claims: list[dict[str, str]]) -> str:
+    template = DEFAULT_FILTER_PROMPT.read_text(encoding="utf-8")
+    return template.replace("{{ theme }}", theme).replace(
+        "{{ claims_json }}", json.dumps(claims, ensure_ascii=False)
+    )
+
+
+def filter_claims_for_theme(
+    claims: list[dict[str, str]],
+    theme: str,
+    *,
+    client: Any,
+) -> set[str] | None:
+    """Kept ids after a theme gate. None means the gate could not be trusted."""
+    focus = " ".join((theme or "").split())
+    if not claims or not focus:
+        return None
+    kept: set[str] = set()
+    trusted = False
+    for start in range(0, len(claims), BATCH_SIZE):
+        batch = claims[start : start + BATCH_SIZE]
+        batch_ids = {row["claim_id"] for row in batch}
+        try:
+            text = client.complete(
+                _render_filter_prompt(focus, batch),
+                max_tokens=ORGANIZE_MAX_TOKENS,
+            )
+        except Exception as exc:
+            logger.warning("theme filter failed: %s", exc)
+            kept.update(batch_ids)
+            continue
+        parsed = parse_theme_filter(text or "", batch_ids)
+        if parsed is None:
+            logger.warning(
+                "theme filter discarded unusable JSON at offset %s (%s claims)",
+                start,
+                len(batch),
+            )
+            kept.update(batch_ids)
+            continue
+        trusted = True
+        kept.update(parsed)
+    if not trusted:
+        return None
+    return kept
+
+
+def parse_document_layout(
+    text: str, known_ids: set[str]
+) -> tuple[list[dict[str, Any]], dict[str, str]] | None:
+    """Sections plus one-step parents. None means the payload was unusable."""
+    data = _load_json_object(text)
+    if data is None or not isinstance(data.get("sections"), list):
+        return None
+    sections: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in data["sections"]:
+        if not isinstance(item, dict):
+            return None
+        title = " ".join(str(item.get("title") or "").split())[:80]
+        raw_ids = item.get("claim_ids")
+        if raw_ids is None:
+            raw_ids = item.get("claimIds")
+        if not isinstance(raw_ids, list):
+            return None
+        if not title:
+            continue
+        claim_ids: list[str] = []
+        for raw_id in raw_ids:
+            claim_id = str(raw_id or "").strip()
+            if not claim_id or claim_id not in known_ids:
+                continue
+            if claim_id in seen or claim_id in claim_ids:
+                return None
+            claim_ids.append(claim_id)
+        if not claim_ids:
+            continue
+        seen.update(claim_ids)
+        sections.append({"title": title, "claim_ids": claim_ids})
+    parents_raw = data.get("parents")
+    if parents_raw is None:
+        parents_raw = []
+    if not isinstance(parents_raw, list):
+        return None
+    section_of: dict[str, int] = {}
+    for index, section in enumerate(sections):
+        for claim_id in section["claim_ids"]:
+            section_of[claim_id] = index
+    parents: dict[str, str] = {}
+    for item in parents_raw:
+        if not isinstance(item, dict):
+            return None
+        child = str(item.get("claim_id") or item.get("claimId") or "").strip()
+        parent = str(
+            item.get("parent_claim_id") or item.get("parentClaimId") or item.get("parent_id") or ""
+        ).strip()
+        if not child or not parent:
+            return None
+        if child not in known_ids or parent not in known_ids or child == parent:
+            continue
+        if section_of.get(child) is None or section_of.get(child) != section_of.get(parent):
+            continue
+        if child in parents and parents[child] != parent:
+            return None
+        parents[child] = parent
+    children = set(parents)
+    parents = {child: parent for child, parent in parents.items() if parent not in children}
+    if _has_cycle(parents):
+        return None
+    return sections, parents
+
+
+def _render_layout_prompt(
+    theme: str,
+    claims: list[dict[str, str]],
+    existing_section_titles: list[str],
+) -> str:
+    template = DEFAULT_LAYOUT_PROMPT.read_text(encoding="utf-8")
+    return (
+        template.replace("{{ theme }}", theme)
+        .replace(
+            "{{ existing_sections_json }}",
+            json.dumps(existing_section_titles, ensure_ascii=False),
+        )
+        .replace("{{ claims_json }}", json.dumps(claims, ensure_ascii=False))
+    )
+
+
+def layout_document_claims(
+    claims: list[dict[str, str]],
+    theme: str,
+    *,
+    client: Any,
+    existing_section_titles: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Every claim in one section, plus optional one-step parents."""
+    focus = " ".join((theme or "").split()) or "Imported note"
+    titles = [title for title in (existing_section_titles or []) if title]
+    if not claims:
+        return [], {}
+    if len(claims) == 1:
+        return (
+            [{"title": _fallback_section_title(focus), "claim_ids": [claims[0]["claim_id"]]}],
+            {},
+        )
+    sections: list[dict[str, Any]] = []
+    parents: dict[str, str] = {}
+    unplaced: list[str] = []
+    known = {row["claim_id"] for row in claims}
+    for start in range(0, len(claims), BATCH_SIZE):
+        batch = claims[start : start + BATCH_SIZE]
+        if len(batch) == 1:
+            unplaced.append(batch[0]["claim_id"])
+            continue
+        try:
+            text = client.complete(
+                _render_layout_prompt(focus, batch, titles),
+                max_tokens=ORGANIZE_MAX_TOKENS,
+            )
+        except Exception as exc:
+            logger.warning("document layout failed: %s", exc)
+            unplaced.extend(row["claim_id"] for row in batch)
+            continue
+        parsed = parse_document_layout(text or "", {row["claim_id"] for row in batch})
+        if parsed is None:
+            logger.warning(
+                "document layout discarded batch at offset %s (%s claims)",
+                start,
+                len(batch),
+            )
+            unplaced.extend(row["claim_id"] for row in batch)
+            continue
+        batch_sections, batch_parents = parsed
+        sections.extend(batch_sections)
+        parents.update(batch_parents)
+        placed = {claim_id for section in batch_sections for claim_id in section["claim_ids"]}
+        unplaced.extend(row["claim_id"] for row in batch if row["claim_id"] not in placed)
+    if unplaced:
+        sections.append({"title": _fallback_section_title(focus), "claim_ids": unplaced})
+    parents = {
+        child: parent
+        for child, parent in parents.items()
+        if child in known and parent in known and child != parent
+    }
+    if _has_cycle(parents):
+        parents = {}
+    return sections, parents
+
+
 def suggest_review_labels(claims: list[dict[str, str]], *, client: Any) -> dict[str, str]:
     """Return review labels. A failed batch leaves those claims unlabeled."""
     if not claims:
@@ -527,6 +751,8 @@ def apply_document_graph(
     existing_nodes: list[dict[str, Any]] | None = None,
     attach: bool = False,
     stub_only: bool = False,
+    theme: str | None = None,
+    document_import: bool = False,
 ) -> None:
     """Write tree_layout.json from scored claims. Leaves report_data.json unchanged."""
     path = run_dir / "report_data.json"
@@ -564,10 +790,52 @@ def apply_document_graph(
         )
         return
     utility = client or utility_organize_client()
-    needs_utility = len(claims) >= 2 or (attach and claims and anchors)
+    needs_utility = len(claims) >= 2 or (attach and claims and anchors) or (
+        document_import and bool(claims)
+    )
     if require_utility and needs_utility and utility is None:
         raise RuntimeError("Utility LLM is required to build the claim-parent tree.")
-    if attach and utility is not None and claims and anchors:
+    focus = " ".join((theme or "").split())
+    theme_filtered = False
+    kept_ids: list[str] | None = None
+    if document_import and utility is not None and claims and focus:
+        filtered = filter_claims_for_theme(claims, focus, client=utility)
+        if filtered is None:
+            logger.warning("theme filter unusable; keeping extracted claims")
+        else:
+            claims = [row for row in claims if row["claim_id"] in filtered]
+            theme_filtered = True
+            kept_ids = [row["claim_id"] for row in claims]
+            if not claims:
+                raise RuntimeError("No claims fit the import theme.")
+    if document_import and utility is not None and claims:
+        layout_theme = focus or str(report.get("topic") or "")
+        if attach and anchors:
+            parents = place_find_more_claims(claims, anchors, client=utility)
+            nested = set(parents)
+            leftovers = [row for row in claims if row["claim_id"] not in nested]
+            existing_titles = [
+                str(row.get("claim") or "").strip()
+                for row in anchors
+                if row.get("section") and str(row.get("claim") or "").strip()
+            ]
+            sections, extra_parents = (
+                layout_document_claims(
+                    leftovers,
+                    layout_theme,
+                    client=utility,
+                    existing_section_titles=existing_titles,
+                )
+                if leftovers
+                else ([], {})
+            )
+            for child, parent in extra_parents.items():
+                if child not in parents:
+                    parents[child] = parent
+        else:
+            sections, parents = layout_document_claims(claims, layout_theme, client=utility)
+            existing_depths = {}
+    elif attach and utility is not None and claims and anchors:
         parents = place_find_more_claims(claims, anchors, client=utility)
         nested = set(parents)
         to_group = [row for row in claims if row["claim_id"] not in nested]
@@ -599,6 +867,9 @@ def apply_document_graph(
         labels=labels,
         existing_depths=existing_depths or None,
     )
+    if theme_filtered:
+        layout["theme_filtered"] = True
+        layout["kept_claim_ids"] = kept_ids or []
     (run_dir / "tree_layout.json").write_text(
         json.dumps(layout, indent=2, ensure_ascii=False),
         encoding="utf-8",

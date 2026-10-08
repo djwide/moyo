@@ -1822,7 +1822,13 @@ def retrieval_check_storage_paths(folder: str, work: Path) -> list[tuple[str, Pa
     return dest
 
 
-def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
+def _write_report_config(
+    work: Path,
+    spec: OrderSpec,
+    run_id: str,
+    *,
+    extract_prompt: str | None = None,
+) -> Path:
     import yaml
 
     src = REPO_ROOT / "reports" / "config.yaml"
@@ -1840,6 +1846,9 @@ def _write_report_config(work: Path, spec: OrderSpec, run_id: str) -> Path:
     cfg["render"]["audience"] = spec.scan_audience or "organization"
     if spec.subject_detail:
         cfg["render"]["subject_detail"] = spec.subject_detail
+    if extract_prompt:
+        cfg.setdefault("extract", {})
+        cfg["extract"]["prompt"] = extract_prompt
     from moyo.llm.utility import running_in_cloud, vertex_flash_hosted_config
 
     if running_in_cloud():
@@ -1863,6 +1872,8 @@ def apply_moyomap_claim_tree(
     stub_only: bool = False,
     fallback_flat: bool = False,
     set_stage: Callable[[str], None] | None = None,
+    theme: str | None = None,
+    document_import: bool = False,
 ) -> None:
     """Write tree_layout.json. Attach mode is the Generate more / import-into-map path."""
     from reports.pipeline.organize import (
@@ -1895,6 +1906,8 @@ def apply_moyomap_claim_tree(
             require_utility=True,
             existing_nodes=existing,
             attach=bool(attach and existing),
+            theme=theme,
+            document_import=document_import,
         )
     except Exception:
         if not fallback_flat:
@@ -2678,17 +2691,30 @@ def run_moyomap_report(
     return [run]
 
 
+def _fence_imported_note(text: str) -> str:
+    """Stop user headings from becoming extra exploration queries."""
+    fenced: list[str] = []
+    for line in text.split("\n"):
+        if re.match(r"^#{3,}\s", line):
+            fenced.append(f" {line}")
+        else:
+            fenced.append(line)
+    return "\n".join(fenced)
+
+
 def wrap_moyomap_note(topic: str, text: str) -> str:
-    """Give imported notes the query headings parse_exploration expects."""
-    body = text.replace("\r\n", "\n")
-    if "#### Query" in body:
-        return body if body.endswith("\n") else body + "\n"
+    """Give imported notes one controlled query heading parse_exploration expects.
+
+    The theme is not an instruction inside the note. The document extract prompt
+    receives it as a field. User headings are fenced so they are not extra queries.
+    """
+    body = _fence_imported_note(text.replace("\r\n", "\n").strip())
     safe_topic = topic.strip() or "Imported note"
     return (
         f"# Topic exploration: {safe_topic}\n\n"
         f"#### Query 1: {safe_topic}\n\n"
         "##### Imported note\n\n"
-        f"{body.strip()}\n"
+        f"{body}\n"
     )
 
 
@@ -2775,7 +2801,12 @@ def run_moyomap_extract(
     (run_dir / "exploration.md").write_text(exploration_text, encoding="utf-8")
     _progress("prepared imported note for claim extraction")
 
-    cfg_path = _write_report_config(prompt_dir, spec, run_id)
+    cfg_path = _write_report_config(
+        prompt_dir,
+        spec,
+        run_id,
+        extract_prompt="prompts/extract_document_claims.md",
+    )
     plan = RebuildPlan(from_stage="extract", keep_graphics=False, keep_content=False)
     argv = rebuild_build_argv(
         spec,
@@ -2796,6 +2827,8 @@ def run_moyomap_extract(
         prior_claims=prior,
         attach=bool(prior),
         set_stage=set_stage,
+        theme=prompt,
+        document_import=True,
     )
     require_moyomap_extracted_claims(run_dir, prompt)
     evidence = build_evidence(run_dir, prompt=prompt)
@@ -2881,6 +2914,8 @@ def run_moyomap_organize(
         prior_claims=prior,
         attach=bool(prior),
         set_stage=set_stage,
+        theme=prompt,
+        document_import=True,
     )
     evidence = build_evidence(run_dir, prompt=prompt)
     evidence["moyomap_organize"] = {
