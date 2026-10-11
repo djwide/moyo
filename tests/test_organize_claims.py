@@ -41,6 +41,23 @@ def test_confident_section_is_kept_and_singleton_is_dropped():
     ]
 
 
+def test_non_english_section_titles_are_dropped():
+    text = json.dumps(
+        {
+            "sections": [
+                {"title": "資金調達", "claim_ids": ["C0001", "C0004"]},
+                {"title": "자금", "claim_ids": ["C0001", "C0002"]},
+                {"title": "融资", "claim_ids": ["C0001", "C0003"]},
+                {"title": "Финансы", "claim_ids": ["C0002", "C0004"]},
+                {"title": "Bank accounts", "claim_ids": ["C0002", "C0003"]},
+            ]
+        }
+    )
+    assert parse_sections(text, KNOWN) == [
+        {"title": "Bank accounts", "claim_ids": ["C0002", "C0003"]}
+    ]
+
+
 def test_overlap_rejects_the_grouping():
     text = json.dumps(
         {

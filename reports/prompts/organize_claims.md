@@ -21,6 +21,7 @@ section, or amount. Return **only** JSON (no markdown fences):
 - A section needs at least two claim ids. Leave a claim out when you are unsure.
 - Every claim id appears in at most one section. Do not invent ids.
 - Titles are short noun phrases, 80 characters or fewer. Do not write a claim.
+- Write every title in English, even when a claim or the source is in another language.
 - Different facts about the same person stay in different sections unless they
   are about the same event or amount.
 - Return `{ "sections": [] }` when no group is confident.

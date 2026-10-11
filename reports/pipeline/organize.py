@@ -10,6 +10,16 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def english_section_title(title: str) -> str | None:
+    """Section labels on the map stay English. A Japanese (or other) title is dropped."""
+    from reports.pipeline.language import looks_like_english
+
+    cleaned = " ".join((title or "").split())[:80]
+    if not cleaned or not looks_like_english(cleaned):
+        return None
+    return cleaned
+
 REPORTS_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ORGANIZE_PROMPT = REPORTS_ROOT / "prompts" / "organize_claims.md"
 DEFAULT_TREE_PROMPT = REPORTS_ROOT / "prompts" / "tree_claims.md"
@@ -75,12 +85,14 @@ def parse_sections(text: str, known_ids: set[str]) -> list[dict[str, Any]] | Non
     for item in data["sections"]:
         if not isinstance(item, dict):
             return None
-        title = " ".join(str(item.get("title") or "").split())[:80]
+        title = english_section_title(str(item.get("title") or ""))
         raw_ids = item.get("claim_ids")
         if raw_ids is None:
             raw_ids = item.get("claimIds")
-        if not title or not isinstance(raw_ids, list):
+        if not isinstance(raw_ids, list):
             return None
+        if not title:
+            continue
         claim_ids: list[str] = []
         for raw_id in raw_ids:
             claim_id = str(raw_id or "").strip()
@@ -452,7 +464,7 @@ def parse_document_layout(
     for item in data["sections"]:
         if not isinstance(item, dict):
             return None
-        title = " ".join(str(item.get("title") or "").split())[:80]
+        title = english_section_title(str(item.get("title") or ""))
         raw_ids = item.get("claim_ids")
         if raw_ids is None:
             raw_ids = item.get("claimIds")
@@ -637,7 +649,7 @@ def build_tree_layout(
     }
     for index, section in enumerate(sections):
         section_id = f"section:{index}"
-        title = str(section.get("title") or "").strip()
+        title = english_section_title(str(section.get("title") or "")) or ""
         claim_ids = [
             str(claim_id).strip()
             for claim_id in (section.get("claim_ids") or [])

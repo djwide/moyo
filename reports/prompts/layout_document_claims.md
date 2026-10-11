@@ -40,6 +40,7 @@ Do not repeat these titles. These claims did not fit them.
 - `parent_claim_id` must be another claim in the same section, not a section title.
 - A claim has at most one parent. Do not create cycles. Do not parent a claim whose parent is itself a child.
 - Titles are noun phrases, 80 characters or fewer.
+- Write every title in English, even when a claim or the theme is in another language.
 - Do not invent ids. Use only ids from the input list.
 - Create a section only for a theme the existing titles do not already cover.
 - Return `{ "sections": [], "parents": [] }` only when the input list is empty.
