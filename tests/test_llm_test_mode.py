@@ -57,7 +57,7 @@ def test_fuzzer_uses_fake_under_test_mode():
     enable_test_mode(True)
     from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzer, LLMFuzzerConfig
 
-    fuzzer = LLMFuzzer(LLMFuzzerConfig(llm_provider="ollama", model_name="llama3.1:8b"))
+    fuzzer = LLMFuzzer(LLMFuzzerConfig(llm_provider="ollama", model_name="qwen2.5:7b"))
     assert isinstance(fuzzer.llm_client, FakeDeterministicLLM)
     out = fuzzer.query_llm("Please respond with ok")
     assert out and ("Offline stub" in out or "[test:" in out)

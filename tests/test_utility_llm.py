@@ -54,7 +54,7 @@ def test_local_utility_is_ollama(monkeypatch):
     _clear_runtime(monkeypatch)
     spec = utility_llm_spec()
     assert spec.provider == "ollama"
-    assert "llama3.1" in spec.model
+    assert "qwen2.5" in spec.model
 
 
 def test_cloud_utility_uses_vertex_flash(monkeypatch):
@@ -63,7 +63,7 @@ def test_cloud_utility_uses_vertex_flash(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
     spec = utility_llm_spec()
     assert spec.provider == "custom"
-    assert spec.model == "google/gemini-2.5-flash"
+    assert spec.model == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
     assert spec.api_key is None
     assert llm_spec_has_auth(spec)
@@ -77,7 +77,7 @@ def test_cloud_stale_kimi_env_still_uses_flash(monkeypatch):
     monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://api.moonshot.ai/v1")
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon-test")
     spec = utility_llm_spec()
-    assert spec.model == "google/gemini-2.5-flash"
+    assert spec.model == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
     assert spec.api_key is None
 
@@ -89,7 +89,7 @@ def test_cloud_stale_openrouter_env_uses_flash(monkeypatch):
     monkeypatch.setenv("MOYO_UTILITY_MODEL", "meta-llama/llama-3.1-8b-instruct")
     monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://openrouter.ai/api/v1")
     spec = utility_llm_spec()
-    assert spec.model == "google/gemini-2.5-flash"
+    assert spec.model == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
 
 
@@ -97,10 +97,10 @@ def test_cloud_dockerfile_flash_env(monkeypatch):
     _clear_runtime(monkeypatch)
     monkeypatch.setenv("MOYO_CLOUD_RUNTIME", "1")
     monkeypatch.setenv("MOYO_UTILITY_PROVIDER", "custom")
-    monkeypatch.setenv("MOYO_UTILITY_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setenv("MOYO_UTILITY_MODEL", "google/gemini-3.8-flash")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
     spec = utility_llm_spec()
-    assert spec.model == "google/gemini-2.5-flash"
+    assert spec.model == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
     assert spec.api_key is None
 
@@ -111,7 +111,7 @@ def test_utility_cluster_config_uses_vertex_flash(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
     cfg = utility_cluster_config({"batch_size": 10, "collapse": True})
     assert cfg["provider"] == "custom"
-    assert cfg["model"] == "google/gemini-2.5-flash"
+    assert cfg["model"] == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (cfg.get("base_url") or "")
     assert "api_key" not in cfg
     assert cfg["batch_size"] == 10
@@ -132,7 +132,7 @@ def test_vertex_flash_hosted_config_replaces_ollama_and_kimi(monkeypatch):
         }
     )
     assert cfg["provider"] == "custom"
-    assert cfg["model"] == "google/gemini-2.5-flash"
+    assert cfg["model"] == "google/gemini-3.8-flash"
     assert "aiplatform.googleapis.com" in (cfg.get("base_url") or "")
     assert "api_key" not in cfg
     assert cfg["collapse"] is True
@@ -145,7 +145,7 @@ def test_kimi_hosted_config_replaces_ollama_cluster(monkeypatch):
     cfg = kimi_hosted_config(
         {
             "provider": "ollama",
-            "model": "llama3.1:8b",
+            "model": "qwen2.5:7b",
             "base_url": "http://localhost:11434",
             "num_ctx": 16000,
             "collapse": True,
@@ -194,7 +194,7 @@ def test_vertex_rewrites_gemini_in_cloud(monkeypatch):
     out = rewrite_gemini_spec_for_vertex(spec)
     assert "aiplatform.googleapis.com" in (out.base_url or "")
     assert "/endpoints/openapi" in (out.base_url or "")
-    assert out.model == "google/gemini-2.5-pro"
+    assert out.model == "google/gemini-3.1-pro-preview"
     assert out.api_key is None
 
 
@@ -225,8 +225,8 @@ def test_vertex_gemini_model_maps_flash_vs_pro(monkeypatch):
     from moyo.llm.vertex import vertex_gemini_model
 
     monkeypatch.delenv("MOYO_VERTEX_GEMINI_MODEL", raising=False)
-    assert vertex_gemini_model("gemini-3.1-pro-preview") == "google/gemini-2.5-pro"
-    assert vertex_gemini_model("gemini-3.8-flash") == "google/gemini-2.5-flash"
+    assert vertex_gemini_model("gemini-3.1-pro-preview") == "google/gemini-3.1-pro-preview"
+    assert vertex_gemini_model("gemini-3.8-flash") == "google/gemini-3.8-flash"
 
 
 def test_get_retrieval_llms_keeps_ai_studio_gemini(monkeypatch):
@@ -278,7 +278,7 @@ def test_vertex_utility_model_honours_override(monkeypatch):
     from moyo.llm.vertex import vertex_utility_model
 
     monkeypatch.delenv("MOYO_VERTEX_UTILITY_MODEL", raising=False)
-    assert vertex_utility_model() == "google/gemini-2.5-flash"
+    assert vertex_utility_model() == "google/gemini-3.8-flash"
     monkeypatch.setenv("MOYO_VERTEX_UTILITY_MODEL", "gemini-2.0-flash")
     assert vertex_utility_model() == "google/gemini-2.0-flash"
 
@@ -293,7 +293,7 @@ def test_is_vertex_openai_url():
 def test_llm_spec_has_auth_vertex_without_key():
     spec = LLMSpec(
         provider="custom",
-        model="google/gemini-2.5-flash",
+        model="google/gemini-3.8-flash",
         base_url="https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi",
         api_key=None,
     )

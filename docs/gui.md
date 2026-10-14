@@ -219,7 +219,7 @@ close they land to corpus content. White-box operators: **paraphrase** and
 
 - `local` — embedding-only synonym shuffler (no API key, no server)
 - `ollama` — a **real local LLM** served by [Ollama](https://ollama.com);
-  defaults to `llama3.1:8b`; set **Base URL** if not on
+  defaults to `qwen2.5:7b`; set **Base URL** if not on
   `http://localhost:11434`. No API key required. See "Local LLM setup" below
   and [`configuration_and_monitoring_summary.md`](configuration_and_monitoring_summary.md)
   for WSL auto-start tips.
@@ -249,17 +249,17 @@ ollama serve
 
 # 3. Pull a model that fits your GPU. For an 8 GB card, a 7–8B model at the
 #    default Q4 quantisation is the sweet spot (~4.7 GB VRAM):
-ollama pull llama3.1:8b        # general default
+ollama pull qwen2.5:7b        # general default
 #   alternatives: qwen2.5:7b, mistral:7b, gemma2:9b (tighter fit)
 #   smaller / faster: llama3.2:3b, phi3:mini
 
 # 4. Verify from moyo:
-moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
+moyo-probe test-llm --llm-provider ollama --model qwen2.5:7b
 ```
 
 In the GUI, pick **Provider = ollama**, leave **Base URL** at the default,
 click **Start Ollama Serve** if needed, then **Test LLM Connection**. On the
-CLI, pass `--llm-provider ollama --model llama3.1:8b` (and `--base-url` if
+CLI, pass `--llm-provider ollama --model qwen2.5:7b` (and `--base-url` if
 remote).
 
 VRAM guidance for an 8 GB GPU:
@@ -269,7 +269,7 @@ VRAM guidance for an 8 GB GPU:
 | `llama3.2:3b`    | Q4    | ~3 GB | fastest, lightest                  |
 | `phi3:mini`      | Q4    | ~3 GB | strong for its size                |
 | `mistral:7b`     | Q4    | ~4.4 GB | solid all-rounder                |
-| `llama3.1:8b`    | Q4    | ~4.7 GB | recommended default              |
+| `qwen2.5:7b`    | Q4    | ~4.7 GB | recommended default              |
 | `qwen2.5:7b`     | Q4    | ~4.7 GB | good at instruction-following    |
 | `gemma2:9b`      | Q4    | ~6.5 GB | tight fit; close other GPU apps  |
 

@@ -30,7 +30,7 @@ class FuzzingConfig:
     # Core Configuration — local Ollama LLM for generation + vectors
     embedding_model: str = "all-MiniLM-L6-v2"
     llm_provider: str = "ollama"  # "ollama", "openai", "anthropic", "local"
-    model_name: str = "llama3.1:8b"
+    model_name: str = "qwen2.5:7b"
     api_key: Optional[str] = None
     base_url: Optional[str] = "http://localhost:11434"
     

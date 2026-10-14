@@ -284,7 +284,7 @@ def explore(
     ``summary.md``. ``--output`` is only valid for a single prompt.
 
     Rewords each prompt into several retrieval queries via the local Ollama
-    LLMFuzzer (``llama3.1:8b``, black-box — no target concept), sends each to
+    LLMFuzzer (``qwen2.5:7b``, black-box — no target concept), sends each to
     every configured retrieval LLM (closed API, open API, local) in parallel,
     and writes one markdown document of everything returned, marked by source.
     Configure the retrieval LLMs via ``config/retrieval_llms.json`` or

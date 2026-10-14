@@ -1,6 +1,6 @@
 """LLM-assisted fuzzing for barrier probing.
 
-Defaults to a locally running Ollama model (``llama3.1:8b``) for *generation*.
+Defaults to a locally running Ollama model (``qwen2.5:7b``) for *generation*.
 Semantic similarity / FAISS neighbour lookup uses the embedding model
 stored on the index (GUI default is BGE-base, 768-d). MiniLM is only the
 fallback when the index has no model recorded.
@@ -32,7 +32,7 @@ def embed(texts, model_name=None, **kwargs):
     return _embed(texts, model_name, **kwargs)
 
 
-DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
@@ -783,14 +783,14 @@ class LLMFuzzer:
     @classmethod
     def local_ollama(
         cls,
-        model_name: str = "llama3.1:8b",
+        model_name: str = "qwen2.5:7b",
         base_url: Optional[str] = None,
         max_tokens: int = 800,
         temperature: float = 0.7,
     ) -> "LLMFuzzer":
         """Build a fuzzer backed by a locally running Ollama model.
 
-        Defaults to ``llama3.1:8b`` — the same local model used for black-box
+        Defaults to ``qwen2.5:7b`` — the same local model used for black-box
         explore rewording. Under ``--test`` / ``MOYO_TEST_MODE``, returns a
         fake deterministic client instead of contacting Ollama.
         """

@@ -54,8 +54,8 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
         "max_seq_tokens": 512,
         "backend": "local",
         "tier": "balanced",
-        "label": "BGE-base — default / retrieval (768d)",
-        "description": "Default. Strong retrieval for short private phrases vs public text. English.",
+        "label": "BGE-base — retrieval (768d)",
+        "description": "Strong retrieval for short private phrases vs public text. English.",
     },
     "e5-base": {
         "model_name": "intfloat/e5-base-v2",
@@ -63,8 +63,8 @@ EMBEDDING_CATALOG: Dict[str, Dict[str, Any]] = {
         "max_seq_tokens": 512,
         "backend": "local",
         "tier": "balanced",
-        "label": "E5-base — retrieval (768d)",
-        "description": "Strong retrieval model. Prefers 'query: '/'passage: ' prefixes for best results.",
+        "label": "E5-base — default / retrieval (768d)",
+        "description": "Default. Strong retrieval model. Prefers 'query: '/'passage: ' prefixes for best results.",
     },
     "multilingual": {
         "model_name": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
@@ -100,7 +100,7 @@ EMBEDDING_MODELS: Dict[str, str] = {
     key: meta["model_name"] for key, meta in EMBEDDING_CATALOG.items()
 }
 
-DEFAULT_MODEL_KEY = "bge-base"
+DEFAULT_MODEL_KEY = "e5-base"
 DEFAULT_MODEL_NAME = EMBEDDING_MODELS[DEFAULT_MODEL_KEY]
 
 OPENAI_MODEL_NAMES = {

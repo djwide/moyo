@@ -64,7 +64,7 @@ class EmbeddingConfig(BaseSettings):
     """Embedding model configuration."""
     
     model_name: str = Field(
-        default="BAAI/bge-base-en-v1.5",
+        default="intfloat/e5-base-v2",
         description="Default embedding model"
     )
     device: str = Field(

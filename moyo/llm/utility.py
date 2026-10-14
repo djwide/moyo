@@ -1,7 +1,8 @@
 """Cheap utility LLM for rewording, translation, clustering, and summaries.
 
-Local desktop runs keep Ollama (``llama3.1:8b``). Cloud Run has no Ollama, so
-those jobs use Vertex Gemini Flash (``google/gemini-2.5-flash`` via ADC).
+Local desktop runs keep Ollama (``qwen2.5:7b``; Llama 3.3 is 70B-only on Ollama).
+Cloud Run has no Ollama, so
+those jobs use Vertex Gemini Flash (``google/gemini-3.8-flash`` via ADC).
 Override with ``MOYO_UTILITY_*`` / ``MOYO_VERTEX_UTILITY_MODEL``.
 """
 
@@ -15,7 +16,7 @@ from moyo.llm.client import LLMClient, LLMSpec, PARAPHRASER_TIMEOUT, ensure_env_
 
 logger = logging.getLogger(__name__)
 
-LOCAL_UTILITY_MODEL = "llama3.1:8b"
+LOCAL_UTILITY_MODEL = "qwen2.5:7b"
 LOCAL_UTILITY_BASE_URL = "http://localhost:11434"
 
 CLOUD_KIMI_PROVIDER = "custom"
@@ -45,6 +46,10 @@ def _stale_cloud_utility_pin(model: str, base_url: str) -> bool:
         or "kimi-k2" in name
         or "openrouter.ai" in url
         or "llama-3.1-8b" in name
+        or "llama3.1" in name
+        or "gemini-2.5" in name
+        or "gemini-2.0" in name
+        or "gemini-1.5" in name
     )
 
 
@@ -68,7 +73,7 @@ def utility_llm_spec() -> LLMSpec:
                 or os.environ.get("MOYO_OLLAMA_BASE_URL")
                 or LOCAL_UTILITY_BASE_URL
             ),
-            label=f"Llama 3.1 8B (local utility)",
+            label="Qwen 2.5 7B (local utility)",
             temperature=0.3,
             max_tokens=800,
             timeout=PARAPHRASER_TIMEOUT,

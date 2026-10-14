@@ -14,8 +14,8 @@ from shared_utils.model_config import DEFAULT_MODEL_KEY, DEFAULT_MODEL_NAME
 
 
 def test_default_embedding_is_bge_base():
-    assert DEFAULT_MODEL_KEY == "bge-base"
-    assert DEFAULT_MODEL_NAME == "BAAI/bge-base-en-v1.5"
+    assert DEFAULT_MODEL_KEY == "e5-base"
+    assert DEFAULT_MODEL_NAME == "intfloat/e5-base-v2"
     assert CorpusConfig().embedding_model == DEFAULT_MODEL_NAME
     assert IndexConfig().embedding_model == DEFAULT_MODEL_NAME
 

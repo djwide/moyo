@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
-# AI Studio preview ids 404 on Vertex us-central1. Override with
-# ``MOYO_VERTEX_GEMINI_MODEL`` (e.g. ``google/gemini-1.5-pro``).
-VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-2.5-pro"
+# Gemini 3.x publisher models use the ``global`` location (see ``vertex_openai_base_url``).
+# Override with ``MOYO_VERTEX_GEMINI_MODEL`` / ``MOYO_VERTEX_UTILITY_MODEL``.
+VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-3.1-pro-preview"
 # Hosted Ollama-replacement jobs (reword / extract / cluster / …).
 # Retrieval Gemini is not rewritten here; it stays on AI Studio.
-VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-2.5-flash"
+VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-3.8-flash"
 
 # Sized for a full retrieval fan-out (e.g. 7 models × 3 seeds = 21 POSTs)
 # plus paraphraser / utility calls on the same process. Too-low caps make
@@ -50,15 +50,19 @@ def vertex_location() -> str:
     return (
         os.environ.get("MOYO_VERTEX_LOCATION")
         or os.environ.get("MOYO_CLOUD_REGION")
-        or "us-central1"
+        or "global"
     ).strip()
 
 
 def vertex_openai_base_url(project: Optional[str] = None, location: Optional[str] = None) -> str:
     project = project or vertex_project()
     location = location or vertex_location()
+    if location == "global":
+        host = "aiplatform.googleapis.com"
+    else:
+        host = f"{location}-aiplatform.googleapis.com"
     return (
-        f"https://{location}-aiplatform.googleapis.com/v1/projects/"
+        f"https://{host}/v1/projects/"
         f"{project}/locations/{location}/endpoints/openapi"
     )
 
@@ -108,8 +112,8 @@ def _prefixed_gemini_id(model: str) -> str:
 def vertex_gemini_model(current: str = "") -> str:
     """Stable Vertex model id for a Gemini *retrieval* slot.
 
-    AI Studio preview ids (``gemini-3.1-pro-preview``, ``gemini-3.8-flash``)
-    are not available on Vertex us-central1, so we map to a GA Vertex id.
+    AI Studio retrieval ids stay on AI Studio; when pipeline code must run
+    Gemini on Vertex we map catalog names to Vertex publisher models.
     Flash catalog slots stay on Flash; everything else uses Pro unless
     ``MOYO_VERTEX_GEMINI_MODEL`` overrides.
     """

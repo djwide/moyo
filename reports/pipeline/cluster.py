@@ -558,7 +558,7 @@ def _make_ollama_client(llm_config: dict | None) -> Any:
     spec = LLMSpec.from_dict(
         {
             "provider": cfg.get("provider", "ollama"),
-            "model": cfg.get("model", "llama3.1:8b"),
+            "model": cfg.get("model", "qwen2.5:7b"),
             "base_url": cfg.get("base_url", "http://localhost:11434"),
             "api_key": cfg.get("api_key"),
             "temperature": float(cfg.get("temperature", 0.1)),
@@ -627,7 +627,7 @@ def cluster_claims(
                 client = _make_ollama_client(cfg)
                 print(
                     f"  cluster via {cfg.get('provider', 'ollama')}/"
-                    f"{cfg.get('model', 'llama3.1:8b')}",
+                    f"{cfg.get('model', 'qwen2.5:7b')}",
                     file=sys.stderr,
                 )
                 id_groups = group_claim_ids_with_ollama(

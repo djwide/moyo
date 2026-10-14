@@ -274,7 +274,7 @@ strategies with ``-S``; if answers truncate mid-bullet, raise retrieval
 stubs and can limit languages via ``reports/config.yaml`` ``chunk.*``.
 
 Rewording, foreign-response translation, clustering, and claims/narrative
-summary synthesis use a cheap utility LLM: Ollama `llama3.1:8b` on the desktop,
+summary synthesis use a cheap utility LLM: Ollama `qwen2.5:7b` on the desktop,
 or OpenRouter `meta-llama/llama-3.1-8b-instruct` on Cloud Run (override with
 `MOYO_UTILITY_*`; Moonshot Kimi is the fallback if `OPENROUTER_API_KEY` is
 missing). Retrieval fan-out still uses `config/retrieval_llms.json`. ``--workers`` caps concurrent
@@ -450,7 +450,7 @@ moyo-probe fuzz \
   -t "confidential information" \
   -i indexes/private \
   --llm-provider ollama \
-  --model llama3.1:8b
+  --model qwen2.5:7b
 ```
 
 Default call plan is paraphrase once, plus translate once each into
@@ -461,7 +461,7 @@ round the orchestrator prunes answers to the live node set.
 `--llm-provider` accepts `openai`, `anthropic`, `ollama` (local Ollama
 server), and `local` (embedding-only synonym transformer, no LLM). Default
 models per provider: OpenAI `gpt-4o`, Anthropic `claude-sonnet-4-6`, Ollama
-`llama3.1:8b`. See the GUI README for local LLM (Ollama) setup.
+`qwen2.5:7b`. See the GUI README for local LLM (Ollama) setup.
 
 #### Test LLM Configuration
 
@@ -473,7 +473,7 @@ moyo-probe test-llm \
   --api-key $OPENAI_API_KEY
 
 # Test a local Ollama model
-moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
+moyo-probe test-llm --llm-provider ollama --model qwen2.5:7b
 ```
 
 ### Corpus Search
@@ -881,7 +881,7 @@ from moyo.publicside.barrierprobe.llm_fuzzer import LLMFuzzerConfig
 
 config = LLMFuzzerConfig(
     llm_provider="ollama",   # openai | anthropic | ollama | custom | local
-    model_name="llama3.1:8b",
+    model_name="qwen2.5:7b",
     api_key=None,            # unused for ollama/local
     base_url="http://localhost:11434",
     whitebox_strategies=["paraphrase", "translate"],

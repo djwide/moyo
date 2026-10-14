@@ -375,6 +375,8 @@ def test_dockerfile_is_lean_cloud_worker():
     assert '".[reports,cloud,documents]"' in code
     assert "AS builder" in code
     assert "AS runner" in code
+    assert "pool_worker.py" in code
+    assert 'CMD ["cloud_worker.py"]' in code
     lowered = code.lower()
     assert "torch" not in lowered
     assert "sentence-transformers" not in lowered
@@ -1391,15 +1393,29 @@ def test_normalize_moyomap_extract_accepts_pdf_and_defaults_labels_off():
     assert context["textPath"].endswith(".pdf")
     assert context["autoLabel"] is False
     assert context["priorClaims"] == []
-    assert cw.normalize_moyomap_extract_context(
+    html = cw.normalize_moyomap_extract_context(
         {
             "projectId": "project_1",
             "runId": "run_1",
             "topic": "Acme",
             "textPath": "gs://bucket/moyomap-notes/project_1/run_1.html",
             "textSha256": "a" * 64,
+            "contentType": "text/html",
         }
-    ) == {}
+    )
+    assert html["textPath"].endswith(".html")
+    assert html["contentType"] == "text/html"
+    with pytest.raises(ValueError, match="not a supported document"):
+        cw.normalize_moyomap_extract_context(
+            {
+                "projectId": "project_1",
+                "runId": "run_1",
+                "topic": "Acme",
+                "textPath": "gs://bucket/moyomap-notes/project_1/run_1.png",
+                "textSha256": "a" * 64,
+            }
+        )
+    assert cw.normalize_moyomap_extract_context({}) == {}
 
 
 def test_wrap_moyomap_note_fences_user_query_headings():
@@ -1692,6 +1708,7 @@ def test_collect_artifacts_and_evidence(tmp_path: Path):
     )
     (tmp_path / "normalized_responses.json").write_text("[]", encoding="utf-8")
     (tmp_path / "provider_responses.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "llm_prompts.jsonl").write_text("", encoding="utf-8")
     evidence = cw.build_evidence(run_dir, prompt="Who killed JFK?")
     (tmp_path / "evidence.json").write_text(json.dumps(evidence), encoding="utf-8")
     (tmp_path / "llm-retrieval-check.md").write_text("# LLM Retrieval Check\n", encoding="utf-8")
@@ -1981,16 +1998,16 @@ def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch
 
     cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
     assert cfg["extract"]["provider"] == "custom"
-    assert cfg["extract"]["model"] == "google/gemini-2.5-flash"
+    assert cfg["extract"]["model"] == "google/gemini-3.8-flash"
     assert "api_key" not in cfg["extract"]
     assert "aiplatform.googleapis.com" in (cfg["extract"].get("base_url") or "")
     assert cfg["extract"].get("prompt") == "prompts/extract_claims.md"
     assert cfg["synthesize"]["provider"] == "custom"
-    assert cfg["synthesize"]["model"] == "google/gemini-2.5-flash"
+    assert cfg["synthesize"]["model"] == "google/gemini-3.8-flash"
     assert "api_key" not in cfg["synthesize"]
     assert "aiplatform.googleapis.com" in (cfg["synthesize"].get("base_url") or "")
     assert cfg["cluster"]["provider"] == "custom"
-    assert cfg["cluster"]["model"] == "google/gemini-2.5-flash"
+    assert cfg["cluster"]["model"] == "google/gemini-3.8-flash"
     assert "api_key" not in cfg["cluster"]
     assert "aiplatform.googleapis.com" in (cfg["cluster"].get("base_url") or "")
     assert "sk-test-openai" not in dest.read_text(encoding="utf-8")
@@ -2024,6 +2041,7 @@ def test_success_update_fields_awaiting_qc_when_qc_required():
         manifest={"orderId": "ord"},
     )
     assert fields["reportStatus"] == "awaiting_qc"
+    assert fields["completedAt"] == "2026-08-18T01:00:00+00:00"
     assert fields["qcStatus"] == "pending"
     assert fields["qcRequired"] is True
     assert fields["storageFolder"] == folder
@@ -2055,6 +2073,7 @@ def test_success_update_fields_delivered_when_qc_not_required():
     assert fields["reportStatus"] == "delivered"
     assert fields["qcStatus"] == "not_required"
     assert fields["deliveredAt"] == "2026-08-18T01:00:00+00:00"
+    assert fields["completedAt"] == "2026-08-18T01:00:00+00:00"
     assert fields["generationMode"] == "full"
     assert fields["output"]["jsonPath"] == f"reports/{spec.storage_folder}/report.json"
     assert fields["qcRequired"] is False
@@ -2176,6 +2195,7 @@ def test_retry_and_hold_update_fields():
     assert retry["reportStatus"] == "queued"
     assert retry["validationRetryCount"] == 1
     assert retry["reportStage"] is None
+    assert retry["completedAt"] is None
     hold = cw.hold_update_fields(
         validation=validation,
         retry_count=1,
@@ -2185,6 +2205,7 @@ def test_retry_and_hold_update_fields():
     assert hold["reportStatus"] == "held"
     assert hold["holdNotifyStatus"] == "pending"
     assert hold["reportStage"] == "validating"
+    assert hold["completedAt"] == "t1"
 
 
 def test_canonical_report_json_aggregates_prompts(tmp_path: Path):
@@ -2277,4 +2298,140 @@ def test_snapshot_scan_deadlines():
     assert cw.snapshot_scan_deadlines("exposure_data") == {}
     assert cw.snapshot_scan_deadlines("basis") == {}
     assert cw.snapshot_scan_deadlines("both") == {}
+
+
+def test_main_delegates_order_id_to_run_order(monkeypatch):
+    monkeypatch.setenv("ORDER_ID", "ord_abc")
+    monkeypatch.delenv("HEALTH_CHECK", raising=False)
+    monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
+    seen: dict[str, str] = {}
+
+    def _run(order_id: str) -> int:
+        seen["id"] = order_id
+        return 0
+
+    monkeypatch.setattr(cw, "run_order", _run)
+    assert cw.main() == 0
+    assert seen["id"] == "ord_abc"
+
+
+def test_main_order_json_without_order_id_uses_local(monkeypatch):
+    monkeypatch.delenv("ORDER_ID", raising=False)
+    monkeypatch.delenv("HEALTH_CHECK", raising=False)
+    monkeypatch.setenv("ORDER_JSON", "{}")
+    monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
+    seen: dict[str, str] = {}
+
+    def _run(order_id: str) -> int:
+        seen["id"] = order_id
+        return 0
+
+    monkeypatch.setattr(cw, "run_order", _run)
+    assert cw.main() == 0
+    assert seen["id"] == "local"
+
+
+def test_main_requires_order_id(monkeypatch):
+    monkeypatch.delenv("ORDER_ID", raising=False)
+    monkeypatch.delenv("ORDER_JSON", raising=False)
+    monkeypatch.delenv("HEALTH_CHECK", raising=False)
+    monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
+    monkeypatch.setattr(cw, "run_order", lambda _order_id: (_ for _ in ()).throw(AssertionError("called")))
+    assert cw.main() == 2
+
+
+def test_main_health_check_does_not_run_an_order(monkeypatch):
+    monkeypatch.setenv("HEALTH_CHECK", "1")
+    monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
+    monkeypatch.setattr(cw, "run_health_check_main", lambda: 0)
+    monkeypatch.setattr(cw, "run_order", lambda _order_id: (_ for _ in ()).throw(AssertionError("called")))
+    assert cw.main() == 0
+
+
+def _claim(data: dict, *, now: str = "2026-10-12T03:00:00+00:00"):
+    return cw.order_claim_updates(data, now=now, stale_after_seconds=3 * 60 * 60)
+
+
+def test_claim_moves_queued_order_to_processing():
+    action, updates = _claim({"reportStatus": "queued", "processingAttempt": 1})
+    assert action == "run"
+    assert updates is not None
+    assert updates["reportStatus"] == "processing"
+    assert updates["workerStartedAt"] == "2026-10-12T03:00:00+00:00"
+    assert updates["processingAttempt"] == 2
+    assert updates["completedAt"] is None
+
+
+def test_claim_acks_delivered_order():
+    action, updates = _claim(
+        {
+            "reportStatus": "delivered",
+            "processingAttempt": 1,
+            "workerStartedAt": "2026-10-12T00:00:00+00:00",
+            "completedAt": "2026-10-12T01:00:00+00:00",
+        }
+    )
+    assert action == "ack"
+    assert updates is None
+
+
+def test_claim_leaves_a_live_processing_order_alone():
+    action, updates = _claim(
+        {
+            "reportStatus": "processing",
+            "processingAttempt": 1,
+            "workerStartedAt": "2026-10-12T02:00:00+00:00",
+        }
+    )
+    assert action == "nack"
+    assert updates is None
+
+
+def test_claim_reclaims_a_stale_processing_order():
+    action, updates = _claim(
+        {
+            "reportStatus": "generating",
+            "processingAttempt": 1,
+            "workerStartedAt": "2026-10-11T00:00:00+00:00",
+        }
+    )
+    assert action == "run"
+    assert updates is not None
+    assert updates["reportStatus"] == "processing"
+    assert updates["processingAttempt"] == 2
+    assert updates["workerStartedAt"] == "2026-10-12T03:00:00+00:00"
+
+
+def test_find_support_keeps_only_grounded_corroborating_urls():
+    urls = cw.grounded_support_urls(
+        "See https://news.example/story. and later https://news.example/story",
+        "Also https://other.example/a)",
+    )
+    assert urls == ["https://news.example/story", "https://other.example/a"]
+    kept = cw.judge_corroborating_citations(
+        claim="Acme opened an office.",
+        urls=urls,
+        complete=lambda _prompt: json.dumps(
+            {"citations": ["https://news.example/story", "https://invented.example/nope"]}
+        ),
+    )
+    assert kept == ["https://news.example/story"]
+    assert (
+        cw.judge_corroborating_citations(
+            claim="Acme opened an office.",
+            urls=[],
+            complete=lambda _prompt: '{"citations":["https://news.example/story"]}',
+        )
+        == []
+    )
+    context = cw.normalize_moyomap_context(
+        {
+            "action": "find_support",
+            "parentNodeId": "claim_1",
+            "priorClaims": [{"nodeId": "claim_1", "claim": "Acme opened an office."}],
+        }
+    )
+    assert context["action"] == "find_support"
+    instructions = cw.moyomap_followup_instructions(context)
+    assert any("independent citations" in line for line in instructions)
 

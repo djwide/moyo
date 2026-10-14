@@ -231,7 +231,7 @@ _ENV_KEY_BY_PROVIDER = {
 _DEFAULT_MODEL_BY_PROVIDER = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-6",
-    "ollama": "llama3.1:8b",
+    "ollama": "qwen2.5:7b",
     "custom": "gpt-4o",
     "echo": "echo",
 }

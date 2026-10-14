@@ -39,7 +39,7 @@ cluster:
   # Local Ollama groups paraphrases of the same atomic fact (no Jaccard).
   # Cloud Run overlays Vertex Gemini Flash (no Ollama on the job).
   provider: ollama
-  model: llama3.1:8b
+  model: qwen2.5:7b
   base_url: http://localhost:11434
   temperature: 0.1
   max_tokens: 4000

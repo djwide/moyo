@@ -1,10 +1,17 @@
 """Cloud Run / GCE worker: Firestore order → explore → report → Storage.
 
-Triggered with ``ORDER_ID`` set. Reads ``reports/{ORDER_ID}`` (storefront
-collection; override with ``FIRESTORE_ORDERS_COLLECTION``), runs the same
-``moyo-gather explore`` + ``reports/build_report.py`` path used locally, then
-uploads artifacts to the dedicated reports bucket and writes storefront
-output paths.
+One-shot jobs run ``python cloud_worker.py``. ``main`` reads ``ORDER_ID`` and
+calls :func:`run_order`. A Worker Pool runs ``python pool_worker.py``, which
+stays up, pulls Pub/Sub messages, and calls the same function.
+
+``run_order`` reads ``reports/{order_id}`` (storefront collection; override
+with ``FIRESTORE_ORDERS_COLLECTION``), runs the same ``moyo-gather explore``
++ ``reports/build_report.py`` path used locally, then uploads artifacts to
+the dedicated reports bucket and writes storefront output paths.
+
+BYO orders (``billingMode=byok``) decrypt keys from
+``moyomap_user_llm_secrets/{byokUid}`` for that run only. On decrypt failure
+the worker keeps platform keys and sets ``byokFallback`` for the admin portal.
 
 Storefront order fields used here::
 
@@ -12,8 +19,11 @@ Storefront order fields used here::
     product              snapshot | basis | both   e.g. "basis"
     productId            moyo_snapshot | moyo_basis (optional)
     paymentStatus        informational
-    reportStatus         queued → generating → awaiting_qc | delivered | failed
+    reportStatus         queued → processing → generating → awaiting_qc | delivered | failed
                          | held (auto-validation failed after retry)
+    processingAttempt    incremented each time a worker claims the order
+    workerStartedAt      ISO-8601 UTC, set when that claim succeeds
+    completedAt          ISO-8601 UTC, set when the order reaches a terminal status
     reportStage          querying_models | analyzing_results | compiling_map |
                          generating_report | organizing_claims | validating
                          (live customer progress)
@@ -52,7 +62,7 @@ orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root
 
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
 summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
-(``google/gemini-2.5-flash`` via the job service account). Retrieval
+(``google/gemini-3.8-flash`` on Vertex ``global`` via the job service account). Retrieval
 fan-out uses each provider's own key, including Gemini
 on AI Studio (``GEMINI_API_KEY``).
 """
@@ -76,6 +86,13 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from moyo.byok_keys import (
+    apply_provider_env,
+    byok_firestore_fields,
+    resolve_customer_llm_keys,
+    restore_provider_env,
+    SECRETS_COLLECTION,
+)
 from moyo.llm.client import (
     ensure_env_loaded,
 )
@@ -744,7 +761,7 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     action = str(raw.get("action") or "").strip().lower()
-    if action not in {"initial", "investigate", "find_more"}:
+    if action not in {"initial", "investigate", "find_more", "find_support"}:
         return {}
     expansion_option = str(raw.get("expansionOption") or "").strip().lower()
     if expansion_option not in MOYOMAP_EXPANSION_OPTIONS:
@@ -816,9 +833,17 @@ def normalize_moyomap_organize_context(raw: Any) -> dict[str, Any]:
     }
 
 
+_MOYOMAP_NOTE_EXTENSIONS = frozenset({"md", "txt", "pdf", "docx", "html", "htm"})
+
+
 def normalize_moyomap_extract_context(raw: Any) -> dict[str, Any]:
-    """Validate the note pointer for an extract-only MoyoMap import."""
-    if not isinstance(raw, dict):
+    """Validate the note pointer for an extract-only MoyoMap import.
+
+    An empty or absent pointer stays empty so other order types are unchanged.
+    A pointer that is present but unusable raises, instead of looking like a
+    missing order. HTML imports store ``gs://…/moyomap-notes/{project}/{run}.html``.
+    """
+    if not isinstance(raw, dict) or not raw:
         return {}
     project_id = str(raw.get("projectId") or "").strip()
     run_id = str(raw.get("runId") or "").strip()
@@ -826,14 +851,20 @@ def normalize_moyomap_extract_context(raw: Any) -> dict[str, Any]:
     text_path = str(raw.get("textPath") or "").strip()
     text_sha256 = str(raw.get("textSha256") or "").strip().lower()
     content_type = str(raw.get("contentType") or raw.get("content_type") or "").strip()
-    if (
-        not project_id
-        or not run_id
-        or not topic
-        or not re.fullmatch(r"gs://[^/]+/moyomap-notes/[^/]+/[^/]+\.(?:md|txt|pdf|docx)", text_path)
-        or not re.fullmatch(r"[0-9a-f]{64}", text_sha256)
-    ):
-        return {}
+    if not project_id or not run_id or not topic:
+        raise ValueError("MoyoMap extract order is missing project, run, or topic.")
+    path_match = re.fullmatch(
+        r"gs://[^/]+/moyomap-notes/[^/]+/[^/]+\.([A-Za-z0-9]+)", text_path
+    )
+    extension = path_match.group(1).lower() if path_match else ""
+    if extension not in _MOYOMAP_NOTE_EXTENSIONS:
+        shown = text_path or "(empty)"
+        raise ValueError(
+            "MoyoMap extract note path is not a supported document "
+            f"({extension or 'no extension'}): {shown}"
+        )
+    if not re.fullmatch(r"[0-9a-f]{64}", text_sha256):
+        raise ValueError("MoyoMap extract note checksum is missing or invalid.")
     return {
         "projectId": project_id[:160],
         "runId": run_id[:160],
@@ -923,6 +954,11 @@ def moyomap_followup_instructions(context: dict[str, Any]) -> list[str]:
             "by research value (sensitivity, specificity, novelty, interestingness, "
             "confidence). Include every distinct, evidence-bearing finding."
         )
+    elif context.get("action") == "find_support":
+        instructions.append(
+            "This scan looks only for independent citations that corroborate the "
+            "record whose nodeId equals parentNodeId. Do not return new atomic claims."
+        )
     elif context.get("action") == "find_more":
         instructions.append(
             "Return new atomic claims ranked by research value (sensitivity, "
@@ -960,6 +996,161 @@ def moyomap_followup_instructions(context: dict[str, Any]) -> list[str]:
         "source, or connected fact may be returned as a new atomic claim."
     )
     return instructions
+
+
+_SUPPORT_URL_RE = re.compile(r"https?://[^\s\]\)<>\"']+", re.IGNORECASE)
+
+
+def grounded_support_urls(*texts: str, limit: int = 40) -> list[str]:
+    """HTTP(S) URLs that actually appear in retrieval text. Never invented."""
+    seen: set[str] = set()
+    urls: list[str] = []
+    for text in texts:
+        for match in _SUPPORT_URL_RE.findall(text or ""):
+            url = match.rstrip(".,);]")
+            key = url.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            urls.append(url)
+            if len(urls) >= limit:
+                return urls
+    return urls
+
+
+def parse_support_judgment(text: str, allowed: list[str]) -> list[str]:
+    """Keep only judged URLs that are in the grounded allow-list."""
+    match = re.search(r"\{.*\}", text or "", re.DOTALL)
+    if not match:
+        raise RuntimeError("Support judgment did not return JSON.")
+    try:
+        data = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Support judgment did not return JSON.") from exc
+    wanted = data.get("citations") if isinstance(data, dict) else None
+    if not isinstance(wanted, list):
+        raise RuntimeError("Support judgment did not return a citation list.")
+    allowed_by_key = {url.lower().rstrip("/"): url for url in allowed}
+    kept: list[str] = []
+    seen: set[str] = set()
+    for item in wanted:
+        raw = str(item or "").strip()
+        found = _SUPPORT_URL_RE.search(raw)
+        url = (found.group(0) if found else raw).rstrip(".,);]")
+        key = url.lower().rstrip("/")
+        canonical = allowed_by_key.get(key)
+        if not canonical or key in seen:
+            continue
+        seen.add(key)
+        kept.append(canonical)
+    return kept
+
+
+def judge_corroborating_citations(
+    *,
+    claim: str,
+    urls: list[str],
+    complete,
+) -> list[str]:
+    """Ask the utility model which grounded URLs affirm the claim."""
+    if not urls:
+        return []
+    numbered = "\n".join(f"{index}. {url}" for index, url in enumerate(urls, start=1))
+    prompt = (
+        "Which of these URLs independently corroborate the claim?\n"
+        f"Claim: {claim}\n\n"
+        f"URLs:\n{numbered}\n\n"
+        'Return JSON {"citations": ["url", ...]} containing only URLs from the '
+        "list that affirm the claim as stated. Omit contradictions, qualifications, "
+        "topic-only mentions, and URLs that are not in the list. If none qualify, "
+        'return {"citations": []}. Do not invent URLs.'
+    )
+    text = complete(prompt)
+    return parse_support_judgment(text, urls)
+
+
+def _parent_claim_text(context: dict[str, Any]) -> str:
+    parent_id = str(context.get("parentNodeId") or "")
+    for item in context.get("priorClaims") or []:
+        if isinstance(item, dict) and str(item.get("nodeId") or "") == parent_id:
+            return str(item.get("claim") or "").strip()
+    return ""
+
+
+def _finish_find_support_run(
+    spec: OrderSpec,
+    *,
+    prompt: str,
+    index: int,
+    slug: str,
+    prompt_dir: Path,
+    run_id: str,
+    run_dir: Path,
+) -> PromptRun:
+    """Retrieval plus a citation judgment. No claim extraction."""
+    exploration = ""
+    exploration_path = prompt_dir / "exploration.md"
+    if exploration_path.is_file():
+        exploration = exploration_path.read_text(encoding="utf-8")
+    provider = ""
+    provider_path = prompt_dir / "provider_responses.jsonl"
+    if provider_path.is_file():
+        provider = provider_path.read_text(encoding="utf-8")
+    context = spec.moyomap_context or {}
+    urls = grounded_support_urls(exploration, provider)
+    claim = _parent_claim_text(context) or prompt
+    if urls:
+        from moyo.llm.utility import get_utility_llm
+
+        utility = get_utility_llm()
+        kept = judge_corroborating_citations(
+            claim=claim,
+            urls=urls,
+            complete=lambda text: utility.complete(text, temperature=0),
+        )
+    else:
+        kept = []
+    result = {"outcome": "found" if kept else "none", "citations": kept}
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_dir / "support_result.json").write_text(
+        json.dumps(result, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (run_dir / "claims.jsonl").write_text("", encoding="utf-8")
+    (run_dir / "report_data.json").write_text(
+        json.dumps({"findings": [], "findings_all": [], "counts": {}}, indent=2),
+        encoding="utf-8",
+    )
+    (run_dir / "tree_layout.json").write_text(
+        json.dumps({"placements": []}, indent=2),
+        encoding="utf-8",
+    )
+    evidence = {
+        "prompt": prompt,
+        "topic": context.get("topic"),
+        "findings": [],
+        "claims": [],
+        "counts": {},
+        "support": result,
+    }
+    (prompt_dir / "evidence.json").write_text(
+        json.dumps(evidence, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    run = PromptRun(
+        index=index,
+        prompt=prompt,
+        slug=slug,
+        run_id=run_id,
+        artifacts=collect_artifacts(prompt_dir, run_dir, spec.product),
+    )
+    write_prompt_report_json(prompt_dir, spec, run, evidence=evidence)
+    missing = [name for name in required_artifacts(spec) if name not in run.artifacts]
+    if missing:
+        raise RuntimeError(
+            f"Missing required artifacts for {prompt!r}: {', '.join(missing)}"
+        )
+    return run
 
 
 def moyomap_exploration_prompt(prompt: str, context: dict[str, Any] | None) -> str:
@@ -1305,6 +1496,9 @@ def compact_finding(row: dict[str, Any]) -> dict[str, Any]:
     citations = list(row.get("citations") or [])
     if citations:
         out["citations"] = citations
+    summary = " ".join(str(row.get("summary") or "").split())
+    if summary:
+        out["summary"] = summary
     return out
 
 
@@ -1465,6 +1659,7 @@ def success_update_fields(
     fields: dict[str, Any] = {
         "generationStartedAt": started,
         "generationFinishedAt": finished,
+        "completedAt": finished,
         "generationMode": spec.generation_mode,
         "artifactPaths": urls,
         "reportManifest": manifest,
@@ -1537,6 +1732,7 @@ def retry_update_fields(
         "validation": validation.to_firestore(),
         "generationStartedAt": started,
         "generationFinishedAt": finished,
+        "completedAt": None,
         "jobLaunchStatus": _job_launch_clear_value(),
         "error": validation.summary()[:2000],
     }
@@ -1557,6 +1753,7 @@ def hold_update_fields(
         "holdNotifyStatus": "pending",
         "generationStartedAt": started,
         "generationFinishedAt": finished,
+        "completedAt": finished,
         "error": validation.summary()[:2000],
     }
 
@@ -1777,6 +1974,7 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         "basis-report.html": output / "basis-report.html",
         "report_data.json": run_dir / "report_data.json",
         "tree_layout.json": run_dir / "tree_layout.json",
+        "support_result.json": work / "support_result.json",
         "claims.jsonl": run_dir / "claims.jsonl",
         "chunks.jsonl": run_dir / "chunks.jsonl",
         "extract_issues.json": run_dir / "extract_issues.json",
@@ -2040,6 +2238,17 @@ def _run_one_prompt_logged(
         "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in provider_rows),
         encoding="utf-8",
     )
+    if str((spec.moyomap_context or {}).get("action") or "") == "find_support":
+        run_dir = prompt_dir / "report_runs" / run_id
+        return _finish_find_support_run(
+            spec,
+            prompt=prompt,
+            index=index,
+            slug=slug,
+            prompt_dir=prompt_dir,
+            run_id=run_id,
+            run_dir=run_dir,
+        )
     pipeline_notes = note_explore_gaps(prompt_dir, prompt)
 
     cfg_path = _write_report_config(prompt_dir, spec, run_id)
@@ -3162,6 +3371,18 @@ def _load_order_data(order_id: str) -> tuple[dict[str, Any], Any | None]:
     )
 
 
+def _load_user_llm_secrets(uid: str) -> dict[str, Any]:
+    """Sealed customer keys from ``moyomap_user_llm_secrets/{uid}``."""
+    if _skip_firebase():
+        raise RuntimeError("Firebase is skipped; customer keys are unavailable.")
+    from firebase_admin import firestore
+
+    _init_firebase_app()
+    snap = firestore.client().collection(SECRETS_COLLECTION).document(uid).get()
+    stored = (snap.to_dict() or {}).get("providers")
+    return stored if isinstance(stored, dict) else {}
+
+
 def _upload_runs(
     bucket, spec: OrderSpec, runs: list[PromptRun], *, work: Path
 ) -> dict[str, Any]:
@@ -3215,6 +3436,8 @@ def run_exposure_preview(
             "generationMode": "exposure_preview",
             "generationStartedAt": started,
             "generationFinishedAt": finished,
+            "completedAt": finished,
+            "deliveredAt": finished,
             "preview": preview,
             "output": {
                 "jsonPath": f"{spec.reports_prefix()}/preview.json",
@@ -3596,24 +3819,191 @@ def run_health_check_main() -> int:
         return 1
 
 
-def main() -> int:
-    logging.basicConfig(
-        level=os.environ.get("MOYO_LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+# A second Pub/Sub delivery must not start another run. These statuses mean
+# the order already finished this generation.
+_CLAIM_ACK_STATUSES = frozenset(
+    {
+        "delivered",
+        "awaiting_qc",
+        "approved",
+        "qc_pending",
+        "held",
+        "failed",
+    }
+)
+_CLAIM_IN_PROGRESS_STATUSES = frozenset({"processing", "generating"})
+_DEFAULT_ORDER_STALE_SECONDS = 3 * 60 * 60
+
+
+@dataclass(frozen=True)
+class OrderClaim:
+    """Result of trying to claim ``reports/{orderId}`` for one worker."""
+
+    action: str
+    report_status: str = ""
+    processing_attempt: int = 0
+
+
+def _processing_attempt(data: dict[str, Any]) -> int:
+    raw = data.get("processingAttempt", 0)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def order_stale_after_seconds() -> float:
+    """How long a processing claim may sit before another worker may take it."""
+    raw = os.environ.get("MOYO_ORDER_STALE_SECONDS") or os.environ.get(
+        "MOYO_POOL_MAX_LEASE_SECONDS"
     )
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            logger.warning("ignoring invalid order stale seconds %r", raw)
+    return float(_DEFAULT_ORDER_STALE_SECONDS)
+
+
+def _claim_is_stale(
+    data: dict[str, Any], *, now: str, stale_after_seconds: float
+) -> bool:
+    started = _parse_utc(data.get("workerStartedAt") or data.get("generationStartedAt"))
+    current = _parse_utc(now)
+    if started is None or current is None:
+        return True
+    return (current - started).total_seconds() >= stale_after_seconds
+
+
+def order_claim_updates(
+    data: dict[str, Any],
+    *,
+    now: str,
+    stale_after_seconds: float,
+) -> tuple[str, dict[str, Any] | None]:
+    """Decide whether this worker may run the order.
+
+    ``queued`` becomes ``processing`` inside a transaction. ``delivered`` and
+    the other finished statuses are acknowledged without running. A live
+    ``processing`` or ``generating`` order is left for the worker that claimed
+    it; a claim older than the lease can be taken again.
+    """
+    status = str(data.get("reportStatus") or "").strip().lower()
+    if status in _CLAIM_ACK_STATUSES:
+        return "ack", None
+    stale = status in _CLAIM_IN_PROGRESS_STATUSES and _claim_is_stale(
+        data, now=now, stale_after_seconds=stale_after_seconds
+    )
+    if status == "queued" or stale:
+        attempt = _processing_attempt(data) + 1
+        return (
+            "run",
+            {
+                "reportStatus": "processing",
+                "workerStartedAt": now,
+                "processingAttempt": attempt,
+                "completedAt": None,
+            },
+        )
+    if status in _CLAIM_IN_PROGRESS_STATUSES:
+        return "nack", None
+    return "ack", None
+
+
+def claim_queued_order(order_id: str) -> OrderClaim:
+    """Transactionally claim a queued order, or report that it should not run."""
+    if os.environ.get("ORDER_JSON") or _skip_firebase():
+        return OrderClaim("run")
+    _init_firebase_app()
+    from firebase_admin import firestore
+
+    db = firestore.client()
+    ref = None
+    for collection in _orders_collection_candidates():
+        candidate = db.collection(collection).document(order_id)
+        if candidate.get().exists:
+            ref = candidate
+            break
+    if ref is None:
+        return OrderClaim("run")
+
+    now = utc_now()
+    stale_after = order_stale_after_seconds()
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def _apply(transaction: Any, order_ref: Any) -> OrderClaim:
+        snap = order_ref.get(transaction=transaction)
+        data = snap.to_dict() if snap.exists else None
+        if not data:
+            return OrderClaim("run")
+        action, updates = order_claim_updates(
+            data, now=now, stale_after_seconds=stale_after
+        )
+        if updates:
+            transaction.update(order_ref, updates)
+        attempt = int(updates["processingAttempt"]) if updates else _processing_attempt(data)
+        status = "processing" if updates else str(data.get("reportStatus") or "")
+        return OrderClaim(action, status, attempt)
+
+    decision = _apply(transaction, ref)
+    logger.info(
+        "order %s claim %s (status=%s attempt=%s)",
+        order_id,
+        decision.action,
+        decision.report_status,
+        decision.processing_attempt,
+    )
+    return decision
+
+
+def run_order(order_id: str, *, already_claimed: bool = False) -> int:
+    """Run one storefront order and return a process status code.
+
+    ``0`` means the order finished (including a validation retry or hold,
+    which this function records itself) or it was already done. ``1`` means
+    it failed. Callers pass ``order_id`` directly. The Cloud Run Job
+    entrypoint still reads ``ORDER_ID`` and then calls this. The pool worker
+    claims the order first and passes ``already_claimed=True``.
+    """
     ensure_env_loaded()
-    if is_health_check_request():
-        return run_health_check_main()
-    order_id = os.environ.get("ORDER_ID") or ""
-    if not order_id and os.environ.get("ORDER_JSON"):
-        order_id = "local"
-    if not order_id:
-        logger.error("ORDER_ID is required")
-        return 2
+    os.environ["ORDER_ID"] = order_id
+    if not already_claimed:
+        decision = claim_queued_order(order_id)
+        if decision.action == "ack":
+            logger.info(
+                "order %s is %s; skipping",
+                order_id,
+                decision.report_status or "finished",
+            )
+            return 0
+        if decision.action == "nack":
+            logger.info(
+                "order %s is %s; another worker owns it",
+                order_id,
+                decision.report_status or "processing",
+            )
+            return 0
 
     order_ref = None
     spec = None
     started = utc_now()
+    previous_env: dict[str, str | None] | None = None
     try:
         data, order_ref = _load_order_data(order_id)
         spec = parse_order(order_id, data)
@@ -3636,6 +4026,21 @@ def main() -> int:
             order_ref.update(fields)
 
         retry_count = parse_validation_retry_count(data)
+        byok = resolve_customer_llm_keys(data, load_secrets=_load_user_llm_secrets)
+        if byok.used:
+            previous_env = apply_provider_env(byok.env)
+            logger.info(
+                "order %s using customer keys for %s",
+                spec.order_id,
+                ",".join(byok.providers),
+            )
+        elif byok.attempted:
+            logger.warning(
+                "order %s BYO fallback %s (%s)",
+                spec.order_id,
+                byok.fallback,
+                byok.detail or "",
+            )
 
         def _set_stage(name: str) -> None:
             _mark(
@@ -3645,25 +4050,26 @@ def main() -> int:
                 }
             )
 
-        _mark(
-            {
-                "reportStatus": "generating",
-                "reportStage": (
-                    "compiling_map"
-                    if spec.generation_mode == "moyomap_report"
-                    else "extracting_claims"
-                    if spec.generation_mode == "moyomap_extract"
-                    else "organizing_claims"
-                    if spec.generation_mode == "moyomap_organize"
-                    else "querying_models"
-                ),
-                "generationStartedAt": started,
-                "generationFinishedAt": None,
-                "storageFolder": spec.storage_folder,
-                "title": firestore_title,
-                "error": None,
-            }
-        )
+        generating: dict[str, Any] = {
+            "reportStatus": "generating",
+            "reportStage": (
+                "compiling_map"
+                if spec.generation_mode == "moyomap_report"
+                else "extracting_claims"
+                if spec.generation_mode == "moyomap_extract"
+                else "organizing_claims"
+                if spec.generation_mode == "moyomap_organize"
+                else "querying_models"
+            ),
+            "generationStartedAt": started,
+            "generationFinishedAt": None,
+            "completedAt": None,
+            "storageFolder": spec.storage_folder,
+            "title": firestore_title,
+            "error": None,
+        }
+        generating.update(byok_firestore_fields(byok, now=started))
+        _mark(generating)
         if spec.generation_mode == "exposure_preview":
             return run_exposure_preview(spec, mark=_mark, started=started)
 
@@ -3825,6 +4231,7 @@ def main() -> int:
         if order_ref is not None:
             try:
                 message = f"{type(exc).__name__}: {exc}"[:2000]
+                finished = utc_now()
                 if isinstance(exc, ModelRerunIncomplete):
                     order_ref.update(
                         {
@@ -3833,7 +4240,8 @@ def main() -> int:
                             ),
                             "qcStatus": "pending",
                             "generationStartedAt": started,
-                            "generationFinishedAt": utc_now(),
+                            "generationFinishedAt": finished,
+                            "completedAt": finished,
                             "error": message,
                             "incompleteRetrievalModels": list(exc.incomplete_models or []),
                         }
@@ -3850,14 +4258,16 @@ def main() -> int:
                             "packagedStatus": "failed",
                             "packagedError": message,
                             "generationStartedAt": started,
-                            "generationFinishedAt": utc_now(),
+                            "generationFinishedAt": finished,
+                            "completedAt": finished,
                         }
                     )
                 else:
                     fail_fields: dict[str, Any] = {
                         "reportStatus": "failed",
                         "generationStartedAt": started,
-                        "generationFinishedAt": utc_now(),
+                        "generationFinishedAt": finished,
+                        "completedAt": finished,
                         "error": message,
                     }
                     if spec is not None and is_moyomap_map_pipeline(spec):
@@ -3866,6 +4276,26 @@ def main() -> int:
             except Exception:
                 logger.exception("failed to write error status")
         return 1
+    finally:
+        restore_provider_env(previous_env)
+
+
+def main() -> int:
+    """One-shot Cloud Run Job entrypoint. Exits after a single order."""
+    logging.basicConfig(
+        level=os.environ.get("MOYO_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    ensure_env_loaded()
+    if is_health_check_request():
+        return run_health_check_main()
+    order_id = os.environ.get("ORDER_ID") or ""
+    if not order_id and os.environ.get("ORDER_JSON"):
+        order_id = "local"
+    if not order_id:
+        logger.error("ORDER_ID is required")
+        return 2
+    return run_order(order_id)
 
 
 if __name__ == "__main__":

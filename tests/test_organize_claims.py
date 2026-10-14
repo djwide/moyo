@@ -540,6 +540,42 @@ def test_document_to_text_rejects_empty_and_reads_notes():
         raise AssertionError("blank notes must fail")
 
 
+def test_html_extracts_reader_visible_text():
+    page = """<!DOCTYPE html>
+<html>
+<head>
+  <title>Acme filing</title>
+  <style>.secret { color: red; }</style>
+  <script>const token = "should-not-appear";</script>
+</head>
+<body>
+  <nav>Home About Careers Products Login Menu Footer Skip</nav>
+  <!-- tracker-id-should-not-appear -->
+  <main>
+    <h1>Acme opened a Cayman office</h1>
+    <p>The subsidiary was formed in 2019 by AT&amp;T partners.</p>
+    <p style="display: none">Hidden tracker id 999</p>
+    <div hidden>Not shown to readers</div>
+    <img alt="Office plaque">
+  </main>
+  <footer>Copyright boilerplate that is outside the article.</footer>
+</body>
+</html>
+"""
+    text = document_to_text(page.encode("utf-8"), ".html")
+    assert text.startswith("Acme filing")
+    assert "Acme opened a Cayman office" in text
+    assert "AT&T partners" in text
+    assert "Office plaque" in text
+    assert "should-not-appear" not in text
+    assert "tracker-id-should-not-appear" not in text
+    assert "Hidden tracker" not in text
+    assert "Not shown" not in text
+    assert "Copyright boilerplate" not in text
+    assert "Home About" not in text
+    assert document_to_text(b"<p>A short memo.</p>", ".htm") == "A short memo."
+
+
 def test_pdf_and_docx_use_extractors(monkeypatch):
     import reports.pipeline.documents as documents
 

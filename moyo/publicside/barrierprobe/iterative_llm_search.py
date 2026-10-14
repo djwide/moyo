@@ -26,7 +26,7 @@ class IterativeLLMSearch:
         Args:
             barrier_analyzer: Barrier analyzer with loaded indexes
             llm_client: LLM client for generating responses. Defaults to local
-                Ollama ``llama3.1:8b``.
+                Ollama ``qwen2.5:7b``.
         """
         self.barrier_analyzer = barrier_analyzer
         if llm_client is not None:

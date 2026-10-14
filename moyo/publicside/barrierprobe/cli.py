@@ -30,8 +30,8 @@ logger = get_logger(__name__)
 _DEFAULT_MODEL_BY_PROVIDER = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-6",
-    "ollama": "llama3.1:8b",
-    "local": "llama3.1:8b",
+    "ollama": "qwen2.5:7b",
+    "local": "qwen2.5:7b",
 }
 
 # Retired Anthropic snapshot IDs → current replacements
@@ -144,8 +144,8 @@ def cli(verbose: bool, debug: bool, test_mode: bool):
 @click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local', 'test']), help='LLM provider')
 @click.option(
     '--model',
-    default='llama3.1:8b',
-    help='LLM model (default Ollama llama3.1:8b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
+    default='qwen2.5:7b',
+    help='LLM model (default Ollama qwen2.5:7b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')
@@ -626,8 +626,8 @@ def calibrate(public_index, private_index, profile, output):
 @click.option('--llm-provider', default='ollama', type=click.Choice(['openai', 'anthropic', 'ollama', 'custom', 'local', 'test']), help='LLM provider')
 @click.option(
     '--model',
-    default='llama3.1:8b',
-    help='LLM model (default Ollama llama3.1:8b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
+    default='qwen2.5:7b',
+    help='LLM model (default Ollama qwen2.5:7b; OpenAI: gpt-4o; Anthropic: claude-sonnet-4-6; custom: your endpoint model)',
 )
 @click.option('--api-key', default=None, help='API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY)')
 @click.option('--base-url', default=None, help='Endpoint for Ollama or a custom OpenAI-compatible server (e.g. http://localhost:8000/v1)')

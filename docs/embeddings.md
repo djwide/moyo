@@ -10,7 +10,7 @@ Configuration:
 
 | Setting | Env / config | Default |
 | ------- | ------------ | ------- |
-| Model   | `MOYO_EMBEDDING_MODEL_NAME` | `BAAI/bge-base-en-v1.5` |
+| Model   | `MOYO_EMBEDDING_MODEL_NAME` | `intfloat/e5-base-v2` |
 | Device  | `MOYO_EMBEDDING_DEVICE` | `auto` (`cuda` when PyTorch sees a GPU, else `cpu`) |
 | Batch   | `MOYO_EMBEDDING_BATCH_SIZE` | `32` |
 | Normalize | `MOYO_EMBEDDING_NORMALIZE` | `true` (required for FlatIP = cosine) |
@@ -50,15 +50,15 @@ is GPU-accelerated. That is usually the bottleneck for index builds.
 | **Fast** | `mini` | `all-MiniLM-L6-v2` | 384 | Prototyping and CPU-only iteration. English only. |
 | **Fast+** | `mini-l12` | `all-MiniLM-L12-v2` | 384 | Modest quality bump; **same 384d layout** as L6 (re-embed, no FAISS dim change). Still CPU-friendly. |
 | **Balanced** | `mpnet` | `all-mpnet-base-v2` | 768 | Strong local STS model. Prefer GPU for bulk builds. |
-| **Default / retrieval** | `bge-base` | `BAAI/bge-base-en-v1.5` | 768 | Default. Best local match for short private phrases vs public text. English. |
-| **Balanced / retrieval** | `e5-base` | `intfloat/e5-base-v2` | 768 | Strong retrieval; best with `query:` / `passage:` prefixes (not applied automatically today). |
+| **Balanced / retrieval** | `bge-base` | `BAAI/bge-base-en-v1.5` | 768 | Strong local match for short private phrases vs public text. English. |
+| **Default / retrieval** | `e5-base` | `intfloat/e5-base-v2` | 768 | Default. Strong retrieval; best with `query:` / `passage:` prefixes (not applied automatically today). |
 | **Multilingual** | `multilingual` | `paraphrase-multilingual-mpnet-base-v2` | 768 | Non-English (or mixed) public/private corpora. |
 | **API** | `openai-small` | `text-embedding-3-small` | 1536 | Highest convenience / quality via API. **Private text leaves the machine.** Needs `OPENAI_API_KEY`. |
 | **API** | `openai-large` | `text-embedding-3-large` | 3072 | Max API quality; costlier; same privacy caveat. |
 
 ### Practical guidance for moyo
 
-1. **Use `bge-base`** (the default) for private and public indexes.
+1. **Use `e5-base`** (the default) for private and public indexes.
 2. Drop to **MiniLM-L6** only for CPU-only prototyping; rebuild both sides
    before comparing distances.
 3. Use **`multilingual`** only if language coverage requires it.

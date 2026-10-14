@@ -1,2 +1,2 @@
-default_embedding: BAAI/bge-base-en-v1.5
+default_embedding: intfloat/e5-base-v2
 default_index: FlatL2

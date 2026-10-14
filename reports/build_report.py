@@ -738,6 +738,20 @@ def main(argv: list[str] | None = None) -> int:
             for cid, members in groups.items()
         ]
 
+    if claims and (want("cluster") or want("score")):
+        from pipeline.summarize import attach_claim_summaries
+
+        written = attach_claim_summaries(claims, dry_run=bool(args.dry_run))
+        summarized = sum(1 for claim in claims if str(claim.get("summary") or "").strip())
+        if written:
+            with claims_path.open("w", encoding="utf-8") as f:
+                for claim in claims:
+                    f.write(json.dumps(claim, ensure_ascii=False) + "\n")
+            print(
+                f"  → summaries on {summarized}/{len(claims)} claims → {claims_path}",
+                file=sys.stderr,
+            )
+
     if want("score"):
         print("[3] score → report_data.json", file=sys.stderr)
         if exploration and exploration.exists():

@@ -1,5 +1,5 @@
 {
-  "model_key": "bge-base",
-  "model_name": "BAAI/bge-base-en-v1.5",
+  "model_key": "e5-base",
+  "model_name": "intfloat/e5-base-v2",
   "last_updated": null
 }

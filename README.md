@@ -117,7 +117,7 @@ moyo-probe test-llm --llm-provider openai --model gpt-4o
 
 # Local LLM via Ollama (no API key)
 moyo-probe fuzz -p "phrase" -t "target" -i corpus.index \
-  --llm-provider ollama --model llama3.1:8b
+  --llm-provider ollama --model qwen2.5:7b
 ```
 
 `--llm-provider` accepts `openai`, `anthropic`, `ollama`, `custom`, and `local`.

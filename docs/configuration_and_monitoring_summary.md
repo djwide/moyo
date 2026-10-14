@@ -137,7 +137,7 @@ export MOYO_PIPELINE_BATCH_SIZE=2000
 export MOYO_PIPELINE_MAX_WORKERS=8
 
 # Embedding
-export MOYO_EMBEDDING_MODEL_NAME=BAAI/bge-base-en-v1.5
+export MOYO_EMBEDDING_MODEL_NAME=intfloat/e5-base-v2
 export MOYO_EMBEDDING_DEVICE=auto   # or cuda | cpu
 
 # FAISS
@@ -164,7 +164,7 @@ take precedence):
 MOYO_ENVIRONMENT=production
 MOYO_LOG_LEVEL=INFO
 MOYO_PROMETHEUS_PORT=8000
-MOYO_EMBEDDING_MODEL_NAME=BAAI/bge-base-en-v1.5
+MOYO_EMBEDDING_MODEL_NAME=intfloat/e5-base-v2
 MOYO_EMBEDDING_DEVICE=cuda
 ```
 
@@ -180,8 +180,8 @@ Three related configs for `moyo-gather explore`:
 
 | Role | Where | Used for |
 |------|--------|----------|
-| **Utility LLM** | Desktop: Ollama (`llama3.1:8b` @ `127.0.0.1:11434`). Cloud Run: OpenRouter Llama 3.1 8B Instruct (`OPENROUTER_API_KEY`, override `MOYO_UTILITY_*`) | Seed rewording + translating foreign answers + claim clustering |
-| **Summary LLM** | Same utility LLM; desktop also honours `MOYO_SUMMARY_*` (default `llama3.1:8b`, `num_ctx=32768`) | Narrative summary + claims brief (`summary.md`); prefers points of precision |
+| **Utility LLM** | Desktop: Ollama (`qwen2.5:7b` @ `127.0.0.1:11434`). Cloud Run: OpenRouter Llama 3.1 8B Instruct (`OPENROUTER_API_KEY`, override `MOYO_UTILITY_*`) | Seed rewording + translating foreign answers + claim clustering |
+| **Summary LLM** | Same utility LLM; desktop also honours `MOYO_SUMMARY_*` (default `qwen2.5:7b`, `num_ctx=32768`) | Narrative summary + claims brief (`summary.md`); prefers points of precision |
 | **Deliverable LLM** | Grok / xAI via `MOYO_DELIVERABLE_*` (default `grok-4.5`, key `XAI_API_KEY`) | Formal `deliverable.md` (exposure, evidence graph, findings, mitigation) |
 | **Default LLM** | `MOYO_LLM_*` in `.env` | Other moyo paths; explore retrieval override via CLI `--provider` |
 | **Retrieval LLMs** | `config/retrieval_llms.json` (or `MOYO_RETRIEVAL_LLMS`) | Fan-out: each seed is sent to every listed model |
@@ -217,7 +217,7 @@ networking. Install the Linux binary in WSL instead:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
 ```
 
 **2. Keep the server running**
@@ -259,9 +259,9 @@ the example):
 ```json
 {
   "provider": "ollama",
-  "model": "llama3.1:8b",
+  "model": "qwen2.5:7b",
   "base_url": "http://localhost:11434",
-  "label": "Local Ollama (llama3.1:8b)"
+  "label": "Local Ollama (qwen2.5:7b)"
 }
 ```
 
@@ -270,7 +270,7 @@ LLM (rewording + summary), set in `.env`:
 
 ```bash
 MOYO_LLM_PROVIDER=ollama
-MOYO_LLM_MODEL=llama3.1:8b
+MOYO_LLM_MODEL=qwen2.5:7b
 MOYO_LLM_BASE_URL=http://127.0.0.1:11434
 ```
 
@@ -281,7 +281,7 @@ MOYO_LLM_BASE_URL=http://127.0.0.1:11434
 moyo-gather check-llms
 
 # Or through the fuzzer / default-LLM path
-moyo-probe test-llm --llm-provider ollama --model llama3.1:8b
+moyo-probe test-llm --llm-provider ollama --model qwen2.5:7b
 ```
 
 If the API is down, explore still runs other retrieval LLMs; preflight marks

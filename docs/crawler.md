@@ -53,7 +53,7 @@ python reports/build_report.py \
   --run-id what_is_the_recipe_for_coca_cola
 ```
 
-Claims / narrative synthesis uses **local Ollama** (`llama3.1:8b` by default), not the remote `MOYO_LLM_*` default. Ollama’s default context window is only ~2048–4096 tokens even though Llama 3.1 can go much higher; moyo raises it via `MOYO_SUMMARY_NUM_CTX` (default `32768`). Larger `num_ctx` needs more RAM/VRAM.
+Claims / narrative synthesis uses **local Ollama** (`qwen2.5:7b` by default), not the remote `MOYO_LLM_*` default. Ollama’s default context window is only ~2048–4096 tokens even though Llama 3.1 can go much higher; moyo raises it via `MOYO_SUMMARY_NUM_CTX` (default `32768`). Larger `num_ctx` needs more RAM/VRAM.
 
 Outputs land under `projects/<slug>/public_sources/` (or `<output-dir>/<prompt-slug>/` when `--output-dir` is given):
 
@@ -71,7 +71,7 @@ Outputs land under `projects/<slug>/public_sources/` (or `<output-dir>/<prompt-s
 | **basic** | Rotate `original → paraphrase` in English. `--seeds 2` does each once; `4` does each twice. No translate. Add `-S abstract`, `-S translate`, `-S typo`, or `-S shuffle` a la carte. |
 | **multilingual** | For English and each target language, rotate `original / paraphrase`. `--seeds` is **per language group**. Defaults: Spanish, French, Mandarin Chinese (+ `--language`). |
 
-Seed generation uses the **local Ollama fuzzer** (`llama3.1:8b`), not the remote default LLM.
+Seed generation uses the **local Ollama fuzzer** (`qwen2.5:7b`), not the remote default LLM.
 
 ### Pipeline
 

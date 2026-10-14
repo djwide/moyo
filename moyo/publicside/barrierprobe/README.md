@@ -2,7 +2,7 @@
 
 This module provides LLM-assisted fuzzing capabilities for semantic barrier probing, allowing you to use large language models to intelligently transform phrases and reduce semantic distance to target concepts.
 
-Supported providers: `openai` (default model `gpt-4o`), `anthropic` (default `claude-sonnet-4-6`), `ollama` (local models such as `llama3.1:8b`, no API key), `custom` (any OpenAI-compatible endpoint via `--base-url` / `base_url` — vLLM, LM Studio, Together, Groq, OpenRouter, DeepSeek, llama.cpp server, etc.), and `local` (embedding-only synonym transformer, no LLM/API required).
+Supported providers: `openai` (default model `gpt-4o`), `anthropic` (default `claude-sonnet-4-6`), `ollama` (local models such as `qwen2.5:7b`, no API key), `custom` (any OpenAI-compatible endpoint via `--base-url` / `base_url` — vLLM, LM Studio, Together, Groq, OpenRouter, DeepSeek, llama.cpp server, etc.), and `local` (embedding-only synonym transformer, no LLM/API required).
 
 ```bash
 # Any OpenAI-compatible server (vLLM, LM Studio, Together, Groq, OpenRouter, ...):
@@ -100,7 +100,7 @@ moyo-probe test-llm --llm-provider openai --model gpt-4
 class LLMFuzzerConfig:
     # LLM Configuration
     llm_provider: str = "ollama"   # "openai" | "anthropic" | "ollama" | "custom" | "local"
-    model_name: str = "llama3.1:8b"
+    model_name: str = "qwen2.5:7b"
     api_key: Optional[str] = None
     base_url: Optional[str] = None  # Ollama endpoint (default http://localhost:11434)
     max_tokens: int = 500

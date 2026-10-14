@@ -2859,7 +2859,7 @@ class FuzzerTab(QWidget):
         self.provider_combo.currentTextChanged.connect(self._on_provider_changed)
         llm_layout.addRow("Provider:", self.provider_combo)
 
-        self.model_input = QLineEdit("llama3.1:8b")
+        self.model_input = QLineEdit("qwen2.5:7b")
         llm_layout.addRow("Model:", self.model_input)
 
         self.api_key_input = QLineEdit()
@@ -3012,7 +3012,7 @@ class FuzzerTab(QWidget):
     def _on_provider_changed(self, provider: str):
         suggested = {
             "local": "all-MiniLM-L6-v2",
-            "ollama": "llama3.1:8b",
+            "ollama": "qwen2.5:7b",
             "openai": "gpt-4o",
             "anthropic": "claude-sonnet-4-6",
             "custom": "",

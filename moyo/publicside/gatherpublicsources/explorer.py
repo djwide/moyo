@@ -111,7 +111,7 @@ CLAIMS_SUMMARY_SYSTEM = (
 )
 
 # Local Ollama model used for explore/summarize synthesis (not retrieval fan-out).
-DEFAULT_SUMMARY_OLLAMA_MODEL = "llama3.1:8b"
+DEFAULT_SUMMARY_OLLAMA_MODEL = "qwen2.5:7b"
 DEFAULT_SUMMARY_NUM_CTX = 32768
 DEFAULT_SUMMARY_PER_SOURCE_CHARS = 700
 
@@ -345,7 +345,7 @@ def reword_prompt(
     """Reword a naive ``prompt`` into distinct retrieval queries.
 
     Black-box: uses :class:`~moyo.publicside.barrierprobe.llm_fuzzer.LLMFuzzer`
-    with the runtime utility LLM (local Ollama ``llama3.1:8b`` on the desktop;
+    with the runtime utility LLM (local Ollama ``qwen2.5:7b`` on the desktop;
     Vertex Gemini Flash on Cloud Run). No target concept is
     supplied — explore only diversifies the user's request for retrieval.
 
@@ -762,7 +762,7 @@ def retrieve(
 def get_summary_llm(override: Optional[LLMClient] = None) -> LLMClient:
     """LLM used for exploration narrative + claims summaries.
 
-    Defaults to local Ollama (``llama3.1:8b``) on the desktop, or Vertex
+    Defaults to local Ollama (``qwen2.5:7b``) on the desktop, or Vertex
     Gemini Flash on Cloud Run, with an enlarged ``num_ctx`` so
     multi-source corpora fit. Override with a configured client (e.g. CLI
     ``--provider``), or via ``MOYO_SUMMARY_MODEL`` / ``MOYO_SUMMARY_NUM_CTX`` /

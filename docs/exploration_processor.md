@@ -85,7 +85,7 @@ reports/
 |-------------|-----|
 | A completed `exploration.md` | Input document (from `moyo-gather explore`) |
 | Optional `summary.md` | Improves executive synthesis if present; not required for lossless claim extraction |
-| Working LLM for extraction | Default: local Ollama (`llama3.1:8b`) or override in `reports/config.yaml` |
+| Working LLM for extraction | Default: local Ollama (`qwen2.5:7b`) or override in `reports/config.yaml` |
 | Python env with WeasyPrint + Jinja2 | HTML → PDF |
 | Disk space under `reports/build/` | Intermediate JSON + SVG + HTML + PDF |
 
@@ -347,7 +347,7 @@ then.
 | Knob | Typical | Effect |
 |------|---------|--------|
 | `cluster.provider` | `ollama` locally; Cloud Run overlays a hosted utility LLM | Same-fact grouping |
-| `cluster.model` | `llama3.1:8b` locally; OpenRouter `meta-llama/llama-3.1-8b-instruct` in cloud | Utility model |
+| `cluster.model` | `qwen2.5:7b` locally; OpenRouter `meta-llama/llama-3.1-8b-instruct` in cloud | Utility model |
 | `cluster.base_url` | `http://localhost:11434` locally; OpenRouter in cloud | Utility endpoint |
 | `cluster.batch_size` | `35` | Claims per grouping call |
 | `cluster.collapse` | `true` | Merge similar claims into one (false = annotate only) |

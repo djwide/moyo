@@ -275,7 +275,7 @@ class LocalHypothesisGenerator:
 class HypothesisGenerationConfig:
     """Configuration for hypothesis generation."""
     llm_provider: str = "ollama"  # "openai", "anthropic", "ollama", "local"
-    model_name: str = "llama3.1:8b"
+    model_name: str = "qwen2.5:7b"
     api_key: Optional[str] = None
     base_url: Optional[str] = "http://localhost:11434"
     max_hypotheses_per_document: int = 3
