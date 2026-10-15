@@ -1,16 +1,29 @@
-# Build + push the Cloud Run worker, then update job moyo-report-worker-no-vpc.
+# Build + push the Cloud Run worker image, then update:
+#   - Cloud Run job moyo-report-worker-no-vpc (one-shot / health checks)
+#   - Cloud Run worker pool moyo-interactive-worker (Pub/Sub pool_worker.py)
+#
 # This file is NOT run on GitHub push. CI (.github/workflows/ci.yml) only
 # runs tests. Deploy with:
 #   gcloud builds submit --config=cloudbuild.yaml --project=senteguard-website
-# Console: https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
-#          https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker-no-vpc?project=senteguard-website
+#
+# Console:
+#   https://console.cloud.google.com/cloud-build/builds?project=senteguard-website
+#   https://console.cloud.google.com/run/jobs/details/us-central1/moyo-report-worker-no-vpc?project=senteguard-website
+#   https://console.cloud.google.com/run/workerpools/details/us-central1/moyo-interactive-worker?project=senteguard-website
 #
 # Tag with $BUILD_ID (always set). $COMMIT_SHA is empty on a local
 # `gcloud builds submit` and produced worker: which Cloud Build rejects.
 #
+# Outside the repo: Cloud Build SA needs run.admin (or worker pool update) on
+# senteguard-website; optional Cloud Build trigger on moyo main. See moyo/docs/cloud_deploy.md
+#
 # User-managed Cloud Build SAs require an explicit log destination.
 options:
   logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-central1
+  _WORKER_POOL: moyo-interactive-worker
 
 steps:
   - name: gcr.io/cloud-builders/docker
@@ -42,7 +55,23 @@ steps:
       - --image
       - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
       - --region
-      - us-central1
+      - ${_REGION}
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - worker-pools
+      - update
+      - ${_WORKER_POOL}
+      - --image
+      - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}
+      - --region
+      - ${_REGION}
+      - --command
+      - python
+      - --args
+      - pool_worker.py
 
 images:
   - us-central1-docker.pkg.dev/senteguard-website/moyo/worker:${BUILD_ID}

@@ -540,6 +540,18 @@ def test_document_to_text_rejects_empty_and_reads_notes():
         raise AssertionError("blank notes must fail")
 
 
+def test_documents_extra_includes_html_extractors():
+    text = Path(__file__).resolve().parents[1].joinpath("pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("documents = [")
+    block = text[start : text.index("]", start)]
+    assert "pdfminer.six" in block
+    assert "python-docx" in block
+    assert "beautifulsoup4" in block
+    assert "lxml" in block
+
+
 def test_html_extracts_reader_visible_text():
     page = """<!DOCTYPE html>
 <html>

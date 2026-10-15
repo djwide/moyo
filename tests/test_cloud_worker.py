@@ -373,6 +373,7 @@ def test_dockerfile_is_lean_cloud_worker():
         if line.strip() and not line.lstrip().startswith("#")
     )
     assert '".[reports,cloud,documents]"' in code
+    assert "HTML text extraction" in text
     assert "AS builder" in code
     assert "AS runner" in code
     assert "pool_worker.py" in code
