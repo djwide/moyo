@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from moyo.order_storage import order_storage_folder, with_leading_sort_stamp, sort_stamp_from_text
+from moyo.report_storage import gcloud_access_token
 
 ProgressFn = Callable[[str], None]
 
@@ -176,16 +177,6 @@ def _gcloud_output(args: list[str]) -> str:
         err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
         raise RuntimeError(f"{' '.join(args)}\n{err}")
     return (proc.stdout or "").strip()
-
-
-def gcloud_access_token() -> str:
-    token = _gcloud_output(["gcloud", "auth", "print-access-token"])
-    if not token:
-        raise RuntimeError(
-            "gcloud auth print-access-token returned empty. "
-            "Run `gcloud auth login` (and `gcloud auth application-default login` if needed)."
-        )
-    return token.splitlines()[0].strip()
 
 
 def write_firestore_order(

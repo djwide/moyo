@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -172,8 +173,28 @@ def upload_files(bucket: Any, pairs: list[tuple[str, Path]]) -> dict[str, str]:
     return urls
 
 
+def gcloud_access_token() -> str:
+    """User token from the local gcloud CLI. Cloud Run uses ADC instead."""
+    proc = subprocess.run(
+        ["gcloud", "auth", "print-access-token"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+        raise RuntimeError(f"gcloud auth print-access-token\n{err}")
+    token = (proc.stdout or "").strip()
+    if not token:
+        raise RuntimeError(
+            "gcloud auth print-access-token returned empty. "
+            "Run `gcloud auth login` (and `gcloud auth application-default login` if needed)."
+        )
+    return token.splitlines()[0].strip()
+
+
 def reports_bucket(bucket: Any | None = None):
-    """Return a ``google.cloud.storage`` bucket (ADC, then gcloud user token)."""
+    """Return a ``google.cloud.storage`` bucket (ADC, then local gcloud token)."""
     if bucket is not None:
         return bucket
     try:
@@ -190,7 +211,6 @@ def reports_bucket(bucket: Any | None = None):
     except Exception:
         logger.debug("GCS ADC unavailable; trying gcloud access token", exc_info=True)
         from google.oauth2.credentials import Credentials
-        from moyo.gui.cloud_compute import gcloud_access_token
 
         client = gcs.Client(
             project=project,
