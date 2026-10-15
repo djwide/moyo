@@ -2,7 +2,7 @@ from graphics.heatmap import model_heatmap_svg
 from graphics.style import models_with_results
 
 
-def test_models_with_results_drops_silent_and_unprobed_labels():
+def test_models_with_results_keeps_silent_probed_and_drops_unprobed():
     findings = [
         {
             "source_model": "ChatGPT (OpenAI gpt-4o)",
@@ -19,10 +19,13 @@ def test_models_with_results_drops_silent_and_unprobed_labels():
             "ChatGPT (OpenAI gpt-4o)",
             "Claude (Anthropic Sonnet)",
         ],
-    ) == ["ChatGPT (OpenAI gpt-4o)"]
+    ) == [
+        "ChatGPT (OpenAI gpt-4o)",
+        "Claude (Anthropic Sonnet)",
+    ]
 
 
-def test_heatmap_rows_are_probed_models_that_returned_findings():
+def test_heatmap_rows_are_the_full_probed_roster():
     findings = [
         {
             "claim_id": "C0001",
@@ -40,13 +43,13 @@ def test_heatmap_rows_are_probed_models_that_returned_findings():
     ]
     probed = [
         "ChatGPT (OpenAI gpt-4o)",
-        "Claude (Anthropic Sonnet)",  # probed, no findings — omit
+        "Claude (Anthropic Sonnet)",  # probed, no findings — keep as empty row
         "Grok (xAI grok-4.5)",
     ]
     svg = model_heatmap_svg(findings, models_probed=probed)
     assert "ChatGPT" in svg
-    assert "Claude" not in svg
-    assert "Grok" not in svg
+    assert "Claude" in svg
+    assert "Grok" in svg
     assert "MysteryBot" not in svg
 
 

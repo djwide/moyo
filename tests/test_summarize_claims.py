@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from reports.pipeline.summarize import (
     attach_claim_summaries,
@@ -117,9 +120,10 @@ def test_backfill_skips_sections_and_existing_summaries():
 
 def test_backfill_write_sets_summary_only():
     import sys
-    from pathlib import Path
 
     webpage = Path(__file__).resolve().parents[2] / "moyomapwebpage"
+    if not (webpage / "backfill_claim_summaries.py").is_file():
+        pytest.skip("moyomapwebpage is not checked out next to moyo")
     sys.path.insert(0, str(webpage))
     from backfill_claim_summaries import write_summaries
 

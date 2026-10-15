@@ -1,4 +1,5 @@
 from moyo.exposure_preview import estimate_exposure_preview
+from moyo.publicside.barrierprobe.llm_fuzzer import BASIC_FUZZ_STRATEGIES
 
 
 def test_preview_is_stable_and_avoids_word_counts():
@@ -11,7 +12,8 @@ def test_preview_is_stable_and_avoids_word_counts():
     assert "wordCount" not in first
     assert first["modelsPlus"] >= 8
     assert first["promptCyclesPlus"] >= 3
-    assert first["strategiesPlus"] == 3
+    assert first["strategiesPlus"] == len(BASIC_FUZZ_STRATEGIES)
+    assert first["strategiesPlus"] == 2
     assert 3 <= first["snapshot"]["notableExposures"] <= 10
     assert 8 <= first["basis"]["inventoryFindings"] <= 25
     assert first["snapshot"]["notableExposures"] <= first["basis"]["inventoryFindings"]
