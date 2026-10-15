@@ -66,6 +66,10 @@ cloud = [
     "google-cloud-pubsub>=2.18.0",
     "cryptography>=42.0.0",
 ]
+dev = [
+    "pytest>=8",
+    "jinja2>=3.1",
+]
 
 [project.scripts]
 moyo = "moyo.cli:cli"

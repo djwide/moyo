@@ -55,8 +55,8 @@ pytest tests/ -v
 ```
 
 The CI workflow (`.github/workflows/ci.yml`) runs on every push and pull
-request: it installs the package with `pip install -e ".[embeddings,ingest]"`,
-smoke-tests the public imports, and then runs `pytest`.
+request: it installs the package with `pip install -e ".[embeddings,ingest,dev]"`,
+smoke-tests the public imports, and then runs `python -m pytest`.
 
 ## Code Style
 
