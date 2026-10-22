@@ -268,6 +268,23 @@ def test_normalize_moyomap_context_rejects_unknown_labels_and_options():
     assert normalized["expansionOption"] == ""
     assert normalized["priorClaims"][0]["customerLabel"] is None
     assert normalized["priorClaims"][0]["section"] is False
+    assert normalized["priorClaims"][0]["sourceModels"] == []
+    assert normalized["replyLanguage"] == ""
+    labeled_models = cw.normalize_moyomap_context(
+        {
+            "action": "find_more",
+            "replyLanguage": "French",
+            "priorClaims": [
+                {
+                    "nodeId": "claim_1",
+                    "claim": "Claim text",
+                    "sourceModels": ["openai:gpt-4o", "openai:gpt-4o", "anthropic:claude"],
+                }
+            ],
+        }
+    )
+    assert labeled_models["replyLanguage"] == "French"
+    assert labeled_models["priorClaims"][0]["sourceModels"] == ["openai:gpt-4o", "anthropic:claude"]
 
     sectioned = cw.normalize_moyomap_context(
         {
@@ -388,6 +405,29 @@ def test_orders_collection_defaults_to_reports(monkeypatch):
     monkeypatch.delenv("FIRESTORE_ORDERS_COLLECTION", raising=False)
     monkeypatch.delenv("FIRESTORE_COLLECTION", raising=False)
     assert cw._orders_collection_candidates()[0] == "reports"
+
+
+def test_map_type_report_voice_is_kept():
+    spec = cw.parse_order(
+        "ord_dd",
+        {
+            "product": "snapshot",
+            "prompts": ["Compile commercial due diligence from public sources on Acme."],
+            "scanAudience": "due_diligence",
+            "source": "moyomap",
+        },
+    )
+    assert spec.scan_audience == "due_diligence"
+    corporate = cw.parse_order(
+        "ord_corp",
+        {
+            "product": "snapshot",
+            "prompts": ["What do AI systems already know about Acme?"],
+            "scanAudience": "corporate_investigations",
+            "source": "moyomap",
+        },
+    )
+    assert corporate.scan_audience == "corporate_investigations"
 
 
 def test_opposition_defaults_web_search_to_selected_models():
@@ -1999,16 +2039,16 @@ def test_write_report_config_overlays_hosted_cluster(tmp_path: Path, monkeypatch
 
     cfg = yaml.safe_load(dest.read_text(encoding="utf-8"))
     assert cfg["extract"]["provider"] == "custom"
-    assert cfg["extract"]["model"] == "google/gemini-3.8-flash"
+    assert cfg["extract"]["model"] == "google/gemini-3.1-flash-lite"
     assert "api_key" not in cfg["extract"]
     assert "aiplatform.googleapis.com" in (cfg["extract"].get("base_url") or "")
     assert cfg["extract"].get("prompt") == "prompts/extract_claims.md"
     assert cfg["synthesize"]["provider"] == "custom"
-    assert cfg["synthesize"]["model"] == "google/gemini-3.8-flash"
+    assert cfg["synthesize"]["model"] == "google/gemini-3.1-flash-lite"
     assert "api_key" not in cfg["synthesize"]
     assert "aiplatform.googleapis.com" in (cfg["synthesize"].get("base_url") or "")
     assert cfg["cluster"]["provider"] == "custom"
-    assert cfg["cluster"]["model"] == "google/gemini-3.8-flash"
+    assert cfg["cluster"]["model"] == "google/gemini-3.1-flash-lite"
     assert "api_key" not in cfg["cluster"]
     assert "aiplatform.googleapis.com" in (cfg["cluster"].get("base_url") or "")
     assert "sk-test-openai" not in dest.read_text(encoding="utf-8")
@@ -2304,16 +2344,22 @@ def test_snapshot_scan_deadlines():
 def test_main_delegates_order_id_to_run_order(monkeypatch):
     monkeypatch.setenv("ORDER_ID", "ord_abc")
     monkeypatch.delenv("HEALTH_CHECK", raising=False)
+    monkeypatch.delenv("MOYO_ORDER_ALREADY_CLAIMED", raising=False)
     monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
-    seen: dict[str, str] = {}
+    seen: dict[str, object] = {}
 
-    def _run(order_id: str) -> int:
+    def _run(order_id: str, *, already_claimed: bool = False) -> int:
         seen["id"] = order_id
+        seen["claimed"] = already_claimed
         return 0
 
     monkeypatch.setattr(cw, "run_order", _run)
     assert cw.main() == 0
-    assert seen["id"] == "ord_abc"
+    assert seen == {"id": "ord_abc", "claimed": False}
+    # pool_worker.py claims first, then runs the order in a child process.
+    monkeypatch.setenv("MOYO_ORDER_ALREADY_CLAIMED", "1")
+    assert cw.main() == 0
+    assert seen["claimed"] is True
 
 
 def test_main_order_json_without_order_id_uses_local(monkeypatch):
@@ -2323,7 +2369,7 @@ def test_main_order_json_without_order_id_uses_local(monkeypatch):
     monkeypatch.setattr(cw, "ensure_env_loaded", lambda: None)
     seen: dict[str, str] = {}
 
-    def _run(order_id: str) -> int:
+    def _run(order_id: str, *, already_claimed: bool = False) -> int:
         seen["id"] = order_id
         return 0
 

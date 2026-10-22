@@ -18,8 +18,9 @@ from pipeline.graphics import ASSET_NAMES
 from pipeline.model_dossiers import build_model_dossiers
 from pipeline.synthesize import parse_executive_payload
 from pipeline.audience import (
-    OPPOSITION,
+    opposition_shaped,
     disclosure_class as audience_disclosure_class,
+    lead_labels,
     normalize_audience,
     profile as audience_profile,
     retain_finding,
@@ -1133,9 +1134,9 @@ def build_content_doc(
     page_rows = _english_rows(shown)
     top["badges"] = []
     # Opposition one-pager ranks verified and needs-verification separately.
-    onepage_verified = page_rows[:4] if voice == OPPOSITION else []
+    onepage_verified = page_rows[:4] if opposition_shaped(voice) else []
     onepage_needs_verification = (
-        _english_rows(parked)[:4] if voice == OPPOSITION else []
+        _english_rows(parked)[:4] if opposition_shaped(voice) else []
     )
     specific_findings = [row for row in page_rows if row.get("claim_id") != top_id][
         :specific_cap
@@ -1146,10 +1147,8 @@ def build_content_doc(
     onepage_more = [
         row for row in page_rows if row.get("claim_id") not in used_ids
     ][:onepage_more_cap]
-    reserve_label = {
-        "competitive": "Commercially sensitive",
-        "security": "Security relevant",
-    }.get(voice)
+    labels = lead_labels(voice)
+    reserve_label = labels[0] if labels else None
     if reserve_label:
         placed = used_ids | {row.get("claim_id") for row in onepage_more} | {
             row.get("claim_id") for row in abridged

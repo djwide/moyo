@@ -363,6 +363,44 @@ def test_resolve_audience_prefers_cli_then_wrap_over_prior_org():
     )
 
 
+def test_map_type_voices_rename_bands_and_keep_their_id():
+    from pipeline.audience import disclosure_bin, normalize_audience, profile
+
+    hot = _claim(sensitivity=5, novelty=1)
+    mid = _claim(sensitivity=3, novelty=1)
+    expected = {
+        "corporate_investigations": ("Material", "Follow up", "Corporate investigation"),
+        "due_diligence": ("Decision-critical", "Qualify", "Due diligence"),
+        "red_teaming": ("Exposed", "Harden", "Red teaming"),
+        "incident": ("Pivotal", "Timeline", "Incident record"),
+        "other": ("Significant", "Notable", "Research map"),
+    }
+    for voice, (top, second, kicker) in expected.items():
+        assert normalize_audience(voice) == voice
+        assert disclosure_class(hot, voice) == top
+        assert disclosure_class(mid, voice) == second
+        assert profile(voice)["kicker"] == kicker
+        assert disclosure_bin(hot, voice) != "security_relevant"
+
+
+def test_map_type_wraps_infer_their_voice():
+    from pipeline.audience import infer_audience_from_text, normalize_audience
+
+    assert infer_audience_from_text(
+        "Compile commercial due diligence from public sources on Acme."
+    ) == "due_diligence"
+    assert infer_audience_from_text(
+        "Map what public sources already show about the security posture of Acme."
+    ) == "red_teaming"
+    assert infer_audience_from_text(
+        "Reconstruct the public record of this incident or event: the outage."
+    ) == "incident"
+    assert infer_audience_from_text(
+        "Research this topic from public information: transformers."
+    ) == "other"
+    assert normalize_audience("not-a-voice") == "organization"
+
+
 def test_stock_headlines_cover_every_voice():
     from pipeline.audience import AUDIENCE_CHOICES, profile, stock_headlines
 

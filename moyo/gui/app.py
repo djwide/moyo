@@ -941,6 +941,11 @@ _REPORT_AUDIENCE_ITEMS = (
     ("competitive", "Competitive intelligence"),
     ("security", "Security exposure"),
     ("opposition", "Opposition research"),
+    ("corporate_investigations", "Corporate investigation"),
+    ("due_diligence", "Due diligence"),
+    ("red_teaming", "Red teaming"),
+    ("incident", "Incident record"),
+    ("other", "Free form"),
 )
 
 
@@ -961,9 +966,10 @@ def _make_audience_combo(*, include_auto: bool = True) -> QComboBox:
             continue
         combo.addItem(label, value)
     combo.setToolTip(
-        "Report voice. Auto infers opposition / personal / organization "
-        "from a storefront-style wrap in the prompt or exploration.md. "
-        "Competitive and security share a wrap — pick security explicitly. "
+        "Report voice. Auto infers a voice from a storefront or map-type "
+        "wrap in the prompt or exploration.md. Competitive and security "
+        "share a wrap — pick security explicitly. Corporate investigations "
+        "use that same wrap, so pick the corporate voice explicitly. "
         "Rebuild from the score stage (or earlier) to apply a new voice."
     )
     return combo

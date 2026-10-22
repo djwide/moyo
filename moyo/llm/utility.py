@@ -2,7 +2,7 @@
 
 Local desktop runs keep Ollama (``qwen2.5:7b``; Llama 3.3 is 70B-only on Ollama).
 Cloud Run has no Ollama, so
-those jobs use Vertex Gemini Flash (``google/gemini-3.8-flash`` via ADC).
+those jobs use Vertex Gemini Flash-Lite (``google/gemini-3.1-flash-lite`` via ADC).
 Override with ``MOYO_UTILITY_*`` / ``MOYO_VERTEX_UTILITY_MODEL``.
 """
 

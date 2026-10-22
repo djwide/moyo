@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -820,6 +821,58 @@ def apply_document_graph(
             kept_ids = [row["claim_id"] for row in claims]
             if not claims:
                 raise RuntimeError("No claims fit the import theme.")
+    # Review labels do not depend on the layout, so that call runs alongside it.
+    label_pool = ThreadPoolExecutor(max_workers=3)
+    labels_future = (
+        label_pool.submit(suggest_review_labels, claims, client=utility)
+        if auto_label and utility is not None and claims
+        else None
+    )
+    try:
+        sections, parents, existing_depths = _layout_claims(
+            claims,
+            report=report,
+            utility=utility,
+            anchors=anchors,
+            attach=attach,
+            document_import=document_import,
+            focus=focus,
+            existing_depths=existing_depths,
+            pool=label_pool,
+        )
+        labels = labels_future.result() if labels_future is not None else {}
+    finally:
+        label_pool.shutdown(wait=False, cancel_futures=True)
+    layout = build_tree_layout(
+        topic=str(report.get("topic") or ""),
+        claims=claims,
+        sections=sections,
+        parents=parents,
+        labels=labels,
+        existing_depths=existing_depths or None,
+    )
+    if theme_filtered:
+        layout["theme_filtered"] = True
+        layout["kept_claim_ids"] = kept_ids or []
+    (run_dir / "tree_layout.json").write_text(
+        json.dumps(layout, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _layout_claims(
+    claims: list[dict[str, Any]],
+    *,
+    report: dict[str, Any],
+    utility: Any,
+    anchors: list[dict[str, Any]],
+    attach: bool,
+    document_import: bool,
+    focus: str,
+    existing_depths: dict[str, int],
+    pool: ThreadPoolExecutor,
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, int]]:
+    """Sections and claim parents for ``apply_document_graph``."""
     if document_import and utility is not None and claims:
         layout_theme = focus or str(report.get("topic") or "")
         if attach and anchors:
@@ -855,34 +908,12 @@ def apply_document_graph(
             organize_claims(to_group, client=utility) if len(to_group) >= 2 else []
         )
     else:
-        sections = (
-            organize_claims(claims, client=utility)
-            if utility is not None and len(claims) >= 2
-            else []
-        )
-        parents = (
-            tree_claims(claims, client=utility)
-            if utility is not None and len(claims) >= 2
-            else {}
-        )
+        if utility is not None and len(claims) >= 2:
+            # Section grouping and the claim-parent tree are independent calls.
+            sections_future = pool.submit(organize_claims, claims, client=utility)
+            parents = tree_claims(claims, client=utility)
+            sections = sections_future.result()
+        else:
+            sections, parents = [], {}
         existing_depths = {}
-    labels = (
-        suggest_review_labels(claims, client=utility)
-        if auto_label and utility is not None and claims
-        else {}
-    )
-    layout = build_tree_layout(
-        topic=str(report.get("topic") or ""),
-        claims=claims,
-        sections=sections,
-        parents=parents,
-        labels=labels,
-        existing_depths=existing_depths or None,
-    )
-    if theme_filtered:
-        layout["theme_filtered"] = True
-        layout["kept_claim_ids"] = kept_ids or []
-    (run_dir / "tree_layout.json").write_text(
-        json.dumps(layout, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    return sections, parents, existing_depths

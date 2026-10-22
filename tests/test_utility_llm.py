@@ -63,7 +63,7 @@ def test_cloud_utility_uses_vertex_flash(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
     spec = utility_llm_spec()
     assert spec.provider == "custom"
-    assert spec.model == "google/gemini-3.8-flash"
+    assert spec.model == "google/gemini-3.1-flash-lite"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
     assert spec.api_key is None
     assert llm_spec_has_auth(spec)
@@ -77,7 +77,7 @@ def test_cloud_stale_kimi_env_still_uses_flash(monkeypatch):
     monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://api.moonshot.ai/v1")
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon-test")
     spec = utility_llm_spec()
-    assert spec.model == "google/gemini-3.8-flash"
+    assert spec.model == "google/gemini-3.1-flash-lite"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
     assert spec.api_key is None
 
@@ -89,7 +89,7 @@ def test_cloud_stale_openrouter_env_uses_flash(monkeypatch):
     monkeypatch.setenv("MOYO_UTILITY_MODEL", "meta-llama/llama-3.1-8b-instruct")
     monkeypatch.setenv("MOYO_UTILITY_BASE_URL", "https://openrouter.ai/api/v1")
     spec = utility_llm_spec()
-    assert spec.model == "google/gemini-3.8-flash"
+    assert spec.model == "google/gemini-3.1-flash-lite"
     assert "aiplatform.googleapis.com" in (spec.base_url or "")
 
 
@@ -111,7 +111,7 @@ def test_utility_cluster_config_uses_vertex_flash(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "senteguard-website")
     cfg = utility_cluster_config({"batch_size": 10, "collapse": True})
     assert cfg["provider"] == "custom"
-    assert cfg["model"] == "google/gemini-3.8-flash"
+    assert cfg["model"] == "google/gemini-3.1-flash-lite"
     assert "aiplatform.googleapis.com" in (cfg.get("base_url") or "")
     assert "api_key" not in cfg
     assert cfg["batch_size"] == 10
@@ -132,7 +132,7 @@ def test_vertex_flash_hosted_config_replaces_ollama_and_kimi(monkeypatch):
         }
     )
     assert cfg["provider"] == "custom"
-    assert cfg["model"] == "google/gemini-3.8-flash"
+    assert cfg["model"] == "google/gemini-3.1-flash-lite"
     assert "aiplatform.googleapis.com" in (cfg.get("base_url") or "")
     assert "api_key" not in cfg
     assert cfg["collapse"] is True
@@ -278,7 +278,7 @@ def test_vertex_utility_model_honours_override(monkeypatch):
     from moyo.llm.vertex import vertex_utility_model
 
     monkeypatch.delenv("MOYO_VERTEX_UTILITY_MODEL", raising=False)
-    assert vertex_utility_model() == "google/gemini-3.8-flash"
+    assert vertex_utility_model() == "google/gemini-3.1-flash-lite"
     monkeypatch.setenv("MOYO_VERTEX_UTILITY_MODEL", "gemini-2.0-flash")
     assert vertex_utility_model() == "google/gemini-2.0-flash"
 

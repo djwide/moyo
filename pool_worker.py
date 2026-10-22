@@ -25,8 +25,12 @@ An exception before that — bad payload, or a crash that escaped
 ``run_order`` — is nacked so Pub/Sub can redeliver it. Give the
 subscription a dead-letter topic so a poison message does not retry forever.
 
-One message is pulled at a time. ``run_order`` keeps per-order files and
-process-wide clients, so two orders must not run in the same process.
+Up to ``MOYO_POOL_MAX_MESSAGES`` orders (default 4) run at once. ``run_order``
+keeps per-order files, process-wide clients, and BYOK keys in ``os.environ``,
+so each claimed order runs in its own child process (``cloud_worker.py`` with
+``ORDER_ID`` and ``MOYO_ORDER_ALREADY_CLAIMED=1``). A structured scan queues one
+order per map; running them side by side keeps a compare from waiting on N
+back-to-back scans.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -51,6 +56,8 @@ logger = logging.getLogger("moyo.pool_worker")
 # Report jobs are allowed to run for two hours. Keep the lease longer so
 # Pub/Sub does not redeliver an order that is still in progress.
 DEFAULT_MAX_LEASE_SECONDS = 3 * 60 * 60
+# 4 CPU / 8 GiB instance; scans mostly wait on provider HTTP calls.
+DEFAULT_MAX_MESSAGES = 4
 
 
 def project_id() -> str:
@@ -77,8 +84,25 @@ def order_id_from_payload(data: bytes) -> str:
     return order_id
 
 
+def child_order_env(order_id: str, base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    env["ORDER_ID"] = order_id
+    env["MOYO_ORDER_ALREADY_CLAIMED"] = "1"
+    return env
+
+
 def _run_claimed_order(order_id: str) -> int:
-    return run_order(order_id, already_claimed=True)
+    """Run one claimed order in a child process so concurrent orders stay isolated."""
+    completed = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "cloud_worker.py")],
+        cwd=str(REPO_ROOT),
+        env=child_order_env(order_id),
+        check=False,
+    )
+    if completed.returncode < 0:
+        # Killed by a signal (e.g. OOM): let Pub/Sub redeliver it.
+        raise RuntimeError(f"order {order_id} worker exited with signal {-completed.returncode}")
+    return completed.returncode
 
 
 def handle_message(
@@ -118,18 +142,21 @@ def handle_message(
         message.nack()
 
 
+def pool_max_messages() -> int:
+    raw = (os.environ.get("MOYO_POOL_MAX_MESSAGES") or "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_MAX_MESSAGES
+    except ValueError:
+        value = DEFAULT_MAX_MESSAGES
+    return max(1, value)
+
+
 def _flow_control(pubsub_v1: Any) -> Any:
-    max_messages = int(os.environ.get("MOYO_POOL_MAX_MESSAGES") or "1")
+    max_messages = pool_max_messages()
     max_lease = float(
         os.environ.get("MOYO_POOL_MAX_LEASE_SECONDS") or DEFAULT_MAX_LEASE_SECONDS
     )
-    if max_messages < 1:
-        max_messages = 1
-    if max_messages > 1:
-        logger.warning(
-            "MOYO_POOL_MAX_MESSAGES=%s; overlapping run_order calls share one process",
-            max_messages,
-        )
+    logger.info("running up to %s order(s) at once", max_messages)
     return pubsub_v1.types.FlowControl(
         max_messages=max_messages,
         max_lease_duration=max_lease,

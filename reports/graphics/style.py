@@ -48,6 +48,16 @@ BAR_COLORS = {
     "commercially_sensitive": INK,
     "potentially_strategic": TEAL_DEEP,
     "material": TEAL_DEEP,
+    "corporate_material": INK,
+    "corporate_follow_up": TEAL_DEEP,
+    "decision_critical": INK,
+    "qualify": TEAL_DEEP,
+    "exposed": INK,
+    "harden": TEAL_DEEP,
+    "pivotal": INK,
+    "timeline": TEAL_DEEP,
+    "significant": INK,
+    "notable": TEAL_DEEP,
     "unexpected": TEAL_DEEP,
     "interesting": TEAL,
     "expected": "#C4BFB2",
@@ -65,6 +75,16 @@ BAR_LABELS = {
     "commercially_sensitive": "Commercially sensitive",
     "potentially_strategic": "Potentially strategic",
     "material": "Material",
+    "corporate_material": "Material",
+    "corporate_follow_up": "Follow up",
+    "decision_critical": "Decision-critical",
+    "qualify": "Qualify",
+    "exposed": "Exposed",
+    "harden": "Harden",
+    "pivotal": "Pivotal",
+    "timeline": "Timeline",
+    "significant": "Significant",
+    "notable": "Notable",
     "unexpected": "Unexpected",
     "interesting": "Interesting",
     "expected": "Expected",
@@ -99,6 +119,16 @@ def band_legend_order(keys: set[str]) -> tuple[str, ...]:
             "unexpected",
             "interesting",
         )
+    if "corporate_material" in keys or "corporate_follow_up" in keys:
+        return ("corporate_material", "corporate_follow_up", "unexpected", "interesting")
+    if "decision_critical" in keys or "qualify" in keys:
+        return ("decision_critical", "qualify", "unexpected", "interesting")
+    if "exposed" in keys or "harden" in keys:
+        return ("exposed", "harden", "unexpected", "interesting")
+    if "pivotal" in keys or "timeline" in keys:
+        return ("pivotal", "timeline", "unexpected", "interesting", "expected")
+    if "significant" in keys or "notable" in keys:
+        return ("significant", "notable", "unexpected", "interesting", "expected")
     if "material" in keys:
         return ("security_relevant", "material", "unexpected", "interesting")
     if "sensitive" in keys and "security_relevant" not in keys:

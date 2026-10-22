@@ -131,7 +131,11 @@ def build_order_payload(
         "createdAt": utc_now(),
     }
     audience = str(scan_audience or "").strip().lower()
-    if audience in {"opposition", "personal", "competitive", "security"}:
+    try:
+        from reports.pipeline.audience import AUDIENCE_CHOICES
+    except ImportError:
+        from pipeline.audience import AUDIENCE_CHOICES
+    if audience in AUDIENCE_CHOICES and audience != "organization":
         payload["scanAudience"] = audience
     if org:
         payload["organization"] = org

@@ -7,6 +7,7 @@ import logging
 import re
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -312,6 +313,17 @@ def _ollama_group_batch(
     return groups
 
 
+CLUSTER_PARALLEL_CALLS = 4
+
+
+def _map_parallel(fn: Callable[[Any], Any], items: list[Any]) -> list[Any]:
+    """``map`` that runs LLM calls side by side and keeps input order."""
+    if len(items) <= 1:
+        return [fn(item) for item in items]
+    with ThreadPoolExecutor(max_workers=min(CLUSTER_PARALLEL_CALLS, len(items))) as pool:
+        return list(pool.map(fn, items))
+
+
 def group_claim_ids_with_ollama(
     claims: list[dict],
     *,
@@ -334,19 +346,26 @@ def group_claim_ids_with_ollama(
     all_ids = list(by_id.keys())
     size = max(5, int(batch_size))
 
-    # Pass 1: group within batches
-    batch_groups: list[list[str]] = []
-    for i in range(0, len(all_ids), size):
-        chunk_ids = all_ids[i : i + size]
-        batch = [by_id[cid] for cid in chunk_ids]
+    # Pass 1: group within batches (independent calls, run side by side)
+    batches = [
+        [by_id[cid] for cid in all_ids[i : i + size]]
+        for i in range(0, len(all_ids), size)
+    ]
+    for index, batch in enumerate(batches):
         print(
-            f"  cluster batch {i // size + 1}/"
-            f"{(len(all_ids) + size - 1) // size} ({len(batch)} claims)",
+            f"  cluster batch {index + 1}/{len(batches)} ({len(batch)} claims)",
             file=sys.stderr,
         )
-        batch_groups.extend(_ollama_group_batch(batch, client=client, prompt_path=path))
+    batch_groups: list[list[str]] = []
+    for groups in _map_parallel(
+        lambda batch: _ollama_group_batch(batch, client=client, prompt_path=path),
+        batches,
+    ):
+        batch_groups.extend(groups)
 
-    if len(batch_groups) <= 1:
+    # One batch already compared every claim with every other claim; a merge
+    # pass over its groups would ask the same question again.
+    if len(batches) <= 1 or len(batch_groups) <= 1:
         return batch_groups
 
     # Pass 2: merge across batches via representatives
@@ -369,12 +388,12 @@ def group_claim_ids_with_ollama(
     if len(reps) <= 1:
         return batch_groups
 
-    meta_groups: list[list[str]] = []
-    for i in range(0, len(reps), size):
-        chunk = reps[i : i + size]
+    rep_chunks = [reps[i : i + size] for i in range(0, len(reps), size)]
+
+    def _merge_chunk(indexed: tuple[int, list[dict]]) -> list[list[str]]:
+        index, chunk = indexed
         print(
-            f"  cluster merge-pass {i // size + 1}/"
-            f"{(len(reps) + size - 1) // size} ({len(chunk)} groups)",
+            f"  cluster merge-pass {index + 1}/{len(rep_chunks)} ({len(chunk)} groups)",
             file=sys.stderr,
         )
         # Strip internal fields from the prompt payload
@@ -396,8 +415,10 @@ def group_claim_ids_with_ollama(
         except Exception as exc:
             print(f"  warn: ollama merge-pass failed: {exc}", file=sys.stderr)
             parsed = None
-        if not parsed:
-            parsed = [[r["claim_id"]] for r in chunk]
+        return parsed or [[r["claim_id"]] for r in chunk]
+
+    meta_groups: list[list[str]] = []
+    for parsed in _map_parallel(_merge_chunk, list(enumerate(rep_chunks))):
         meta_groups.extend(parsed)
 
     rep_by_gid = {r["claim_id"]: r for r in reps}

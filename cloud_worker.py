@@ -62,7 +62,7 @@ orders use ``reports/{storageFolder}/{nn}_{slug}/`` plus a canonical root
 
 Ollama is not used in Cloud Run. Rewording, translation, clustering,
 summaries, extract, synthesize, and Englishize use Vertex Gemini Flash
-(``google/gemini-3.8-flash`` on Vertex ``global`` via the job service account). Retrieval
+(``google/gemini-3.1-flash-lite`` on Vertex ``global`` via the job service account). Retrieval
 fan-out uses each provider's own key, including Gemini
 on AI Studio (``GEMINI_API_KEY``).
 """
@@ -740,6 +740,19 @@ def normalize_moyomap_prior_claims(raw: Any) -> list[dict[str, Any]]:
             depth = int(depth_raw) if depth_raw is not None else 1
         except (TypeError, ValueError):
             depth = 1
+        raw_models = item.get("sourceModels")
+        if not isinstance(raw_models, list):
+            raw_models = item.get("source_models") if isinstance(item.get("source_models"), list) else []
+        source_models: list[str] = []
+        seen_models: set[str] = set()
+        for model in raw_models:
+            text = str(model or "").strip()[:160]
+            if not text or text in seen_models:
+                continue
+            seen_models.add(text)
+            source_models.append(text)
+            if len(source_models) >= 24:
+                break
         prior.append(
             {
                 "nodeId": node_id[:160],
@@ -751,6 +764,7 @@ def normalize_moyomap_prior_claims(raw: Any) -> list[dict[str, Any]]:
                 "parentId": str(item.get("parentId") or "")[:160],
                 "section": bool(item.get("section")) or node_id.startswith("section_"),
                 "depth": max(1, depth),
+                "sourceModels": source_models,
             }
         )
     return prior
@@ -776,6 +790,7 @@ def normalize_moyomap_context(raw: Any) -> dict[str, Any]:
         "expansionOption": expansion_option,
         "priorClaims": normalize_moyomap_prior_claims(raw.get("priorClaims")),
         "autoLabel": raw.get("autoLabel") is True or raw.get("auto_label") is True,
+        "replyLanguage": str(raw.get("replyLanguage") or raw.get("reply_language") or "").strip()[:40],
     }
 
 
@@ -1268,6 +1283,11 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
             org_l.startswith("what do ai systems already know")
             or org_l.startswith("what personal, biographical")
             or org_l.startswith("compile opposition research")
+            or org_l.startswith("map this political race")
+            or org_l.startswith("research the historical record")
+            or org_l.startswith("research the economics of")
+            or org_l.startswith("research the technology and technical record")
+            or org_l.startswith("map what reporting establishes")
         )
         if org and not wrapish and org != first_prompt:
             display_topic = org
@@ -1275,20 +1295,18 @@ def parse_order(order_id: str, data: dict[str, Any] | None) -> OrderSpec:
     audience_raw = str(
         _first(data, "scanAudience", "scan_audience", default="") or ""
     ).strip().lower()
-    scan_audience = (
-        audience_raw
-        if audience_raw in {"opposition", "personal", "competitive", "security"}
-        else "organization"
-    )
+    from reports.pipeline.audience import AUDIENCE_CHOICES, SUBJECT_COMPANY_CITY
+
+    scan_audience = audience_raw if audience_raw in AUDIENCE_CHOICES else "organization"
     race = str(_first(data, "scanRace", "scan_race", default="") or "").strip()
-    if scan_audience == "opposition" and display_topic and race and race not in display_topic:
+    if scan_audience in ("opposition", "political") and display_topic and race and race not in display_topic:
         display_topic = f"{display_topic} — {race}"
     city = str(_first(data, "scanCity", "scan_city", default="") or "").strip()
     school = str(_first(data, "scanSchool", "scan_school", default="") or "").strip()
     company = str(_first(data, "scanCompany", "scan_company", default="") or "").strip()
-    if scan_audience in {"competitive", "security"}:
+    if scan_audience in SUBJECT_COMPANY_CITY:
         subject_detail = ", ".join(part for part in (company, city) if part) or None
-    elif scan_audience == "opposition":
+    elif scan_audience in ("opposition", "political"):
         subject_detail = None
     else:
         subject_detail = ", ".join(part for part in (city, school, company) if part) or None
@@ -1975,6 +1993,7 @@ def collect_artifacts(work: Path, run_dir: Path, product: str) -> dict[str, Path
         "report_data.json": run_dir / "report_data.json",
         "tree_layout.json": run_dir / "tree_layout.json",
         "support_result.json": work / "support_result.json",
+        "presentations.json": run_dir / "presentations.json",
         "claims.jsonl": run_dir / "claims.jsonl",
         "chunks.jsonl": run_dir / "chunks.jsonl",
         "extract_issues.json": run_dir / "extract_issues.json",
@@ -2047,6 +2066,13 @@ def _write_report_config(
     if extract_prompt:
         cfg.setdefault("extract", {})
         cfg["extract"]["prompt"] = extract_prompt
+    if is_moyomap_map_pipeline(spec):
+        context = spec.moyomap_context or {}
+        cfg["moyomap"] = {
+            "cluster_against_map": True,
+            "prior_claims": context.get("priorClaims") or [],
+            "reply_language": context.get("replyLanguage") or "",
+        }
     from moyo.llm.utility import running_in_cloud, vertex_flash_hosted_config
 
     if running_in_cloud():
@@ -2056,9 +2082,41 @@ def _write_report_config(
             cfg[key] = vertex_flash_hosted_config(cfg.get(key) or {})
         cfg["cluster"].setdefault("temperature", 0.1)
         cfg["cluster"].setdefault("max_tokens", 4000)
+        apply_cloud_extract_tuning(cfg)
     dest = work / "report_config.yaml"
     dest.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return dest
+
+
+# One model answer used to be a single extract chunk of up to 15k tokens: one
+# long call that could not use the extract worker pool and whose output ran
+# past max_tokens ("truncated/invalid JSON; salvaged"). Smaller paragraph-split
+# chunks run side by side and each finishes well inside the processing deadline.
+CLOUD_CHUNK_MAX_TOKENS = 2500
+CLOUD_EXTRACT_WORKERS = 8
+CLOUD_EXTRACT_MAX_TOKENS = 8000
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        value = int((os.environ.get(name) or "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def apply_cloud_extract_tuning(cfg: dict[str, Any]) -> None:
+    """Cloud Run chunk / extract settings shared by every scan type."""
+    chunk = cfg.setdefault("chunk", {})
+    limit = _env_int("MOYO_CLOUD_CHUNK_MAX_TOKENS", CLOUD_CHUNK_MAX_TOKENS)
+    chunk["max_tokens"] = min(int(chunk.get("max_tokens") or limit), limit)
+    chunk["target_tokens"] = min(int(chunk.get("target_tokens") or limit), limit)
+    extract = cfg.setdefault("extract", {})
+    extract["workers"] = max(
+        int(extract.get("workers") or 1),
+        _env_int("MOYO_CLOUD_EXTRACT_WORKERS", CLOUD_EXTRACT_WORKERS),
+    )
+    extract["max_tokens"] = max(int(extract.get("max_tokens") or 0), CLOUD_EXTRACT_MAX_TOKENS)
 
 
 def apply_moyomap_claim_tree(
@@ -2140,15 +2198,24 @@ def apply_moyomap_scan_layout(
     auto_label = context.get("autoLabel") is True
     if action == "investigate":
         apply_moyomap_claim_tree(run_dir, stub_only=True, set_stage=set_stage)
+    else:
+        apply_moyomap_claim_tree(
+            run_dir,
+            auto_label=auto_label,
+            prior_claims=context.get("priorClaims") or [],
+            attach=action == "find_more",
+            fallback_flat=True,
+            set_stage=set_stage,
+        )
+    language = str(context.get("replyLanguage") or "").strip()
+    if not language:
         return
-    apply_moyomap_claim_tree(
-        run_dir,
-        auto_label=auto_label,
-        prior_claims=context.get("priorClaims") or [],
-        attach=action == "find_more",
-        fallback_flat=True,
-        set_stage=set_stage,
-    )
+    try:
+        from reports.pipeline.presentations import write_map_presentations
+
+        write_map_presentations(run_dir, language)
+    except Exception:
+        logger.exception("map presentation sidecar failed")
 
 
 def _run_one_prompt(
@@ -2577,7 +2644,7 @@ def _opposition_web_search_ids(
         for x in (spec.retrieval_web_search_models or [])
         if str(x).strip()
     }
-    if explicit or spec.scan_audience != "opposition":
+    if explicit or spec.scan_audience not in ("opposition", "political"):
         return explicit
     wanted = [str(x).strip() for x in (model_ids or []) if str(x).strip()]
     if wanted:
@@ -4295,7 +4362,9 @@ def main() -> int:
     if not order_id:
         logger.error("ORDER_ID is required")
         return 2
-    return run_order(order_id)
+    # pool_worker.py claims the order, then runs it here in a child process.
+    already_claimed = os.environ.get("MOYO_ORDER_ALREADY_CLAIMED") == "1"
+    return run_order(order_id, already_claimed=already_claimed)
 
 
 if __name__ == "__main__":

@@ -195,7 +195,7 @@ def generate_graphics(
         report_data["findings_by_llm"] = rows
 
     if "evidence_graph" in emit:
-        show_conclusions = voice != "opposition"
+        show_conclusions = voice not in ("opposition", "political")
         graphics["evidence_graph"] = evidence_graph_svg(
             chart_findings,
             chart_chains,

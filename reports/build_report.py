@@ -10,6 +10,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -413,6 +414,51 @@ def stage_index(name: str) -> int:
         raise SystemExit(f"Unknown stage {name!r}. Choose from: {', '.join(STAGES)}") from e
 
 
+
+def _summary_key(claim: dict) -> str:
+    return " ".join(str(claim.get("claim") or "").split()).casefold()
+
+
+def start_early_summaries(claims: list[dict], *, dry_run: bool) -> Any:
+    """Summarize extracted claims in the background; ``None`` when there is nothing to do."""
+    if dry_run or not claims:
+        return None
+    from concurrent.futures import ThreadPoolExecutor
+
+    from pipeline.summarize import attach_claim_summaries
+
+    copies = [dict(claim) for claim in claims]
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(attach_claim_summaries, copies)
+    pool.shutdown(wait=False)
+    return future, copies
+
+
+def apply_early_summaries(early: Any, claims: list[dict]) -> int:
+    """Copy background summaries onto clustered claims by claim text."""
+    if early is None:
+        return 0
+    future, copies = early
+    try:
+        future.result()
+    except Exception as exc:
+        print(f"  warn: early claim summaries failed: {exc}", file=sys.stderr)
+        return 0
+    by_text = {
+        _summary_key(row): row["summary"]
+        for row in copies
+        if str(row.get("summary") or "").strip()
+    }
+    written = 0
+    for claim in claims:
+        if str(claim.get("summary") or "").strip():
+            continue
+        summary = by_text.get(_summary_key(claim))
+        if summary:
+            claim["summary"] = summary
+            written += 1
+    return written
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="MOYO exploration processor")
     ap.add_argument("-e", "--exploration", type=Path, help="Path to exploration.md")
@@ -668,6 +714,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(f"[2] extract ({'dry-run' if args.dry_run else extract_cfg.get('model')})", file=sys.stderr)
         prompt = REPORTS_ROOT / (extract_cfg.get("prompt") or "prompts/extract_claims.md")
+        moyomap_cfg = cfg.get("moyomap") or {}
         claims = extract_all(
             chunks,
             out_path=claims_path,
@@ -675,6 +722,7 @@ def main(argv: list[str] | None = None) -> int:
             config=extract_cfg,
             dry_run=args.dry_run,
             chunk_config=chunk_cfg,
+            attach_citations=not bool(moyomap_cfg.get("cluster_against_map")),
         )
         print(f"  → {len(claims)} claims → {claims_path}", file=sys.stderr)
     elif start > stage_index("extract") and (
@@ -701,18 +749,36 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    map_collapse = None
+    moyomap_cfg = cfg.get("moyomap") or {}
+    early_summaries = None
     if want("cluster"):
+        # Summaries are one utility call per batch and do not need the cluster
+        # result, so they run while clustering instead of after it.
+        early_summaries = start_early_summaries(claims, dry_run=bool(args.dry_run))
         print("[3] cluster", file=sys.stderr)
         before_n = len(claims)
         prompt_rel = cluster_cfg.get("prompt") or "prompts/cluster_claims.md"
-        claims, clusters = cluster_claims(
-            claims,
-            corroboration_min_sources=int(cluster_cfg.get("corroboration_min_sources", 2)),
-            collapse=bool(cluster_cfg.get("collapse", True)),
-            llm_config=cluster_cfg,
-            prompt_path=REPORTS_ROOT / prompt_rel,
-            dry_run=bool(args.dry_run),
-        )
+        if moyomap_cfg.get("cluster_against_map"):
+            from pipeline.map_cluster import cluster_against_map
+
+            claims, clusters, map_collapse = cluster_against_map(
+                claims,
+                list(moyomap_cfg.get("prior_claims") or []),
+                corroboration_min_sources=int(cluster_cfg.get("corroboration_min_sources", 2)),
+                llm_config=cluster_cfg,
+                prompt_path=REPORTS_ROOT / prompt_rel,
+                dry_run=bool(args.dry_run),
+            )
+        else:
+            claims, clusters = cluster_claims(
+                claims,
+                corroboration_min_sources=int(cluster_cfg.get("corroboration_min_sources", 2)),
+                collapse=bool(cluster_cfg.get("collapse", True)),
+                llm_config=cluster_cfg,
+                prompt_path=REPORTS_ROOT / prompt_rel,
+                dry_run=bool(args.dry_run),
+            )
         with claims_path.open("w", encoding="utf-8") as f:
             for c in claims:
                 f.write(json.dumps(c, ensure_ascii=False) + "\n")
@@ -741,7 +807,8 @@ def main(argv: list[str] | None = None) -> int:
     if claims and (want("cluster") or want("score")):
         from pipeline.summarize import attach_claim_summaries
 
-        written = attach_claim_summaries(claims, dry_run=bool(args.dry_run))
+        written = apply_early_summaries(early_summaries, claims)
+        written += attach_claim_summaries(claims, dry_run=bool(args.dry_run))
         summarized = sum(1 for claim in claims if str(claim.get("summary") or "").strip())
         if written:
             with claims_path.open("w", encoding="utf-8") as f:
@@ -804,6 +871,8 @@ def main(argv: list[str] | None = None) -> int:
         report_data["collection_issues"] = _merge_collection_issues(
             report_data, run_dir
         )
+        if map_collapse:
+            report_data["map_collapse"] = map_collapse
         report_data_path.write_text(json.dumps(report_data, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"  → {report_data_path}", file=sys.stderr)
     elif start > stage_index("score"):

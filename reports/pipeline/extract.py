@@ -432,6 +432,7 @@ def extract_all(
     config: dict,
     dry_run: bool = False,
     chunk_config: dict | None = None,
+    attach_citations: bool = True,
 ) -> list[dict]:
     """Extract claims from all chunks; write claims.jsonl; return claims.
 
@@ -484,8 +485,12 @@ def extract_all(
             issues_path.unlink()
 
     def _finalize(result: list[dict], extra_issues: list[dict] | None = None) -> list[dict]:
-        """Attach chunk Sources/URLs onto claims and rewrite claims.jsonl."""
-        attach_chunk_citations(result, chunks)
+        """Attach chunk Sources/URLs onto claims and rewrite claims.jsonl.
+
+        Map scans attach once later, immediately before collapse.
+        """
+        if attach_citations:
+            attach_chunk_citations(result, chunks)
         if result:
             with out_path.open("w", encoding="utf-8") as f:
                 for c in result:

@@ -11,6 +11,7 @@ from .audience import (
     disclosure_bin as audience_disclosure_bin,
     disclosure_class as audience_disclosure_class,
     normalize_audience,
+    lead_labels,
     priority_count,
     profile,
     retain_finding,
@@ -319,7 +320,7 @@ def score_report(
             if disclosure_class(c, voice) == "Expected"
         ]
         top = _english(expected) or _english(eligible)
-    elif voice == "opposition":
+    elif voice in ("opposition", "political"):
         damaging = [
             c
             for c in eligible
@@ -331,30 +332,11 @@ def score_report(
             if disclosure_class(c, voice) == "Potentially damaging"
         ]
         top = _english(damaging) or _english(maybe) or _english(eligible)
-    elif voice == "competitive":
-        commercial = [
-            c
-            for c in eligible
-            if disclosure_class(c, voice) == "Commercially sensitive"
-        ]
-        maybe = [
-            c
-            for c in eligible
-            if disclosure_class(c, voice) == "Potentially strategic"
-        ]
-        top = _english(commercial) or _english(maybe) or _english(eligible)
-    elif voice == "security":
-        relevant = [
-            c
-            for c in eligible
-            if disclosure_class(c, voice) == "Security relevant"
-        ]
-        maybe = [
-            c
-            for c in eligible
-            if disclosure_class(c, voice) == "Material"
-        ]
-        top = _english(relevant) or _english(maybe) or _english(eligible)
+    elif (labels := lead_labels(voice)):
+        primary, secondary = labels
+        lead = [c for c in eligible if disclosure_class(c, voice) == primary]
+        maybe = [c for c in eligible if disclosure_class(c, voice) == secondary]
+        top = _english(lead) or _english(maybe) or _english(eligible)
     else:
         top = _english(eligible)
     if top is None and not eligible:

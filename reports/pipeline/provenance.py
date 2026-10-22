@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .audience import OPPOSITION, disclosure_class, normalize_audience
+from .audience import opposition_shaped, disclosure_class, normalize_audience
 
 _URL_RE = re.compile(r"https?://", re.IGNORECASE)
 _LANG_SUFFIX_RE = re.compile(r"\s*\(([^)]+)\)\s*$")
@@ -150,13 +150,13 @@ def page_eligible(finding: dict[str, Any], audience: str | None = None) -> bool:
     if not has_source_url(finding):
         return False
     voice = normalize_audience(audience)
-    if voice != OPPOSITION:
+    if not opposition_shaped(voice):
         return True
     try:
         n_models = int(finding.get("corroboration") or 1)
     except (TypeError, ValueError):
         n_models = 1
-    if disclosure_class(finding, OPPOSITION) == "Damaging" and n_models <= 1:
+    if disclosure_class(finding, voice) == "Damaging" and n_models <= 1:
         return False
     return True
 

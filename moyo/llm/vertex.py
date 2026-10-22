@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from moyo.llm.client import LLMSpec, _is_gemini_model, ensure_env_loaded
@@ -23,7 +24,11 @@ VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 VERTEX_DEFAULT_GEMINI_MODEL = "google/gemini-3.1-pro-preview"
 # Hosted Ollama-replacement jobs (reword / extract / cluster / …).
 # Retrieval Gemini is not rewritten here; it stays on AI Studio.
-VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-3.8-flash"
+# Vertex model for Flash retrieval slots that must run on Vertex.
+VERTEX_FLASH_GEMINI_MODEL = "google/gemini-3.8-flash"
+# Processing model. 3.8 Flash stalled for minutes at a time on 2026-10-22; Flash-Lite
+# answered in about a second, so it is the default and 3.8 Flash is the fallback.
+VERTEX_UTILITY_GEMINI_MODEL = "google/gemini-3.1-flash-lite"
 
 # Sized for a full retrieval fan-out (e.g. 7 models × 3 seeds = 21 POSTs)
 # plus paraphraser / utility calls on the same process. Too-low caps make
@@ -122,7 +127,7 @@ def vertex_gemini_model(current: str = "") -> str:
         return _prefixed_gemini_id(override)
     name = (current or "").lower()
     if "flash" in name:
-        return VERTEX_UTILITY_GEMINI_MODEL
+        return VERTEX_FLASH_GEMINI_MODEL
     return VERTEX_DEFAULT_GEMINI_MODEL
 
 
@@ -132,6 +137,65 @@ def vertex_utility_model() -> str:
     if override:
         return _prefixed_gemini_id(override)
     return VERTEX_UTILITY_GEMINI_MODEL
+
+
+# Pipeline processing calls (reword / extract / cluster / summaries / organize)
+# on the Vertex utility model stream so a stalled request fails on the idle
+# timeout instead of waiting out the whole deadline. On 2026-10-22 global
+# gemini-3.8-flash intermittently sent no first byte for minutes, and four
+# 180s attempts turned one extract call into a 10-minute stall. The model is
+# global-only, so the retry goes to a different model rather than a region.
+VERTEX_PROCESSING_FALLBACK_MODEL = VERTEX_FLASH_GEMINI_MODEL
+PROCESSING_IDLE_TIMEOUT = 45.0
+PROCESSING_DEADLINE = 120.0
+PROCESSING_MAX_ATTEMPTS = 2
+
+
+@dataclass(frozen=True)
+class ProcessingPolicy:
+    """Fail-fast settings for one Vertex processing call."""
+
+    idle_timeout: float
+    deadline: float
+    max_attempts: int
+    fallback_model: Optional[str]
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        value = float((os.environ.get(name) or "").strip() or default)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def processing_policy(base_url: Optional[str], model: str, *, timeout: float = 0) -> Optional[ProcessingPolicy]:
+    """Policy for Vertex utility-model calls; ``None`` leaves the call unchanged.
+
+    Retrieval Gemini (Pro, AI Studio, web search) never matches.
+    """
+    if not is_vertex_openai_url(base_url) or model != vertex_utility_model():
+        return None
+    deadline = _env_float("MOYO_PROCESSING_DEADLINE", PROCESSING_DEADLINE)
+    if timeout and timeout > 0:
+        deadline = min(deadline, float(timeout))
+    try:
+        attempts = int((os.environ.get("MOYO_PROCESSING_MAX_ATTEMPTS") or "").strip() or PROCESSING_MAX_ATTEMPTS)
+    except ValueError:
+        attempts = PROCESSING_MAX_ATTEMPTS
+    fallback = (os.environ.get("MOYO_VERTEX_FALLBACK_MODEL") or VERTEX_PROCESSING_FALLBACK_MODEL).strip()
+    if fallback.lower() in {"", "0", "none", "off"}:
+        fallback_model = None
+    else:
+        fallback_model = _prefixed_gemini_id(fallback)
+        if fallback_model == model:
+            fallback_model = None
+    return ProcessingPolicy(
+        idle_timeout=min(_env_float("MOYO_PROCESSING_IDLE_TIMEOUT", PROCESSING_IDLE_TIMEOUT), deadline),
+        deadline=deadline,
+        max_attempts=max(1, attempts),
+        fallback_model=fallback_model,
+    )
 
 
 def rewrite_gemini_spec_for_vertex(spec: LLMSpec) -> LLMSpec:

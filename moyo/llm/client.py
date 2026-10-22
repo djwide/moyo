@@ -35,6 +35,25 @@ RETRIEVAL_TIMEOUT_WEB_SEARCH = 300
 RETRIEVAL_TIMEOUT_RERUN = 480
 PARAPHRASER_TIMEOUT = 120
 
+# After the Vertex processing model stalls, later calls in this process go
+# straight to the fallback model for a while instead of each waiting out the
+# idle timeout first.
+PROCESSING_PRIMARY_COOLDOWN_SECONDS = 300.0
+_processing_primary_down_until: Dict[str, float] = {}
+_processing_breaker_lock = threading.Lock()
+
+
+def processing_primary_down(model: str, now: Optional[float] = None) -> bool:
+    now = time.monotonic() if now is None else now
+    with _processing_breaker_lock:
+        return _processing_primary_down_until.get(model, 0.0) > now
+
+
+def mark_processing_primary_down(model: str, now: Optional[float] = None) -> None:
+    now = time.monotonic() if now is None else now
+    with _processing_breaker_lock:
+        _processing_primary_down_until[model] = now + PROCESSING_PRIMARY_COOLDOWN_SECONDS
+
 
 # --- Rate-limit / transient retry -------------------------------------------
 # Hard billing/auth failures sometimes arrive as HTTP 429; do not retry those.
@@ -923,6 +942,19 @@ class LLMClient:
         self._client = self._init_client()
         self._tls = threading.local()
 
+    def _processing_policy(self) -> Any:
+        """Fail-fast policy for Vertex utility-model processing calls, else ``None``."""
+        if self.spec.provider not in ("openai", "custom") or self.spec.web_search:
+            return None
+        try:
+            from moyo.llm.vertex import processing_policy
+
+            return processing_policy(
+                self.spec.base_url, self.spec.model, timeout=float(self.spec.timeout or 0)
+            )
+        except Exception:
+            return None
+
     def last_provider_record(self) -> Optional[Dict[str, Any]]:
         """Thread-local redacted provider payload from the most recent complete()."""
         record = getattr(self._tls, "last_record", None)
@@ -1168,6 +1200,12 @@ class LLMClient:
 
         max_retries = self.spec.max_retries if retries is None else max(0, int(retries))
         attempts = max(1, int(max_retries) + 1)
+        policy = self._processing_policy()
+        if policy is not None:
+            attempts = min(attempts, policy.max_attempts)
+        model_override: Optional[str] = None
+        if policy is not None and policy.fallback_model and processing_primary_down(self.spec.model):
+            model_override = policy.fallback_model
         last_exc: Optional[BaseException] = None
         use_max_completion_tokens = _is_openai_max_completion_tokens_model(self.spec.model)
         self._tls.last_record = None
@@ -1179,6 +1217,8 @@ class LLMClient:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     use_max_completion_tokens=use_max_completion_tokens,
+                    policy=policy,
+                    model=model_override,
                 )
                 record = self.last_provider_record()
                 parse_error = None
@@ -1238,11 +1278,17 @@ class LLMClient:
                         )
                     raise
                 delay = retry_delay_seconds(exc, attempt)
+                if policy is not None and policy.fallback_model and model_override is None:
+                    # Same-model retries on a stalled endpoint just wait again.
+                    mark_processing_primary_down(self.spec.model)
+                    model_override = policy.fallback_model
+                    delay = min(delay, 1.0)
                 logger.warning(
-                    "Transient LLM error from %s (attempt %d/%d); retrying in %.1fs: %s",
+                    "Transient LLM error from %s (attempt %d/%d); retrying%s in %.1fs: %s",
                     self.label,
                     attempt + 1,
                     attempts,
+                    f" on {model_override}" if model_override else "",
                     delay,
                     exc,
                 )
@@ -1265,6 +1311,8 @@ class LLMClient:
         max_tokens: int,
         *,
         use_max_completion_tokens: bool = False,
+        policy: Any = None,
+        model: Optional[str] = None,
     ) -> str:
         provider = self.spec.provider
 
@@ -1322,7 +1370,7 @@ class LLMClient:
                 messages.append({"role": "system", "content": system})
             messages.append({"role": "user", "content": prompt})
             create_kwargs: Dict[str, Any] = {
-                "model": self.spec.model,
+                "model": model or self.spec.model,
                 "messages": messages,
             }
             if (
@@ -1340,6 +1388,8 @@ class LLMClient:
                     self.spec.model, self.spec.base_url, web_search=web_search
                 )
             )
+            if policy is not None:
+                return self._complete_openai_streamed(create_kwargs, policy)
             response = self._client.chat.completions.create(**create_kwargs)
 
             def _parse_openai() -> str:
@@ -1373,6 +1423,69 @@ class LLMClient:
             )
 
         raise RuntimeError(f"unsupported LLM provider: {provider}")
+
+    def _complete_openai_streamed(self, create_kwargs: Dict[str, Any], policy: Any) -> str:
+        """Stream a chat completion; fail on ``idle_timeout`` or ``deadline``.
+
+        A non-streamed call shows nothing until the whole reply is done, so a
+        stalled request can only fail on the full timeout. Streaming lets the
+        read timeout act as a first-token / between-chunk idle timeout.
+        """
+        from httpx import Timeout
+
+        started = time.monotonic()
+        stream = self._client.chat.completions.create(
+            **create_kwargs,
+            stream=True,
+            timeout=Timeout(
+                connect=min(30.0, policy.deadline),
+                read=policy.idle_timeout,
+                write=30.0,
+                pool=30.0,
+            ),
+        )
+        parts: List[str] = []
+        finish_reason: Optional[str] = None
+        usage: Any = None
+        response_model = create_kwargs.get("model")
+        try:
+            for chunk in stream:
+                if time.monotonic() - started > policy.deadline:
+                    raise TimeoutError(
+                        f"Request timed out after {policy.deadline:.0f}s processing deadline."
+                    )
+                response_model = getattr(chunk, "model", None) or response_model
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
+                for choice in getattr(chunk, "choices", None) or []:
+                    delta = getattr(choice, "delta", None)
+                    piece = getattr(delta, "content", None) if delta is not None else None
+                    if isinstance(piece, str) and piece:
+                        parts.append(piece)
+                    if getattr(choice, "finish_reason", None):
+                        finish_reason = choice.finish_reason
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        text = "".join(parts)
+        if usage is not None and hasattr(usage, "model_dump"):
+            usage = usage.model_dump()
+        raw = {
+            "object": "chat.completion",
+            "model": response_model,
+            "streamed": True,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": finish_reason,
+                }
+            ],
+            "usage": usage,
+        }
+        return self._text_from_stored_response(raw, lambda: text)
 
     def _complete_via_responses(
         self,

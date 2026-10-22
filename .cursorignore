@@ -1,0 +1,9 @@
+# Binary embeddings (tracked)
+shared_utils/models/*.onnx
+
+# Local FAISS / crawl / report artifacts
+projects/
+indexes/
+cache/
+logs/
+reports/build/
